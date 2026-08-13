@@ -1,10 +1,17 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response, status
 from prometheus_client import CONTENT_TYPE_LATEST
 
 from app.clients.databricks import DatabricksIntegrationError, DatabricksTimeoutError
 from app.core.metrics import EMBED_REQUESTS, metrics_payload
 from app.schemas.common import HealthResponse, MessageResponse, ReadinessResponse
-from app.schemas.dashboards import DashboardListResponse, DashboardPublic, EmbedRequest, EmbedResponse
+from app.schemas.dashboards import (
+    DashboardListResponse,
+    DashboardPublic,
+    EmbedRequest,
+    EmbedResponse,
+)
 from app.services.dashboard import DashboardNotFound, DashboardService
 
 router = APIRouter()
@@ -47,7 +54,9 @@ def metrics() -> Response:
     description="Returns only dashboards enabled in the local catalog.",
     tags=["dashboards"],
 )
-def list_dashboards(service: DashboardService = Depends(get_dashboard_service)) -> DashboardListResponse:
+def list_dashboards(
+    service: Annotated[DashboardService, Depends(get_dashboard_service)],
+) -> DashboardListResponse:
     return service.list_dashboards()
 
 
@@ -58,7 +67,10 @@ def list_dashboards(service: DashboardService = Depends(get_dashboard_service)) 
     responses={404: {"description": "Dashboard not found"}},
     tags=["dashboards"],
 )
-def get_dashboard(dashboard_id: str, service: DashboardService = Depends(get_dashboard_service)) -> DashboardPublic:
+def get_dashboard(
+    dashboard_id: str,
+    service: Annotated[DashboardService, Depends(get_dashboard_service)],
+) -> DashboardPublic:
     try:
         return service.get_dashboard(dashboard_id)
     except DashboardNotFound as exc:
@@ -75,8 +87,8 @@ def get_dashboard(dashboard_id: str, service: DashboardService = Depends(get_das
 )
 async def embed_dashboard(
     dashboard_id: str,
-    request: EmbedRequest | None = Body(default=None),
-    service: DashboardService = Depends(get_dashboard_service),
+    service: Annotated[DashboardService, Depends(get_dashboard_service)],
+    request: Annotated[EmbedRequest | None, Body()] = None,
 ) -> EmbedResponse:
     try:
         result = await service.embed(dashboard_id, request or EmbedRequest())

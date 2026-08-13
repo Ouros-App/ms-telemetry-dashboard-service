@@ -1,6 +1,11 @@
 from app.providers.databricks import DatabricksDashboardProvider
 from app.repositories.catalog import DashboardCatalog
-from app.schemas.dashboards import DashboardListResponse, DashboardPublic, EmbedRequest, EmbedResponse
+from app.schemas.dashboards import (
+    DashboardListResponse,
+    DashboardPublic,
+    EmbedRequest,
+    EmbedResponse,
+)
 
 
 class DashboardNotFound(Exception):

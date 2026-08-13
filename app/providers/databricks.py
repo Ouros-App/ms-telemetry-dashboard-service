@@ -2,9 +2,18 @@ from datetime import timezone
 
 from pydantic import ValidationError
 
-from app.clients.databricks import DatabricksAuthClient, DatabricksHttpClient, DatabricksIntegrationError
+from app.clients.databricks import (
+    DatabricksAuthClient,
+    DatabricksHttpClient,
+    DatabricksIntegrationError,
+)
 from app.core.config import Settings
-from app.schemas.dashboards import DashboardRecord, DatabricksTokenInfo, EmbedConfig, EmbedRequest
+from app.schemas.dashboards import (
+    DashboardRecord,
+    DatabricksTokenInfo,
+    EmbedConfig,
+    EmbedRequest,
+)
 
 
 class DatabricksDashboardProvider:

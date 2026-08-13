@@ -9,7 +9,12 @@ import httpx
 from pydantic import ValidationError
 
 from app.core.config import Settings
-from app.core.metrics import DATABRICKS_DURATION, DATABRICKS_ERRORS, DATABRICKS_REQUESTS, TOKEN_REFRESHES
+from app.core.metrics import (
+    DATABRICKS_DURATION,
+    DATABRICKS_ERRORS,
+    DATABRICKS_REQUESTS,
+    TOKEN_REFRESHES,
+)
 from app.schemas.dashboards import DatabricksTokenInfo, DatabricksTokenResponse
 
 
