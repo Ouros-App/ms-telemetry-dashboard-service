@@ -5,6 +5,6 @@
     "title": "API Latency",
     "description": "Latência das APIs do ecossistema",
     "dashboard_id": "replace-with-databricks-dashboard-id",
-    "enabled": true
+    "enabled": false
   }
 ]

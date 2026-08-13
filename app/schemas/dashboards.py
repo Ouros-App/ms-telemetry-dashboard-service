@@ -40,7 +40,8 @@ class EmbedRequest(BaseModel):
     def validate_external_context(self) -> "EmbedRequest":
         if any(ord(char) < 32 for char in (self.external_value or "")):
             raise ValueError("external_value contains control characters")
-        if len(self.external_viewer_id or "") + len(self.external_value or "") > 1024:
+        size = sum(len(value.encode("utf-8")) for value in (self.external_viewer_id or "", self.external_value or ""))
+        if size > 1024:
             raise ValueError("external context must not exceed 1 KB")
         return self
 

@@ -44,6 +44,10 @@ class Settings(BaseSettings):
                 parsed = urlsplit(value)
                 if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
                     errors.append(f"{name}_INVALID")
+        if self.token_refresh_margin_seconds < 0:
+            errors.append("TOKEN_REFRESH_MARGIN_SECONDS_INVALID")
+        if "*" in self.cors_origins:
+            errors.append("CORS_ORIGINS_INVALID")
         if not self.dashboard_catalog_path.is_file():
             errors.append("DASHBOARD_CATALOG_PATH_INVALID")
         return errors

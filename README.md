@@ -27,7 +27,7 @@ Copie `.env.example` para `.env` e preencha:
 | `HTTP_MAX_RETRIES` | não | Tentativas adicionais para timeout, conexão, 429 e 5xx |
 | `CORS_ORIGINS` | não | Lista JSON de origins permitidos |
 
-O catálogo de exemplo usa `replace-with-databricks-dashboard-id`; substitua pelo ID de um dashboard publicado antes de chamar `/embed`.
+O registro do catálogo de exemplo fica desabilitado enquanto usa `replace-with-databricks-dashboard-id`; substitua pelo ID de um dashboard publicado e habilite-o antes de chamar `/embed`.
 
 ## Endpoints
 
@@ -44,7 +44,7 @@ O corpo opcional de `/embed` aceita `external_viewer_id` e `external_value`. A i
 
 ```bash
 python -m venv .venv
-.venv\Scripts\activate
+source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```

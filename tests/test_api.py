@@ -12,14 +12,13 @@ def test_health_has_request_id_and_does_not_require_databricks() -> None:
     assert response.headers["X-Request-ID"] == "test-request"
 
 
-def test_catalog_hides_internal_dashboard_id() -> None:
+def test_catalog_excludes_disabled_dashboard() -> None:
     with TestClient(app) as client:
         response = client.get("/v1/dashboards")
 
     assert response.status_code == 200
     body = response.json()
-    assert body["items"][0]["id"] == "api-latency"
-    assert "dashboard_id" not in body["items"][0]
+    assert body == {"items": []}
 
 
 def test_missing_dashboard_is_not_found() -> None:

@@ -23,9 +23,9 @@ class DatabricksDashboardProvider:
         self.settings = settings
 
     async def create_embed_config(self, dashboard: DashboardRecord, request: EmbedRequest) -> EmbedConfig:
-        token = await self.auth.get_access_token()
         if not self.settings.databricks_host or not self.settings.databricks_workspace_id:
-            raise RuntimeError("Databricks provider is not configured")
+            raise DatabricksIntegrationError("Databricks provider is not configured")
+        token = await self.auth.get_access_token()
         token_info_url = (
             f"{self.settings.databricks_host.rstrip('/')}/api/2.0/lakeview/dashboards/"
             f"{dashboard.dashboard_id}/published/tokeninfo"

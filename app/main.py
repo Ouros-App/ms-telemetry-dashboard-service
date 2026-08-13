@@ -54,7 +54,7 @@ async def lifespan(app: FastAPI):
 
 configure_logging()
 app = FastAPI(title=settings.project_name, description=settings.description, version=settings.version, lifespan=lifespan)
-if settings.cors_origins:
+if settings.cors_origins and "*" not in settings.cors_origins:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

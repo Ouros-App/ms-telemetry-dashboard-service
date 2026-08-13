@@ -53,3 +53,8 @@ async def test_provider_errors_remain_classifiable() -> None:
         await service.embed("timeout", EmbedRequest())
     with pytest.raises(DatabricksIntegrationError):
         await service.embed("error", EmbedRequest())
+
+
+def test_embed_context_limit_uses_utf8_bytes() -> None:
+    with pytest.raises(ValueError, match="must not exceed 1 KB"):
+        EmbedRequest(external_value="é" * 513)

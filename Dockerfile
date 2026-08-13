@@ -22,4 +22,4 @@ COPY data ./data
 EXPOSE ${APP_PORT}
 
 # CORREÇÃO: Usar sh -c para garantir expansão da variável
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${APP_PORT:-8000}"]
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

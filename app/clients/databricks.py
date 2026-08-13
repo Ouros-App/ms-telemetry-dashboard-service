@@ -57,7 +57,11 @@ class DatabricksHttpClient:
                         await asyncio.sleep(self.settings.http_retry_backoff_seconds * (attempt + 1))
                         continue
                     response.raise_for_status()
-                    payload = response.json()
+                    try:
+                        payload = response.json()
+                    except json.JSONDecodeError as exc:
+                        DATABRICKS_ERRORS.labels(operation, "invalid_json").inc()
+                        raise DatabricksIntegrationError("Databricks returned invalid JSON") from exc
                     if not isinstance(payload, dict):
                         raise DatabricksIntegrationError("Databricks returned a non-object response")
                     DATABRICKS_REQUESTS.labels(operation, str(response.status_code)).inc()

@@ -100,6 +100,6 @@ async def embed_dashboard(
     except DatabricksTimeoutError as exc:
         EMBED_REQUESTS.labels("databricks", "timeout").inc()
         raise HTTPException(status_code=504, detail="Databricks request timed out") from exc
-    except (DatabricksIntegrationError, RuntimeError) as exc:
+    except DatabricksIntegrationError as exc:
         EMBED_REQUESTS.labels("databricks", "error").inc()
         raise HTTPException(status_code=502, detail="Databricks integration failed") from exc
