@@ -17,13 +17,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copiar o restante da aplicação
 COPY app ./app
-COPY .env .
-
-# Verificar templates
-RUN test -f app/templates/workflows/fastapi.yml \
-    && test -f app/templates/workflows/frontend.yml \
-    && test -f app/templates/workflows/springboot.yml \
-    && test -f app/templates/workflows/generic.yml
+COPY data ./data
 
 EXPOSE ${APP_PORT}
 

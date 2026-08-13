@@ -1,104 +1,63 @@
-# FastAPI Microservice Template
+# ms-telemetry-dashboard-service
 
-Template minimo para iniciar um microservico com FastAPI.
+Microserviço FastAPI que funciona como control plane para dashboards de telemetria publicados no Databricks. Ele mantém o catálogo lógico, troca credenciais OAuth no backend e entrega ao frontend somente um token temporário reduzido para o embedding oficial. Não renderiza gráficos, consulta dados brutos nem expõe o client secret.
 
-## Estrutura
+## Arquitetura
 
 ```text
-.
-├── app/
-│   ├── __init__.py
-│   ├── api/
-│   │   ├── __init__.py
-│   │   └── routes.py
-│   ├── core/
-│   │   ├── __init__.py
-│   │   └── config.py
-│   ├── models/
-│   │   └── __init__.py
-│   ├── repositories/
-│   │   └── __init__.py
-│   ├── schemas/
-│   │   ├── __init__.py
-│   │   └── common.py
-│   ├── services/
-│   │   └── __init__.py
-│   └── main.py
-├── tests/
-│   └── __init__.py
-├── .env.example
-├── .gitignore
-├── Dockerfile
-├── docker-compose.yml
-├── README.md
-└── requirements.txt
+router -> DashboardService -> DatabricksDashboardProvider
+                         -> DatabricksAuthClient -> Databricks OAuth/API
 ```
 
-## Pastas principais
+O catálogo fica em `data/dashboards.json`. `id` é público; `dashboard_id` é interno e nunca é aceito diretamente do consumidor.
 
-- `app/main.py`: cria a aplicacao FastAPI e registra as rotas.
-- `app/api/`: rotas e agrupamento de endpoints.
-- `app/core/`: configuracoes centrais do servico.
-- `app/schemas/`: contratos de entrada e saida com Pydantic.
-- `app/services/`: regras de negocio.
-- `app/repositories/`: acesso a dados ou integracoes externas.
-- `app/models/`: modelos internos ou modelos de banco, quando existirem.
-- `tests/`: testes automatizados.
+## Configuração
 
-## Rotas
+Copie `.env.example` para `.env` e preencha:
 
-- `GET /` retorna uma mensagem simples da aplicacao.
-- `GET /health` retorna o status de saude do servico.
+| Variável | Obrigatória para `/ready` | Descrição |
+| --- | --- | --- |
+| `DATABRICKS_HOST` | sim | URL HTTPS do workspace |
+| `DATABRICKS_CLIENT_ID` | sim | Application ID do service principal |
+| `DATABRICKS_CLIENT_SECRET` | sim | Secret OAuth do service principal |
+| `DATABRICKS_WORKSPACE_ID` | sim | ID do workspace usado pelo client frontend |
+| `DATABRICKS_TOKEN_URL` | não | Sobrescreve `/oidc/v1/token` derivado do host |
+| `DASHBOARD_CATALOG_PATH` | sim | Caminho do catálogo JSON |
+| `HTTP_TIMEOUT_SECONDS` | não | Timeout das chamadas externas |
+| `HTTP_MAX_RETRIES` | não | Tentativas adicionais para timeout, conexão, 429 e 5xx |
+| `CORS_ORIGINS` | não | Lista JSON de origins permitidos |
 
-## Rodando localmente
+O catálogo de exemplo usa `replace-with-databricks-dashboard-id`; substitua pelo ID de um dashboard publicado antes de chamar `/embed`.
 
-Crie e ative um ambiente virtual:
+## Endpoints
+
+- `GET /health`: saúde do processo, sem chamada ao Databricks.
+- `GET /ready`: valida configuração e disponibilidade do catálogo local.
+- `GET /metrics`: métricas Prometheus.
+- `GET /v1/dashboards`: lista dashboards habilitados.
+- `GET /v1/dashboards/{dashboard_id}`: busca pelo ID lógico.
+- `POST /v1/dashboards/{dashboard_id}/embed`: gera a configuração temporária de embedding.
+
+O corpo opcional de `/embed` aceita `external_viewer_id` e `external_value`. A implementação segue o embedding para usuários externos documentado pelo Databricks: token OAuth amplo para o backend, `published/tokeninfo` e uma segunda troca OAuth para o token reduzido entregue ao `@databricks/aibi-client`. O frontend deve inicializar `DatabricksDashboard` com `instance_url`, `workspace_id`, `dashboard_id` e `token`; nunca recebe `DATABRICKS_CLIENT_SECRET`.
+
+## Execução
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate
-```
-
-Instale as dependencias:
-
-```bash
+.venv\Scripts\activate
 pip install -r requirements.txt
-```
-
-Inicie a API:
-
-```bash
 uvicorn app.main:app --reload
 ```
 
-Acesse:
-
-- API: `http://localhost:8000`
-- Health check: `http://localhost:8000/health`
-- Docs: `http://localhost:8000/docs`
-
-## Rodando com Docker Compose
-
-Crie o arquivo `.env` a partir do exemplo:
-
 ```bash
-cp .env.example .env
+curl http://localhost:8000/v1/dashboards
+curl -X POST http://localhost:8000/v1/dashboards/api-latency/embed
 ```
 
-Suba o servico:
+O segundo comando exige credenciais Databricks válidas e um `dashboard_id` real no catálogo.
+
+## Testes
 
 ```bash
-docker compose up --build
+pytest -q
 ```
-
-Para parar:
-
-```bash
-docker compose down
-```
-
-## Variaveis de ambiente
-
-| Nome | Padrao | Descricao |
-| --- | --- | --- |
-| `APP_PORT` | `8000` | Porta publicada no host pelo Docker Compose. |
