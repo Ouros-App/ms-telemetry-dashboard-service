@@ -1,6 +1,9 @@
+import base64
+from html import escape
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response, status
+from fastapi.responses import HTMLResponse
 from prometheus_client import CONTENT_TYPE_LATEST
 
 from app.clients.databricks import DatabricksIntegrationError, DatabricksTimeoutError
@@ -125,6 +128,46 @@ async def chart_png(
             media_type="image/png",
             headers={"Cache-Control": "private, max-age=30"},
         )
+    except (DashboardNotFound, ChartNotFound) as exc:
+        raise HTTPException(status_code=404, detail="dashboard or chart not found") from exc
+    except DatabricksTimeoutError as exc:
+        raise HTTPException(status_code=504, detail="Databricks request timed out") from exc
+    except DatabricksIntegrationError as exc:
+        raise HTTPException(status_code=502, detail="Databricks integration failed") from exc
+
+
+@router.get(
+    "/v1/dashboards/{dashboard_id}/charts/{chart_id}/html",
+    response_class=HTMLResponse,
+    summary="Render a dashboard chart as HTML",
+    responses={404: {"description": "Dashboard or chart not found"}},
+    tags=["dashboards"],
+)
+async def chart_html(
+    dashboard_id: str,
+    chart_id: str,
+    request: Request,
+    service: Annotated[DashboardService, Depends(get_dashboard_service)],
+) -> HTMLResponse:
+    try:
+        image = await service.chart_png(dashboard_id, chart_id)
+        png_url = str(request.url_for("chart_png", dashboard_id=dashboard_id, chart_id=chart_id))
+        image_data = base64.b64encode(image).decode("ascii")
+        safe_chart_id = escape(chart_id, quote=True)
+        safe_png_url = escape(png_url, quote=True)
+        content = f"""
+<figure class="telemetry-chart" data-png-url="{safe_png_url}">
+  <img id="telemetry-chart" src="data:image/png;base64,{image_data}" alt="{safe_chart_id}">
+</figure>
+<script>
+  const chartImage = document.getElementById("telemetry-chart");
+  const chartUrl = chartImage.closest("figure").dataset.pngUrl;
+  window.setInterval(() => {{
+    chartImage.src = `${{chartUrl}}?refresh=${{Date.now()}}`;
+  }}, 30000);
+</script>
+"""
+        return HTMLResponse(content=content, headers={"Cache-Control": "private, max-age=30"})
     except (DashboardNotFound, ChartNotFound) as exc:
         raise HTTPException(status_code=404, detail="dashboard or chart not found") from exc
     except DatabricksTimeoutError as exc:

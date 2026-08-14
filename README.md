@@ -39,6 +39,7 @@ O Service Principal precisa acessar o workspace, os dashboards e o SQL Warehouse
 - `GET /v1/dashboards/{dashboard_id}`: busca pelo ID retornado na listagem.
 - `GET /v1/dashboards/{dashboard_id}/charts`: lista os gráficos do dashboard.
 - `GET /v1/dashboards/{dashboard_id}/charts/{chart_id}/png`: executa a consulta do gráfico e retorna PNG com cache.
+- `GET /v1/dashboards/{dashboard_id}/charts/{chart_id}/html`: retorna HTML com o PNG embutido e atualização automática a cada 30 segundos.
 - `POST /v1/dashboards/{dashboard_id}/embed`: gera a configuração temporária de embedding.
 
 O corpo opcional de `/embed` aceita `external_viewer_id` e `external_value`. A implementação segue o embedding para usuários externos documentado pelo Databricks: token OAuth amplo para o backend, `published/tokeninfo` e uma segunda troca OAuth para o token reduzido entregue ao `@databricks/aibi-client`. O frontend deve inicializar `DatabricksDashboard` com `instance_url`, `workspace_id`, `dashboard_id` e `token`; nunca recebe `DATABRICKS_CLIENT_SECRET`.
@@ -56,6 +57,7 @@ uvicorn app.main:app --reload
 curl http://localhost:8000/v1/dashboards
 curl http://localhost:8000/v1/dashboards/DASHBOARD_ID/charts
 curl http://localhost:8000/v1/dashboards/DASHBOARD_ID/charts/CHART_ID/png --output chart.png
+curl http://localhost:8000/v1/dashboards/DASHBOARD_ID/charts/CHART_ID/html
 curl -X POST http://localhost:8000/v1/dashboards/DASHBOARD_ID/embed
 ```
 

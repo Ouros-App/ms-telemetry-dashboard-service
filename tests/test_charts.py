@@ -1,5 +1,7 @@
 import pytest
+from fastapi.testclient import TestClient
 
+from app.main import app
 from app.providers.databricks import DatabricksDashboardProvider
 from app.schemas.dashboards import DashboardChartDefinition, DashboardRecord
 from app.services.chart import render_chart_png
@@ -59,3 +61,18 @@ async def test_chart_service_reuses_png_for_cache_ttl() -> None:
 
     assert first == second
     assert provider.query_calls == 1
+
+
+def test_chart_html_embeds_png_and_refreshes() -> None:
+    class Service:
+        async def chart_png(self, dashboard_id, chart_id):
+            return b"\x89PNG\r\n\x1a\n"
+
+    with TestClient(app) as client:
+        app.state.dashboard_service = Service()
+        response = client.get("/v1/dashboards/dashboard-a/charts/revenue/html")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert "data:image/png;base64,iVBORw0KGgo=" in response.text
+    assert "setInterval" in response.text
