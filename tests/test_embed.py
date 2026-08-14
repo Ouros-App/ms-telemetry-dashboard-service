@@ -3,12 +3,17 @@ from datetime import datetime, timezone
 import pytest
 
 from app.clients.databricks import DatabricksIntegrationError, DatabricksTimeoutError
-from app.repositories.catalog import DashboardCatalog
 from app.schemas.dashboards import DashboardRecord, EmbedConfig, EmbedRequest
 from app.services.dashboard import DashboardNotFound, DashboardService
 
 
 class Provider:
+    def __init__(self, dashboards: list[DashboardRecord]) -> None:
+        self.dashboards = dashboards
+
+    async def list_dashboards(self) -> list[DashboardRecord]:
+        return self.dashboards
+
     async def create_embed_config(self, dashboard, request):
         if dashboard.id == "timeout":
             raise DatabricksTimeoutError()
@@ -29,7 +34,7 @@ def item(identifier: str) -> DashboardRecord:
 
 @pytest.mark.asyncio
 async def test_valid_embed_returns_scoped_config_without_backend_token() -> None:
-    service = DashboardService(DashboardCatalog([item("valid")]), Provider())
+    service = DashboardService(Provider([item("valid")]))
 
     result = await service.embed("valid", EmbedRequest())
 
@@ -39,7 +44,7 @@ async def test_valid_embed_returns_scoped_config_without_backend_token() -> None
 
 @pytest.mark.asyncio
 async def test_embed_rejects_missing_dashboard() -> None:
-    service = DashboardService(DashboardCatalog([item("valid")]), Provider())
+    service = DashboardService(Provider([item("valid")]))
 
     with pytest.raises(DashboardNotFound):
         await service.embed("missing", EmbedRequest())
@@ -47,7 +52,7 @@ async def test_embed_rejects_missing_dashboard() -> None:
 
 @pytest.mark.asyncio
 async def test_provider_errors_remain_classifiable() -> None:
-    service = DashboardService(DashboardCatalog([item("timeout"), item("error")]), Provider())
+    service = DashboardService(Provider([item("timeout"), item("error")]))
 
     with pytest.raises(DatabricksTimeoutError):
         await service.embed("timeout", EmbedRequest())

@@ -34,8 +34,6 @@ def health_check() -> HealthResponse:
 @router.get("/ready", response_model=ReadinessResponse, summary="Readiness check", tags=["service"])
 def readiness(request: Request, response: Response) -> ReadinessResponse:
     errors = request.app.state.settings.configuration_errors()
-    if not request.app.state.catalog_loaded:
-        errors.append("DASHBOARD_CATALOG_UNAVAILABLE")
     if errors:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return ReadinessResponse(status="not_ready", errors=sorted(set(errors)))
@@ -51,13 +49,18 @@ def metrics() -> Response:
     "/v1/dashboards",
     response_model=DashboardListResponse,
     summary="List enabled dashboards",
-    description="Returns only dashboards enabled in the local catalog.",
+    description="Returns active dashboards available in Databricks.",
     tags=["dashboards"],
 )
-def list_dashboards(
+async def list_dashboards(
     service: Annotated[DashboardService, Depends(get_dashboard_service)],
 ) -> DashboardListResponse:
-    return service.list_dashboards()
+    try:
+        return await service.list_dashboards()
+    except DatabricksTimeoutError as exc:
+        raise HTTPException(status_code=504, detail="Databricks request timed out") from exc
+    except DatabricksIntegrationError as exc:
+        raise HTTPException(status_code=502, detail="Databricks integration failed") from exc
 
 
 @router.get(
@@ -67,14 +70,18 @@ def list_dashboards(
     responses={404: {"description": "Dashboard not found"}},
     tags=["dashboards"],
 )
-def get_dashboard(
+async def get_dashboard(
     dashboard_id: str,
     service: Annotated[DashboardService, Depends(get_dashboard_service)],
 ) -> DashboardPublic:
     try:
-        return service.get_dashboard(dashboard_id)
+        return await service.get_dashboard(dashboard_id)
     except DashboardNotFound as exc:
         raise HTTPException(status_code=404, detail="dashboard not found") from exc
+    except DatabricksTimeoutError as exc:
+        raise HTTPException(status_code=504, detail="Databricks request timed out") from exc
+    except DatabricksIntegrationError as exc:
+        raise HTTPException(status_code=502, detail="Databricks integration failed") from exc
 
 
 @router.post(

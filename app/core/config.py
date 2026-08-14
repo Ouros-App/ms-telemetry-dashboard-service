@@ -1,4 +1,3 @@
-from pathlib import Path
 from urllib.parse import urlsplit
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -11,7 +10,6 @@ class Settings(BaseSettings):
     description: str = "Control plane for embedded telemetry dashboards."
     version: str = "0.1.0"
     app_port: int = 8000
-    dashboard_catalog_path: Path = Path("data/dashboards.json")
     databricks_host: str | None = None
     databricks_client_id: str | None = None
     databricks_client_secret: str | None = None
@@ -48,8 +46,6 @@ class Settings(BaseSettings):
             errors.append("TOKEN_REFRESH_MARGIN_SECONDS_INVALID")
         if "*" in self.cors_origins:
             errors.append("CORS_ORIGINS_INVALID")
-        if not self.dashboard_catalog_path.is_file():
-            errors.append("DASHBOARD_CATALOG_PATH_INVALID")
         return errors
 
     @property

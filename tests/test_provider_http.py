@@ -32,7 +32,6 @@ async def test_provider_uses_databricks_downscoping_flow() -> None:
         databricks_client_id="client",
         databricks_client_secret="secret",
         databricks_workspace_id="workspace",
-        dashboard_catalog_path="tests/fixtures/catalog.json",
         http_max_retries=0,
     )
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
@@ -61,11 +60,43 @@ async def test_http_maps_invalid_json_to_integration_error() -> None:
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, text="{")
 
-    settings = Settings(dashboard_catalog_path="tests/fixtures/catalog.json", http_max_retries=0)
+    settings = Settings(http_max_retries=0)
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     http = DatabricksHttpClient(client, settings)
 
     with pytest.raises(DatabricksIntegrationError, match="invalid JSON"):
         await http.request_json("test", "GET", "https://workspace.example.com")
 
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_provider_lists_active_databricks_dashboards() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/oidc/v1/token":
+            return httpx.Response(200, json={"access_token": "backend-token", "expires_in": 3600})
+        return httpx.Response(
+            200,
+            json={
+                "dashboards": [
+                    {"dashboard_id": "dashboard-a", "display_name": "Dashboard A", "lifecycle_state": "ACTIVE"},
+                    {"dashboard_id": "dashboard-b", "display_name": "Dashboard B", "lifecycle_state": "TRASHED"},
+                ]
+            },
+        )
+
+    settings = Settings(
+        databricks_host="https://workspace.example.com",
+        databricks_client_id="client",
+        databricks_client_secret="secret",
+        databricks_workspace_id="workspace",
+        http_max_retries=0,
+    )
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    http = DatabricksHttpClient(client, settings)
+    provider = DatabricksDashboardProvider(http, DatabricksAuthClient(http, settings), settings)
+
+    dashboards = await provider.list_dashboards()
+
+    assert [(item.id, item.title) for item in dashboards] == [("dashboard-a", "Dashboard A")]
     await client.aclose()

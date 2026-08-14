@@ -13,7 +13,6 @@ from app.clients.databricks import DatabricksAuthClient, DatabricksHttpClient
 from app.core.config import settings
 from app.core.metrics import HTTP_DURATION, HTTP_REQUESTS, metric_path
 from app.providers.databricks import DatabricksDashboardProvider
-from app.repositories.catalog import CatalogError, DashboardCatalog
 from app.services.dashboard import DashboardService
 
 
@@ -37,14 +36,8 @@ async def lifespan(app: FastAPI):
     http = DatabricksHttpClient(client, settings)
     auth = DatabricksAuthClient(http, settings)
     provider = DatabricksDashboardProvider(http, auth, settings)
-    try:
-        catalog = DashboardCatalog.from_path(settings.dashboard_catalog_path)
-        app.state.catalog_loaded = True
-    except CatalogError:
-        catalog = DashboardCatalog([])
-        app.state.catalog_loaded = False
     app.state.settings = settings
-    app.state.dashboard_service = DashboardService(catalog, provider)
+    app.state.dashboard_service = DashboardService(provider)
     app.state.http_client = client
     try:
         yield

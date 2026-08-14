@@ -69,3 +69,14 @@ class DatabricksTokenInfo(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     authorization_details: Any
+
+
+class DatabricksDashboardSummary(BaseModel):
+    dashboard_id: str = Field(min_length=1, max_length=200)
+    display_name: str = Field(min_length=1, max_length=200)
+    lifecycle_state: Literal["ACTIVE", "TRASHED"] = "ACTIVE"
+
+
+class DatabricksDashboardList(BaseModel):
+    dashboards: list[DatabricksDashboardSummary] = Field(default_factory=list)
+    next_page_token: str | None = None

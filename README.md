@@ -9,7 +9,7 @@ router -> DashboardService -> DatabricksDashboardProvider
                          -> DatabricksAuthClient -> Databricks OAuth/API
 ```
 
-O catálogo fica em `data/dashboards.json`. `id` é público; `dashboard_id` é interno e nunca é aceito diretamente do consumidor.
+`GET /v1/dashboards` consulta os dashboards ativos do Databricks. O frontend usa o `id` retornado para buscar detalhes ou gerar o embed.
 
 ## Configuração
 
@@ -22,20 +22,19 @@ Copie `.env.example` para `.env` e preencha:
 | `DATABRICKS_CLIENT_SECRET` | sim | Secret OAuth do service principal |
 | `DATABRICKS_WORKSPACE_ID` | sim | ID do workspace usado pelo client frontend |
 | `DATABRICKS_TOKEN_URL` | não | Sobrescreve `/oidc/v1/token` derivado do host |
-| `DASHBOARD_CATALOG_PATH` | sim | Caminho do catálogo JSON |
 | `HTTP_TIMEOUT_SECONDS` | não | Timeout das chamadas externas |
 | `HTTP_MAX_RETRIES` | não | Tentativas adicionais para timeout, conexão, 429 e 5xx |
 | `CORS_ORIGINS` | não | Lista JSON de origins permitidos |
 
-O registro do catálogo de exemplo fica desabilitado enquanto usa `replace-with-databricks-dashboard-id`; substitua pelo ID de um dashboard publicado e habilite-o antes de chamar `/embed`.
+O Service Principal precisa acessar o workspace, os dashboards e o SQL Warehouse usado por eles. Para embedding, o dashboard precisa estar publicado.
 
 ## Endpoints
 
 - `GET /health`: saúde do processo, sem chamada ao Databricks.
-- `GET /ready`: valida configuração e disponibilidade do catálogo local.
+- `GET /ready`: valida a configuração necessária para acessar o Databricks.
 - `GET /metrics`: métricas Prometheus.
-- `GET /v1/dashboards`: lista dashboards habilitados.
-- `GET /v1/dashboards/{dashboard_id}`: busca pelo ID lógico.
+- `GET /v1/dashboards`: lista dashboards ativos do Databricks.
+- `GET /v1/dashboards/{dashboard_id}`: busca pelo ID retornado na listagem.
 - `POST /v1/dashboards/{dashboard_id}/embed`: gera a configuração temporária de embedding.
 
 O corpo opcional de `/embed` aceita `external_viewer_id` e `external_value`. A implementação segue o embedding para usuários externos documentado pelo Databricks: token OAuth amplo para o backend, `published/tokeninfo` e uma segunda troca OAuth para o token reduzido entregue ao `@databricks/aibi-client`. O frontend deve inicializar `DatabricksDashboard` com `instance_url`, `workspace_id`, `dashboard_id` e `token`; nunca recebe `DATABRICKS_CLIENT_SECRET`.
@@ -51,10 +50,10 @@ uvicorn app.main:app --reload
 
 ```bash
 curl http://localhost:8000/v1/dashboards
-curl -X POST http://localhost:8000/v1/dashboards/api-latency/embed
+curl -X POST http://localhost:8000/v1/dashboards/DASHBOARD_ID/embed
 ```
 
-O segundo comando exige credenciais Databricks válidas e um `dashboard_id` real no catálogo.
+O segundo comando usa um `dashboard_id` retornado pelo primeiro e exige credenciais Databricks válidas.
 
 ## Testes
 

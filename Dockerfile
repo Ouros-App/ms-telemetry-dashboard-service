@@ -17,7 +17,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copiar o restante da aplicação
 COPY app ./app
-COPY data ./data
 
 EXPOSE ${APP_PORT}
 

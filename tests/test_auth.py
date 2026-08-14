@@ -20,7 +20,6 @@ def test_auth_reuses_and_refreshes_cached_token() -> None:
         databricks_client_id="client",
         databricks_client_secret="secret",
         databricks_workspace_id="workspace",
-        dashboard_catalog_path="tests/fixtures/catalog.json",
         token_refresh_margin_seconds=60,
     )
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
@@ -53,7 +52,6 @@ async def test_auth_concurrency_refreshes_once() -> None:
         databricks_client_id="client",
         databricks_client_secret="secret",
         databricks_workspace_id="workspace",
-        dashboard_catalog_path="tests/fixtures/catalog.json",
     )
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     auth = DatabricksAuthClient(DatabricksHttpClient(client, settings), settings)
