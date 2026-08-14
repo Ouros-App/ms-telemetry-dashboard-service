@@ -156,8 +156,8 @@ async def chart_html(
         safe_chart_id = escape(chart_id, quote=True)
         safe_png_url = escape(png_url, quote=True)
         content = f"""
-<figure class="telemetry-chart" data-png-url="{safe_png_url}">
-  <img id="telemetry-chart" src="data:image/png;base64,{image_data}" alt="{safe_chart_id}">
+<figure class="telemetry-chart" style="max-width:640px;margin:0" data-png-url="{safe_png_url}">
+  <img id="telemetry-chart" style="display:block;width:100%;height:auto" src="data:image/png;base64,{image_data}" alt="{safe_chart_id}">
 </figure>
 <script>
   const chartImage = document.getElementById("telemetry-chart");

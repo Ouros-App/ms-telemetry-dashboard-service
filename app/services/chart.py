@@ -11,7 +11,7 @@ from app.schemas.dashboards import DashboardChartDefinition
 
 
 def render_chart_png(chart: DashboardChartDefinition, rows: list[dict[str, Any]]) -> bytes:
-    figure, axis = plt.subplots(figsize=(10, 5.6), dpi=150)
+    figure, axis = plt.subplots(figsize=(8, 4.5), dpi=120)
     try:
         axis.set_title(chart.title)
         if chart.type == "counter":
