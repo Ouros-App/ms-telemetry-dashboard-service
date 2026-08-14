@@ -37,7 +37,7 @@ async def lifespan(app: FastAPI):
     auth = DatabricksAuthClient(http, settings)
     provider = DatabricksDashboardProvider(http, auth, settings)
     app.state.settings = settings
-    app.state.dashboard_service = DashboardService(provider)
+    app.state.dashboard_service = DashboardService(provider, settings.chart_cache_ttl_seconds)
     app.state.http_client = client
     try:
         yield

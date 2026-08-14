@@ -30,6 +30,31 @@ class DashboardListResponse(BaseModel):
     items: list[DashboardPublic]
 
 
+class DashboardChartPublic(BaseModel):
+    id: str
+    title: str
+    type: Literal["counter", "bar", "line", "pie"]
+
+
+class DashboardChartListResponse(BaseModel):
+    items: list[DashboardChartPublic]
+
+
+class DashboardChartField(BaseModel):
+    name: str = Field(min_length=1)
+    expression: str = Field(min_length=1)
+
+
+class DashboardChartDefinition(BaseModel):
+    id: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    type: Literal["counter", "bar", "line", "pie"]
+    warehouse_id: str = Field(min_length=1)
+    dataset_query: str = Field(min_length=1)
+    fields: list[DashboardChartField] = Field(min_length=1)
+    encodings: dict[str, Any] = Field(default_factory=dict)
+
+
 class EmbedRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
@@ -80,3 +105,9 @@ class DatabricksDashboardSummary(BaseModel):
 class DatabricksDashboardList(BaseModel):
     dashboards: list[DatabricksDashboardSummary] = Field(default_factory=list)
     next_page_token: str | None = None
+
+
+class DatabricksDashboardDefinition(BaseModel):
+    dashboard_id: str = Field(min_length=1)
+    serialized_dashboard: str = Field(min_length=1)
+    warehouse_id: str | None = None

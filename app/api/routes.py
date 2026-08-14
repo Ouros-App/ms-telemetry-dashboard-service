@@ -7,12 +7,13 @@ from app.clients.databricks import DatabricksIntegrationError, DatabricksTimeout
 from app.core.metrics import EMBED_REQUESTS, metrics_payload
 from app.schemas.common import HealthResponse, MessageResponse, ReadinessResponse
 from app.schemas.dashboards import (
+    DashboardChartListResponse,
     DashboardListResponse,
     DashboardPublic,
     EmbedRequest,
     EmbedResponse,
 )
-from app.services.dashboard import DashboardNotFound, DashboardService
+from app.services.dashboard import ChartNotFound, DashboardNotFound, DashboardService
 
 router = APIRouter()
 
@@ -78,6 +79,54 @@ async def get_dashboard(
         return await service.get_dashboard(dashboard_id)
     except DashboardNotFound as exc:
         raise HTTPException(status_code=404, detail="dashboard not found") from exc
+    except DatabricksTimeoutError as exc:
+        raise HTTPException(status_code=504, detail="Databricks request timed out") from exc
+    except DatabricksIntegrationError as exc:
+        raise HTTPException(status_code=502, detail="Databricks integration failed") from exc
+
+
+@router.get(
+    "/v1/dashboards/{dashboard_id}/charts",
+    response_model=DashboardChartListResponse,
+    summary="List charts in a dashboard",
+    responses={404: {"description": "Dashboard not found"}},
+    tags=["dashboards"],
+)
+async def list_charts(
+    dashboard_id: str,
+    service: Annotated[DashboardService, Depends(get_dashboard_service)],
+) -> DashboardChartListResponse:
+    try:
+        return await service.list_charts(dashboard_id)
+    except DashboardNotFound as exc:
+        raise HTTPException(status_code=404, detail="dashboard not found") from exc
+    except DatabricksTimeoutError as exc:
+        raise HTTPException(status_code=504, detail="Databricks request timed out") from exc
+    except DatabricksIntegrationError as exc:
+        raise HTTPException(status_code=502, detail="Databricks integration failed") from exc
+
+
+@router.get(
+    "/v1/dashboards/{dashboard_id}/charts/{chart_id}/png",
+    response_class=Response,
+    summary="Render a dashboard chart as PNG",
+    responses={404: {"description": "Dashboard or chart not found"}},
+    tags=["dashboards"],
+)
+async def chart_png(
+    dashboard_id: str,
+    chart_id: str,
+    service: Annotated[DashboardService, Depends(get_dashboard_service)],
+) -> Response:
+    try:
+        image = await service.chart_png(dashboard_id, chart_id)
+        return Response(
+            content=image,
+            media_type="image/png",
+            headers={"Cache-Control": "private, max-age=30"},
+        )
+    except (DashboardNotFound, ChartNotFound) as exc:
+        raise HTTPException(status_code=404, detail="dashboard or chart not found") from exc
     except DatabricksTimeoutError as exc:
         raise HTTPException(status_code=504, detail="Databricks request timed out") from exc
     except DatabricksIntegrationError as exc:

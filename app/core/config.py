@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     http_max_retries: int = 2
     http_retry_backoff_seconds: float = 0.1
     token_refresh_margin_seconds: int = 60
+    chart_cache_ttl_seconds: int = 30
+    sql_wait_timeout_seconds: int = 10
     cors_origins: list[str] = []
 
     @property
@@ -44,6 +46,10 @@ class Settings(BaseSettings):
                     errors.append(f"{name}_INVALID")
         if self.token_refresh_margin_seconds < 0:
             errors.append("TOKEN_REFRESH_MARGIN_SECONDS_INVALID")
+        if self.chart_cache_ttl_seconds < 1:
+            errors.append("CHART_CACHE_TTL_SECONDS_INVALID")
+        if self.sql_wait_timeout_seconds < 1 or self.sql_wait_timeout_seconds > 50:
+            errors.append("SQL_WAIT_TIMEOUT_SECONDS_INVALID")
         if "*" in self.cors_origins:
             errors.append("CORS_ORIGINS_INVALID")
         return errors

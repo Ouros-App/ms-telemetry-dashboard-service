@@ -1,6 +1,8 @@
 # ms-telemetry-dashboard-service
 
-Microserviço FastAPI que funciona como control plane para dashboards de telemetria publicados no Databricks. Ele mantém o catálogo lógico, troca credenciais OAuth no backend e entrega ao frontend somente um token temporário reduzido para o embedding oficial. Não renderiza gráficos, consulta dados brutos nem expõe o client secret.
+Microserviço FastAPI para dashboards de telemetria publicados no Databricks. Ele lista dashboards e gráficos, consulta os dados no SQL Warehouse, gera PNGs com cache e entrega ao frontend somente tokens temporários reduzidos para embedding. Nunca expõe o client secret.
+
+O serviço também lista os gráficos de cada dashboard, executa suas consultas no SQL Warehouse e retorna PNGs com cache configurável.
 
 ## Arquitetura
 
@@ -35,6 +37,8 @@ O Service Principal precisa acessar o workspace, os dashboards e o SQL Warehouse
 - `GET /metrics`: métricas Prometheus.
 - `GET /v1/dashboards`: lista dashboards ativos do Databricks.
 - `GET /v1/dashboards/{dashboard_id}`: busca pelo ID retornado na listagem.
+- `GET /v1/dashboards/{dashboard_id}/charts`: lista os gráficos do dashboard.
+- `GET /v1/dashboards/{dashboard_id}/charts/{chart_id}/png`: executa a consulta do gráfico e retorna PNG com cache.
 - `POST /v1/dashboards/{dashboard_id}/embed`: gera a configuração temporária de embedding.
 
 O corpo opcional de `/embed` aceita `external_viewer_id` e `external_value`. A implementação segue o embedding para usuários externos documentado pelo Databricks: token OAuth amplo para o backend, `published/tokeninfo` e uma segunda troca OAuth para o token reduzido entregue ao `@databricks/aibi-client`. O frontend deve inicializar `DatabricksDashboard` com `instance_url`, `workspace_id`, `dashboard_id` e `token`; nunca recebe `DATABRICKS_CLIENT_SECRET`.
@@ -50,6 +54,8 @@ uvicorn app.main:app --reload
 
 ```bash
 curl http://localhost:8000/v1/dashboards
+curl http://localhost:8000/v1/dashboards/DASHBOARD_ID/charts
+curl http://localhost:8000/v1/dashboards/DASHBOARD_ID/charts/CHART_ID/png --output chart.png
 curl -X POST http://localhost:8000/v1/dashboards/DASHBOARD_ID/embed
 ```
 

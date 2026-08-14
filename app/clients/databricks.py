@@ -46,13 +46,21 @@ class DatabricksHttpClient:
         headers: dict[str, str] | None = None,
         data: dict[str, str] | None = None,
         params: dict[str, str] | None = None,
+        json_body: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         started = time.perf_counter()
         retries = self.settings.http_max_retries
         try:
             for attempt in range(retries + 1):
                 try:
-                    response = await self.client.request(method, url, headers=headers, data=data, params=params)
+                    response = await self.client.request(
+                        method,
+                        url,
+                        headers=headers,
+                        data=data,
+                        params=params,
+                        json=json_body,
+                    )
                     if response.status_code in {429, 500, 502, 503, 504} and attempt < retries:
                         await asyncio.sleep(self.settings.http_retry_backoff_seconds * (attempt + 1))
                         continue
