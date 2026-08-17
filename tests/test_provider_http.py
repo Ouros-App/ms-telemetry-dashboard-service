@@ -1,7 +1,3 @@
-import base64
-import json
-from urllib.parse import parse_qs
-
 import httpx
 import pytest
 
@@ -12,47 +8,8 @@ from app.clients.databricks import (
 )
 from app.core.config import Settings
 from app.providers.databricks import DatabricksDashboardProvider
-from app.schemas.dashboards import DashboardRecord, EmbedRequest
-
-
-@pytest.mark.asyncio
-async def test_provider_uses_databricks_downscoping_flow() -> None:
-    requests: list[httpx.Request] = []
-
-    async def handler(request: httpx.Request) -> httpx.Response:
-        requests.append(request)
-        if request.url.path == "/oidc/v1/token" and len(requests) == 1:
-            return httpx.Response(200, json={"access_token": "backend-token", "expires_in": 3600})
-        if request.url.path.endswith("/published/tokeninfo"):
-            return httpx.Response(200, json={"authorization_details": [{"type": "dashboard"}], "scope": "dashboard"})
-        return httpx.Response(200, json={"access_token": "scoped-token", "expires_in": 3600})
-
-    settings = Settings(
-        databricks_host="https://workspace.example.com",
-        databricks_client_id="client",
-        databricks_client_secret="secret",
-        databricks_workspace_id="workspace",
-        http_max_retries=0,
-    )
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    http = DatabricksHttpClient(client, settings)
-    provider = DatabricksDashboardProvider(http, DatabricksAuthClient(http, settings), settings)
-
-    result = await provider.create_embed_config(
-        DashboardRecord(id="api-latency", provider="databricks", title="API Latency", dashboard_id="db-id"),
-        EmbedRequest(external_viewer_id="user-123", external_value="project-a"),
-    )
-    await client.aclose()
-
-    assert result.token == "scoped-token"
-    assert requests[1].url.path == "/api/2.0/lakeview/dashboards/db-id/published/tokeninfo"
-    assert requests[1].url.params["external_viewer_id"] == "user-123"
-    assert requests[1].url.params["external_value"] == "project-a"
-    assert requests[1].headers["Authorization"] == "Bearer backend-token"
-    assert requests[0].headers["Authorization"] == requests[2].headers["Authorization"]
-    assert base64.b64decode(requests[0].headers["Authorization"].removeprefix("Basic ")).decode() == "client:secret"
-    body = parse_qs(requests[2].content.decode())
-    assert json.loads(body["authorization_details"][0]) == [{"type": "dashboard"}]
+from app.repositories.catalog import DashboardCatalog
+from app.schemas.dashboards import DashboardRecord
 
 
 @pytest.mark.asyncio
@@ -80,7 +37,8 @@ async def test_provider_lists_active_databricks_dashboards() -> None:
             json={
                 "dashboards": [
                     {"dashboard_id": "dashboard-a", "display_name": "Dashboard A", "lifecycle_state": "ACTIVE"},
-                    {"dashboard_id": "dashboard-b", "display_name": "Dashboard B", "lifecycle_state": "TRASHED"},
+                    {"dashboard_id": "dashboard-b", "display_name": "Dashboard B", "lifecycle_state": "ACTIVE"},
+                    {"dashboard_id": "dashboard-c", "display_name": "Dashboard C", "lifecycle_state": "TRASHED"},
                 ]
             },
         )
@@ -89,14 +47,55 @@ async def test_provider_lists_active_databricks_dashboards() -> None:
         databricks_host="https://workspace.example.com",
         databricks_client_id="client",
         databricks_client_secret="secret",
-        databricks_workspace_id="workspace",
         http_max_retries=0,
     )
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     http = DatabricksHttpClient(client, settings)
-    provider = DatabricksDashboardProvider(http, DatabricksAuthClient(http, settings), settings)
+    catalog = DashboardCatalog(
+        [
+            DashboardRecord(
+                id="public-dashboard-a",
+                provider="databricks",
+                title="Dashboard A",
+                dashboard_id="dashboard-a",
+                enabled=False,
+            )
+        ]
+    )
+    provider = DatabricksDashboardProvider(http, DatabricksAuthClient(http, settings), settings, catalog)
 
     dashboards = await provider.list_dashboards()
 
-    assert [(item.id, item.title) for item in dashboards] == [("dashboard-a", "Dashboard A")]
+    assert [(item.id, item.dashboard_id, item.title) for item in dashboards] == [
+        ("public-dashboard-a", "dashboard-a", "Dashboard A"),
+        ("dashboard-b", "dashboard-b", "Dashboard B"),
+    ]
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_provider_rejects_repeated_dashboard_page_token() -> None:
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path == "/oidc/v1/token":
+            return httpx.Response(200, json={"access_token": "backend-token", "expires_in": 3600})
+        return httpx.Response(200, json={"dashboards": [], "next_page_token": "same-token"})
+
+    settings = Settings(
+        databricks_host="https://workspace.example.com",
+        databricks_client_id="client",
+        databricks_client_secret="secret",
+        http_max_retries=0,
+    )
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    http = DatabricksHttpClient(client, settings)
+    provider = DatabricksDashboardProvider(http, DatabricksAuthClient(http, settings), settings, DashboardCatalog([]))
+
+    with pytest.raises(DatabricksIntegrationError, match="repeated dashboard page token"):
+        await provider.list_dashboards()
+
+    dashboard_requests = [request for request in requests if request.url.path.endswith("/dashboards")]
+    assert len(dashboard_requests) == 2
     await client.aclose()

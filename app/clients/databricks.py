@@ -15,7 +15,7 @@ from app.core.metrics import (
     DATABRICKS_REQUESTS,
     TOKEN_REFRESHES,
 )
-from app.schemas.dashboards import DatabricksTokenInfo, DatabricksTokenResponse
+from app.schemas.dashboards import DatabricksTokenResponse
 
 
 class DatabricksIntegrationError(Exception):
@@ -113,12 +113,6 @@ class DatabricksAuthClient:
             self._cached = token
             TOKEN_REFRESHES.inc()
             return token.value
-
-    async def request_scoped_token(self, token_info: DatabricksTokenInfo) -> CachedToken:
-        params = token_info.model_dump(exclude={"authorization_details"}, exclude_none=True)
-        params["grant_type"] = "client_credentials"
-        params["authorization_details"] = json.dumps(token_info.authorization_details, separators=(",", ":"))
-        return await self._request_token({key: str(value) for key, value in params.items()})
 
     async def _request_token(self, data: dict[str, str]) -> CachedToken:
         if not self.settings.token_url or not self.settings.databricks_client_id or not self.settings.databricks_client_secret:

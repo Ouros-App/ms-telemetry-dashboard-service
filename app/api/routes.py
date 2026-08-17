@@ -1,20 +1,26 @@
-import base64
+import json
 from html import escape
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Request,
+    Response,
+    status,
+)
 from fastapi.responses import HTMLResponse
 from prometheus_client import CONTENT_TYPE_LATEST
 
 from app.clients.databricks import DatabricksIntegrationError, DatabricksTimeoutError
-from app.core.metrics import EMBED_REQUESTS, metrics_payload
+from app.core.auth import require_bearer
+from app.core.metrics import metrics_payload
 from app.schemas.common import HealthResponse, MessageResponse, ReadinessResponse
 from app.schemas.dashboards import (
     DashboardChartListResponse,
     DashboardListResponse,
     DashboardPublic,
-    EmbedRequest,
-    EmbedResponse,
 )
 from app.services.dashboard import ChartNotFound, DashboardNotFound, DashboardService
 
@@ -52,8 +58,9 @@ def metrics() -> Response:
 @router.get(
     "/v1/dashboards",
     response_model=DashboardListResponse,
-    summary="List enabled dashboards",
-    description="Returns active dashboards available in Databricks.",
+    summary="List Databricks dashboards",
+    description="Returns every active dashboard visible to the configured Databricks credentials.",
+    dependencies=[Depends(require_bearer)],
     tags=["dashboards"],
 )
 async def list_dashboards(
@@ -72,6 +79,7 @@ async def list_dashboards(
     response_model=DashboardPublic,
     summary="Get a dashboard",
     responses={404: {"description": "Dashboard not found"}},
+    dependencies=[Depends(require_bearer)],
     tags=["dashboards"],
 )
 async def get_dashboard(
@@ -93,6 +101,7 @@ async def get_dashboard(
     response_model=DashboardChartListResponse,
     summary="List charts in a dashboard",
     responses={404: {"description": "Dashboard not found"}},
+    dependencies=[Depends(require_bearer)],
     tags=["dashboards"],
 )
 async def list_charts(
@@ -113,6 +122,8 @@ async def list_charts(
     "/v1/dashboards/{dashboard_id}/charts/{chart_id}/png",
     response_class=Response,
     summary="Render a dashboard chart as PNG",
+    description="Renders one dashboard chart as a PNG image.",
+    dependencies=[Depends(require_bearer)],
     responses={404: {"description": "Dashboard or chart not found"}},
     tags=["dashboards"],
 )
@@ -137,68 +148,96 @@ async def chart_png(
 
 
 @router.get(
-    "/v1/dashboards/{dashboard_id}/charts/{chart_id}/html",
+    "/v1/dashboards/{dashboard_id}/charts/{chart_id}/chartjs",
     response_class=HTMLResponse,
-    summary="Render a dashboard chart as HTML",
-    responses={404: {"description": "Dashboard or chart not found"}},
+    summary="Render an individual chart with Chart.js",
+    description="Returns self-contained HTML that renders one chart with Chart.js. It can be loaded directly or used as an iframe source.",
+    dependencies=[Depends(require_bearer)],
+    responses={404: {"description": "Dashboard or chart not found"}, 502: {"description": "Databricks unavailable"}, 504: {"description": "Databricks timeout"}},
     tags=["dashboards"],
 )
-async def chart_html(
+async def chartjs_chart(
     dashboard_id: str,
     chart_id: str,
-    request: Request,
     service: Annotated[DashboardService, Depends(get_dashboard_service)],
 ) -> HTMLResponse:
     try:
-        image = await service.chart_png(dashboard_id, chart_id)
-        png_url = str(request.url_for("chart_png", dashboard_id=dashboard_id, chart_id=chart_id))
-        image_data = base64.b64encode(image).decode("ascii")
-        safe_chart_id = escape(chart_id, quote=True)
-        safe_png_url = escape(png_url, quote=True)
-        content = f"""
-<figure class="telemetry-chart" style="max-width:640px;margin:0" data-png-url="{safe_png_url}">
-  <img id="telemetry-chart" style="display:block;width:100%;height:auto" src="data:image/png;base64,{image_data}" alt="{safe_chart_id}">
-</figure>
-<script>
-  const chartImage = document.getElementById("telemetry-chart");
-  const chartUrl = chartImage.closest("figure").dataset.pngUrl;
-  window.setInterval(() => {{
-    chartImage.src = `${{chartUrl}}?refresh=${{Date.now()}}`;
-  }}, 30000);
-</script>
-"""
-        return HTMLResponse(content=content, headers={"Cache-Control": "private, max-age=30"})
+        chart, rows = await service.chart_data(dashboard_id, chart_id)
+        payload = json.dumps(
+            {
+                "title": chart.title,
+                "type": chart.type,
+                "fields": [field.name for field in chart.fields],
+                "encodings": chart.encodings,
+                "rows": rows,
+            },
+            default=str,
+            ensure_ascii=True,
+        ).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+        content = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{escape(chart.title, quote=True)}</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <style>
+    html, body {{ margin: 0; min-height: 100%; font-family: sans-serif; }}
+    body {{ padding: 16px; box-sizing: border-box; }}
+    #chart-container {{ height: 360px; position: relative; }}
+    #counter {{ align-items: center; display: flex; font-size: 48px; font-weight: 600; height: 100%; justify-content: center; }}
+  </style>
+</head>
+<body>
+  <div id="chart-container"><canvas id="chart"></canvas><div id="counter" hidden></div></div>
+  <script>
+    const payload = {payload};
+    const field = (name) => payload.encodings?.[name]?.fieldName;
+    const fallback = payload.fields;
+    const xField = field("x") || fallback[0];
+    const yField = field("y") || fallback[1] || fallback[0];
+    const labelsField = field("color") || xField;
+    const valuesField = field("angle") || yField;
+    const rows = payload.rows || [];
+
+    if (payload.type === "counter") {{
+      const valueField = field("value") || fallback[0];
+      const value = rows[0]?.[valueField] ?? "—";
+      const counter = document.getElementById("counter");
+      counter.textContent = typeof value === "number" ? new Intl.NumberFormat().format(value) : String(value);
+      counter.hidden = false;
+      document.getElementById("chart").hidden = true;
+    }} else {{
+      const labels = rows.map((row) => String(row[labelsField] ?? ""));
+      const values = rows.map((row) => Number(row[valuesField]) || 0);
+      const colors = ["#4c78a8", "#f58518", "#e45756", "#72b7b2", "#54a24b", "#b279a2", "#ff9da6"];
+      new Chart(document.getElementById("chart"), {{
+        type: payload.type,
+        data: {{
+          labels,
+          datasets: [{{
+            label: payload.title,
+            data: values,
+            backgroundColor: payload.type === "pie" ? colors : "#4c78a8",
+            borderColor: "#4c78a8",
+            borderWidth: 2,
+            tension: 0.25,
+          }}],
+        }},
+        options: {{
+          maintainAspectRatio: false,
+          responsive: true,
+          plugins: {{ title: {{ display: true, text: payload.title }} }},
+        }},
+      }});
+    }}
+  </script>
+</body>
+</html>"""
+        return HTMLResponse(content=content, headers={"Cache-Control": "no-store"})
     except (DashboardNotFound, ChartNotFound) as exc:
         raise HTTPException(status_code=404, detail="dashboard or chart not found") from exc
     except DatabricksTimeoutError as exc:
         raise HTTPException(status_code=504, detail="Databricks request timed out") from exc
     except DatabricksIntegrationError as exc:
-        raise HTTPException(status_code=502, detail="Databricks integration failed") from exc
-
-
-@router.post(
-    "/v1/dashboards/{dashboard_id}/embed",
-    response_model=EmbedResponse,
-    summary="Create a dashboard embed configuration",
-    description="Returns a short-lived, dashboard-scoped Databricks token for the frontend embedding client.",
-    responses={404: {"description": "Dashboard not found"}, 502: {"description": "Databricks unavailable"}, 504: {"description": "Databricks timeout"}},
-    tags=["dashboards"],
-)
-async def embed_dashboard(
-    dashboard_id: str,
-    service: Annotated[DashboardService, Depends(get_dashboard_service)],
-    request: Annotated[EmbedRequest | None, Body()] = None,
-) -> EmbedResponse:
-    try:
-        result = await service.embed(dashboard_id, request or EmbedRequest())
-        EMBED_REQUESTS.labels("databricks", "success").inc()
-        return result
-    except DashboardNotFound as exc:
-        EMBED_REQUESTS.labels("databricks", "not_found").inc()
-        raise HTTPException(status_code=404, detail="dashboard not found") from exc
-    except DatabricksTimeoutError as exc:
-        EMBED_REQUESTS.labels("databricks", "timeout").inc()
-        raise HTTPException(status_code=504, detail="Databricks request timed out") from exc
-    except DatabricksIntegrationError as exc:
-        EMBED_REQUESTS.labels("databricks", "error").inc()
         raise HTTPException(status_code=502, detail="Databricks integration failed") from exc

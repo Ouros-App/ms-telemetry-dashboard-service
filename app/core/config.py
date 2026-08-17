@@ -1,3 +1,4 @@
+from pathlib import Path
 from urllib.parse import urlsplit
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -7,13 +8,14 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False)
 
     project_name: str = "Telemetry Dashboard Service"
-    description: str = "Control plane for embedded telemetry dashboards."
+    description: str = "API for Databricks telemetry dashboards and charts."
     version: str = "0.1.0"
     app_port: int = 8000
+    api_bearer_token: str | None = None
+    dashboard_catalog_path: Path = Path("data/dashboards.json")
     databricks_host: str | None = None
     databricks_client_id: str | None = None
     databricks_client_secret: str | None = None
-    databricks_workspace_id: str | None = None
     databricks_token_url: str | None = None
     http_timeout_seconds: float = 10.0
     http_max_retries: int = 2
@@ -33,10 +35,10 @@ class Settings(BaseSettings):
 
     def configuration_errors(self) -> list[str]:
         required = {
+            "API_BEARER_TOKEN": self.api_bearer_token,
             "DATABRICKS_HOST": self.databricks_host,
             "DATABRICKS_CLIENT_ID": self.databricks_client_id,
             "DATABRICKS_CLIENT_SECRET": self.databricks_client_secret,
-            "DATABRICKS_WORKSPACE_ID": self.databricks_workspace_id,
         }
         errors = [name for name, value in required.items() if not value]
         for name, value in (("DATABRICKS_HOST", self.databricks_host), ("DATABRICKS_TOKEN_URL", self.token_url)):

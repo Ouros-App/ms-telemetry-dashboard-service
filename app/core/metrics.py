@@ -7,7 +7,6 @@ HTTP_DURATION = Histogram("http_request_duration_seconds", "HTTP request duratio
 DATABRICKS_REQUESTS = Counter("databricks_requests_total", "Databricks requests", ("operation", "status"))
 DATABRICKS_DURATION = Histogram("databricks_request_duration_seconds", "Databricks request duration", ("operation",))
 DATABRICKS_ERRORS = Counter("databricks_errors_total", "Databricks errors", ("operation", "kind"))
-EMBED_REQUESTS = Counter("embed_requests_total", "Dashboard embed requests", ("provider", "status"))
 TOKEN_REFRESHES = Counter("token_refresh_total", "Databricks token refreshes")
 
 

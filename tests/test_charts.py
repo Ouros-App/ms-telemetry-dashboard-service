@@ -1,9 +1,13 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core.config import settings
 from app.main import app
 from app.providers.databricks import DatabricksDashboardProvider
-from app.schemas.dashboards import DashboardChartDefinition, DashboardRecord
+from app.schemas.dashboards import (
+    DashboardChartDefinition,
+    DashboardRecord,
+)
 from app.services.chart import render_chart_png
 from app.services.dashboard import DashboardService
 
@@ -63,16 +67,21 @@ async def test_chart_service_reuses_png_for_cache_ttl() -> None:
     assert provider.query_calls == 1
 
 
-def test_chart_html_embeds_png_and_refreshes() -> None:
+def test_chartjs_endpoint_returns_interactive_html(monkeypatch: pytest.MonkeyPatch) -> None:
     class Service:
-        async def chart_png(self, dashboard_id, chart_id):
-            return b"\x89PNG\r\n\x1a\n"
+        async def chart_data(self, dashboard_id, chart_id):
+            return chart(), [{"region": "South", "sum(revenue)": 12.5}]
 
     with TestClient(app) as client:
+        monkeypatch.setattr(settings, "api_bearer_token", "test-token")
         app.state.dashboard_service = Service()
-        response = client.get("/v1/dashboards/dashboard-a/charts/revenue/html")
+        response = client.get(
+            "/v1/dashboards/dashboard-a/charts/revenue/chartjs",
+            headers={"Authorization": "Bearer test-token"},
+        )
 
     assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/html")
-    assert "data:image/png;base64,iVBORw0KGgo=" in response.text
-    assert "setInterval" in response.text
+    assert response.headers["cache-control"] == "no-store"
+    assert "chart.js@4.4.3" in response.text
+    assert "new Chart" in response.text
+    assert "South" in response.text

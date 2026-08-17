@@ -1,16 +1,16 @@
 import time
+from typing import Any
 
 from app.providers.databricks import DatabricksDashboardProvider
-from app.services.chart import render_chart_png
 from app.schemas.dashboards import (
+    DashboardChartDefinition,
     DashboardChartListResponse,
     DashboardChartPublic,
     DashboardListResponse,
     DashboardPublic,
     DashboardRecord,
-    EmbedRequest,
-    EmbedResponse,
 )
+from app.services.chart import render_chart_png
 
 
 class DashboardNotFound(Exception):
@@ -30,11 +30,6 @@ class DashboardService:
     async def get_dashboard(self, dashboard_id: str) -> DashboardPublic:
         dashboard = await self._find_dashboard(dashboard_id)
         return DashboardPublic.from_record(dashboard)
-
-    async def embed(self, dashboard_id: str, request: EmbedRequest) -> EmbedResponse:
-        dashboard = await self._find_dashboard(dashboard_id)
-        config = await self.provider.create_embed_config(dashboard, request)
-        return EmbedResponse(dashboard_id=dashboard.id, provider=dashboard.provider, embed=config)
 
     async def list_charts(self, dashboard_id: str) -> DashboardChartListResponse:
         dashboard = await self._find_dashboard(dashboard_id)
@@ -57,6 +52,14 @@ class DashboardService:
         image = render_chart_png(chart, rows)
         self._chart_cache[cache_key] = (time.monotonic(), image)
         return image
+
+    async def chart_data(self, dashboard_id: str, chart_id: str) -> tuple[DashboardChartDefinition, list[dict[str, Any]]]:
+        dashboard = await self._find_dashboard(dashboard_id)
+        try:
+            chart = await self.provider.get_chart(dashboard, chart_id)
+        except KeyError as exc:
+            raise ChartNotFound(chart_id) from exc
+        return chart, await self.provider.execute_chart_query(chart)
 
     async def _find_dashboard(self, dashboard_id: str) -> DashboardRecord:
         dashboard = next((item for item in await self.provider.list_dashboards() if item.id == dashboard_id), None)

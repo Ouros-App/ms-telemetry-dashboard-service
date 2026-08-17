@@ -2,8 +2,7 @@ import asyncio
 import json
 import re
 import time
-from datetime import timezone
-from typing import Any
+from typing import Any, ClassVar
 
 from pydantic import ValidationError
 
@@ -14,25 +13,30 @@ from app.clients.databricks import (
     DatabricksTimeoutError,
 )
 from app.core.config import Settings
+from app.repositories.catalog import DashboardCatalog
 from app.schemas.dashboards import (
-    DashboardRecord,
     DashboardChartDefinition,
-    DatabricksDashboardList,
+    DashboardRecord,
     DatabricksDashboardDefinition,
+    DatabricksDashboardList,
     DatabricksDashboardSummary,
-    DatabricksTokenInfo,
-    EmbedConfig,
-    EmbedRequest,
 )
 
 
 class DatabricksDashboardProvider:
-    chart_types = {"counter", "bar", "line", "pie"}
+    chart_types: ClassVar[set[str]] = {"counter", "bar", "line", "pie"}
 
-    def __init__(self, http: DatabricksHttpClient, auth: DatabricksAuthClient, settings: Settings) -> None:
+    def __init__(
+        self,
+        http: DatabricksHttpClient,
+        auth: DatabricksAuthClient,
+        settings: Settings,
+        catalog: DashboardCatalog,
+    ) -> None:
         self.http = http
         self.auth = auth
         self.settings = settings
+        self.catalog = catalog
 
     async def list_dashboards(self) -> list[DashboardRecord]:
         if not self.settings.databricks_host:
@@ -40,6 +44,7 @@ class DatabricksDashboardProvider:
         token = await self.auth.get_access_token()
         dashboards: list[DatabricksDashboardSummary] = []
         page_token: str | None = None
+        seen_page_tokens: set[str] = set()
         while True:
             params = {"page_size": "1000", "view": "DASHBOARD_VIEW_BASIC"}
             if page_token:
@@ -58,17 +63,25 @@ class DatabricksDashboardProvider:
             dashboards.extend(page.dashboards)
             if not page.next_page_token:
                 break
+            if page.next_page_token in seen_page_tokens:
+                raise DatabricksIntegrationError("Databricks returned a repeated dashboard page token")
+            seen_page_tokens.add(page.next_page_token)
             page_token = page.next_page_token
-        return [
-            DashboardRecord(
-                id=dashboard.dashboard_id,
-                provider="databricks",
-                title=dashboard.display_name,
-                dashboard_id=dashboard.dashboard_id,
+        records: list[DashboardRecord] = []
+        for dashboard in dashboards:
+            if dashboard.lifecycle_state != "ACTIVE":
+                continue
+            metadata = self.catalog.find_by_dashboard_id(dashboard.dashboard_id)
+            records.append(
+                metadata
+                or DashboardRecord(
+                    id=dashboard.dashboard_id,
+                    provider="databricks",
+                    title=dashboard.display_name,
+                    dashboard_id=dashboard.dashboard_id,
+                )
             )
-            for dashboard in dashboards
-            if dashboard.lifecycle_state == "ACTIVE"
-        ]
+        return records
 
     async def list_charts(self, dashboard: DashboardRecord) -> list[DashboardChartDefinition]:
         definition = await self._get_dashboard_definition(dashboard.dashboard_id)
@@ -212,39 +225,3 @@ class DatabricksDashboardProvider:
             return [dict(zip(columns, row, strict=False)) for row in rows]
         except (KeyError, TypeError) as exc:
             raise DatabricksIntegrationError("Databricks returned an invalid chart result") from exc
-
-    async def create_embed_config(self, dashboard: DashboardRecord, request: EmbedRequest) -> EmbedConfig:
-        if not self.settings.databricks_host or not self.settings.databricks_workspace_id:
-            raise DatabricksIntegrationError("Databricks provider is not configured")
-        token = await self.auth.get_access_token()
-        token_info_url = (
-            f"{self.settings.databricks_host.rstrip('/')}/api/2.0/lakeview/dashboards/"
-            f"{dashboard.dashboard_id}/published/tokeninfo"
-        )
-        params = {
-            key: value
-            for key, value in {
-                "external_viewer_id": request.external_viewer_id,
-                "external_value": request.external_value,
-            }.items()
-            if value is not None
-        }
-        payload = await self.http.request_json(
-            "dashboard_tokeninfo",
-            "GET",
-            token_info_url,
-            headers={"Authorization": f"Bearer {token}"},
-            params=params,
-        )
-        try:
-            token_info = DatabricksTokenInfo.model_validate(payload)
-        except ValidationError as exc:
-            raise DatabricksIntegrationError("Databricks returned invalid dashboard token info") from exc
-        scoped = await self.auth.request_scoped_token(token_info)
-        return EmbedConfig(
-            instance_url=self.settings.databricks_host.rstrip("/"),
-            workspace_id=self.settings.databricks_workspace_id,
-            dashboard_id=dashboard.dashboard_id,
-            token=scoped.value,
-            expires_at=scoped.expires_at.astimezone(timezone.utc),
-        )
