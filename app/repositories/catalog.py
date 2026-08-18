@@ -20,6 +20,9 @@ class DashboardCatalog:
             raise CatalogError("dashboard catalog contains duplicate Databricks ids")
         self._dashboards = tuple(dashboards)
 
+    def __len__(self) -> int:
+        return len(self._dashboards)
+
     @classmethod
     def from_path(cls, path: Path) -> "DashboardCatalog":
         try:

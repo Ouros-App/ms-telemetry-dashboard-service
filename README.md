@@ -20,6 +20,7 @@ Copie `.env.example` para `.env` e preencha:
 | Variável | Obrigatória para `/ready` | Descrição |
 | --- | --- | --- |
 | `API_BEARER_TOKEN` | sim | Token usado no header `Authorization: Bearer ...` |
+| `LOG_LEVEL` | não | Nível de log: `DEBUG`, `INFO`, `WARNING`, `ERROR` ou `CRITICAL` |
 | `DASHBOARD_CATALOG_PATH` | não | Catálogo JSON opcional para metadados e aliases públicos |
 | `DATABRICKS_HOST` | sim | URL HTTPS do workspace |
 | `DATABRICKS_CLIENT_ID` | sim | Application ID do service principal |
@@ -67,6 +68,8 @@ curl -H "Authorization: Bearer $API_BEARER_TOKEN" http://localhost:8000/v1/dashb
 ```
 
 O segundo comando usa um `id` público retornado pelo primeiro e exige credenciais Databricks válidas.
+
+Para depuração, defina `LOG_LEVEL=DEBUG`. Os logs são emitidos em JSON no stdout e incluem evento, request ID, rota, status, duração e tentativas do Databricks, sem registrar tokens, secrets ou payloads de consultas.
 
 ## Testes
 
