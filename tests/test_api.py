@@ -29,9 +29,11 @@ def test_health_has_request_id_and_does_not_require_databricks() -> None:
     assert response.headers["X-Request-ID"] == "test-request"
 
 
-def test_dashboard_list_returns_empty_when_provider_has_no_dashboards() -> None:
+def test_dashboard_list_returns_empty_when_provider_has_no_dashboards(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     with TestClient(app) as client:
-        app.state.dashboard_service = StubDashboardService()
+        monkeypatch.setattr(app.state, "dashboard_service", StubDashboardService())
         response = client.get("/v1/dashboards", headers={"Authorization": "Bearer test-token"})
 
     assert response.status_code == 200
@@ -39,9 +41,9 @@ def test_dashboard_list_returns_empty_when_provider_has_no_dashboards() -> None:
     assert body == {"items": []}
 
 
-def test_missing_dashboard_is_not_found() -> None:
+def test_missing_dashboard_is_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
     with TestClient(app) as client:
-        app.state.dashboard_service = StubDashboardService()
+        monkeypatch.setattr(app.state, "dashboard_service", StubDashboardService())
         response = client.get("/v1/dashboards/missing", headers={"Authorization": "Bearer test-token"})
 
     assert response.status_code == 404
@@ -53,6 +55,13 @@ def test_business_endpoint_requires_bearer_token() -> None:
 
     assert response.status_code == 401
     assert response.headers["www-authenticate"] == "Bearer"
+
+
+def test_business_endpoint_rejects_invalid_bearer_token() -> None:
+    with TestClient(app) as client:
+        response = client.get("/v1/dashboards", headers={"Authorization": "Bearer invalid"})
+
+    assert response.status_code == 401
 
 
 def test_openapi_declares_bearer_security() -> None:

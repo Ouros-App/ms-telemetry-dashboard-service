@@ -3,6 +3,7 @@ import json
 import re
 import time
 from typing import Any, ClassVar
+from urllib.parse import quote
 
 from pydantic import ValidationError
 
@@ -22,6 +23,9 @@ from app.schemas.dashboards import (
     DatabricksDashboardSummary,
 )
 
+PROVIDER_NOT_CONFIGURED_DETAIL = "Databricks provider is not configured"
+SAFE_PATH_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$")
+
 
 class DatabricksDashboardProvider:
     chart_types: ClassVar[set[str]] = {"counter", "bar", "line", "pie"}
@@ -40,7 +44,7 @@ class DatabricksDashboardProvider:
 
     async def list_dashboards(self) -> list[DashboardRecord]:
         if not self.settings.databricks_host:
-            raise DatabricksIntegrationError("Databricks provider is not configured")
+            raise DatabricksIntegrationError(PROVIDER_NOT_CONFIGURED_DETAIL)
         token = await self.auth.get_access_token()
         dashboards: list[DatabricksDashboardSummary] = []
         page_token: str | None = None
@@ -96,7 +100,7 @@ class DatabricksDashboardProvider:
 
     async def execute_chart_query(self, chart: DashboardChartDefinition) -> list[dict[str, Any]]:
         if not self.settings.databricks_host:
-            raise DatabricksIntegrationError("Databricks provider is not configured")
+            raise DatabricksIntegrationError(PROVIDER_NOT_CONFIGURED_DETAIL)
         token = await self.auth.get_access_token()
         statement = self._build_chart_statement(chart)
         url = f"{self.settings.databricks_host.rstrip('/')}/api/2.0/sql/statements"
@@ -118,13 +122,13 @@ class DatabricksDashboardProvider:
         statement_id = payload.get("statement_id")
         deadline = time.monotonic() + self.settings.http_timeout_seconds
         while payload.get("status", {}).get("state") in {"PENDING", "RUNNING"}:
-            if not statement_id or time.monotonic() >= deadline:
+            if not isinstance(statement_id, str) or time.monotonic() >= deadline:
                 raise DatabricksTimeoutError("Databricks chart query timed out")
             await asyncio.sleep(0.2)
             payload = await self.http.request_json(
                 "dashboard_chart_query_status",
                 "GET",
-                f"{url}/{statement_id}",
+                f"{url}/{self._safe_path_segment(statement_id)}",
                 headers={"Authorization": f"Bearer {token}"},
             )
         state = payload.get("status", {}).get("state")
@@ -134,18 +138,24 @@ class DatabricksDashboardProvider:
 
     async def _get_dashboard_definition(self, dashboard_id: str) -> DatabricksDashboardDefinition:
         if not self.settings.databricks_host:
-            raise DatabricksIntegrationError("Databricks provider is not configured")
+            raise DatabricksIntegrationError(PROVIDER_NOT_CONFIGURED_DETAIL)
         token = await self.auth.get_access_token()
         payload = await self.http.request_json(
             "dashboard_definition",
             "GET",
-            f"{self.settings.databricks_host.rstrip('/')}/api/2.0/lakeview/dashboards/{dashboard_id}",
+            f"{self.settings.databricks_host.rstrip('/')}/api/2.0/lakeview/dashboards/{self._safe_path_segment(dashboard_id)}",
             headers={"Authorization": f"Bearer {token}"},
         )
         try:
             return DatabricksDashboardDefinition.model_validate(payload)
         except ValidationError as exc:
             raise DatabricksIntegrationError("Databricks returned an invalid dashboard definition") from exc
+
+    @staticmethod
+    def _safe_path_segment(value: str) -> str:
+        if not SAFE_PATH_SEGMENT.fullmatch(value):
+            raise DatabricksIntegrationError("Databricks returned an invalid resource identifier")
+        return quote(value, safe="")
 
     def _extract_charts(self, definition: DatabricksDashboardDefinition) -> list[DashboardChartDefinition]:
         try:

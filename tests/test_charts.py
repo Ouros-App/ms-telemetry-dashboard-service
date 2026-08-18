@@ -39,6 +39,20 @@ def test_chart_renderer_returns_png() -> None:
     assert image.startswith(b"\x89PNG\r\n\x1a\n")
 
 
+@pytest.mark.parametrize(
+    ("kind", "rows"),
+    [
+        ("counter", [{"region": "12.5"}]),
+        ("line", [{"region": "South", "sum(revenue)": "12.5"}]),
+        ("pie", [{"region": "South", "sum(revenue)": "12.5"}]),
+    ],
+)
+def test_chart_renderer_supports_all_chart_types(kind: str, rows: list[dict[str, str]]) -> None:
+    image = render_chart_png(chart(kind), rows)
+
+    assert image.startswith(b"\x89PNG\r\n\x1a\n")
+
+
 @pytest.mark.asyncio
 async def test_chart_service_reuses_png_for_cache_ttl() -> None:
     dashboard = DashboardRecord(
@@ -74,7 +88,7 @@ def test_chartjs_endpoint_returns_interactive_html(monkeypatch: pytest.MonkeyPat
 
     with TestClient(app) as client:
         monkeypatch.setattr(settings, "api_bearer_token", "test-token")
-        app.state.dashboard_service = Service()
+        monkeypatch.setattr(app.state, "dashboard_service", Service())
         response = client.get(
             "/v1/dashboards/dashboard-a/charts/revenue/chartjs",
             headers={"Authorization": "Bearer test-token"},

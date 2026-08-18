@@ -26,22 +26,33 @@ from app.services.dashboard import ChartNotFound, DashboardNotFound, DashboardSe
 
 router = APIRouter()
 
+DATABRICKS_TIMEOUT_DETAIL = "Databricks request timed out"
+DATABRICKS_INTEGRATION_DETAIL = "Databricks integration failed"
+DATABRICKS_ERROR_RESPONSES = {
+    status.HTTP_502_BAD_GATEWAY: {"description": DATABRICKS_INTEGRATION_DETAIL},
+    status.HTTP_504_GATEWAY_TIMEOUT: {"description": DATABRICKS_TIMEOUT_DETAIL},
+}
+DASHBOARD_NOT_FOUND_RESPONSE = {status.HTTP_404_NOT_FOUND: {"description": "Dashboard not found"}}
+CHART_NOT_FOUND_RESPONSE = {
+    status.HTTP_404_NOT_FOUND: {"description": "Dashboard or chart not found"}
+}
+
 
 def get_dashboard_service(request: Request) -> DashboardService:
     return request.app.state.dashboard_service
 
 
-@router.get("/", response_model=MessageResponse, include_in_schema=False)
+@router.get("/", include_in_schema=False)
 def read_root() -> MessageResponse:
     return MessageResponse(message="Telemetry dashboard service is running")
 
 
-@router.get("/health", response_model=HealthResponse, summary="Health check", tags=["service"])
+@router.get("/health", summary="Health check", tags=["service"])
 def health_check() -> HealthResponse:
     return HealthResponse(status="ok")
 
 
-@router.get("/ready", response_model=ReadinessResponse, summary="Readiness check", tags=["service"])
+@router.get("/ready", summary="Readiness check", tags=["service"])
 def readiness(request: Request, response: Response) -> ReadinessResponse:
     errors = request.app.state.settings.configuration_errors()
     if errors:
@@ -57,9 +68,9 @@ def metrics() -> Response:
 
 @router.get(
     "/v1/dashboards",
-    response_model=DashboardListResponse,
     summary="List Databricks dashboards",
     description="Returns every active dashboard visible to the configured Databricks credentials.",
+    responses=DATABRICKS_ERROR_RESPONSES,
     dependencies=[Depends(require_bearer)],
     tags=["dashboards"],
 )
@@ -69,16 +80,15 @@ async def list_dashboards(
     try:
         return await service.list_dashboards()
     except DatabricksTimeoutError as exc:
-        raise HTTPException(status_code=504, detail="Databricks request timed out") from exc
+        raise HTTPException(status_code=504, detail=DATABRICKS_TIMEOUT_DETAIL) from exc
     except DatabricksIntegrationError as exc:
-        raise HTTPException(status_code=502, detail="Databricks integration failed") from exc
+        raise HTTPException(status_code=502, detail=DATABRICKS_INTEGRATION_DETAIL) from exc
 
 
 @router.get(
     "/v1/dashboards/{dashboard_id}",
-    response_model=DashboardPublic,
     summary="Get a dashboard",
-    responses={404: {"description": "Dashboard not found"}},
+    responses={**DASHBOARD_NOT_FOUND_RESPONSE, **DATABRICKS_ERROR_RESPONSES},
     dependencies=[Depends(require_bearer)],
     tags=["dashboards"],
 )
@@ -91,16 +101,15 @@ async def get_dashboard(
     except DashboardNotFound as exc:
         raise HTTPException(status_code=404, detail="dashboard not found") from exc
     except DatabricksTimeoutError as exc:
-        raise HTTPException(status_code=504, detail="Databricks request timed out") from exc
+        raise HTTPException(status_code=504, detail=DATABRICKS_TIMEOUT_DETAIL) from exc
     except DatabricksIntegrationError as exc:
-        raise HTTPException(status_code=502, detail="Databricks integration failed") from exc
+        raise HTTPException(status_code=502, detail=DATABRICKS_INTEGRATION_DETAIL) from exc
 
 
 @router.get(
     "/v1/dashboards/{dashboard_id}/charts",
-    response_model=DashboardChartListResponse,
     summary="List charts in a dashboard",
-    responses={404: {"description": "Dashboard not found"}},
+    responses={**DASHBOARD_NOT_FOUND_RESPONSE, **DATABRICKS_ERROR_RESPONSES},
     dependencies=[Depends(require_bearer)],
     tags=["dashboards"],
 )
@@ -113,9 +122,9 @@ async def list_charts(
     except DashboardNotFound as exc:
         raise HTTPException(status_code=404, detail="dashboard not found") from exc
     except DatabricksTimeoutError as exc:
-        raise HTTPException(status_code=504, detail="Databricks request timed out") from exc
+        raise HTTPException(status_code=504, detail=DATABRICKS_TIMEOUT_DETAIL) from exc
     except DatabricksIntegrationError as exc:
-        raise HTTPException(status_code=502, detail="Databricks integration failed") from exc
+        raise HTTPException(status_code=502, detail=DATABRICKS_INTEGRATION_DETAIL) from exc
 
 
 @router.get(
@@ -124,7 +133,7 @@ async def list_charts(
     summary="Render a dashboard chart as PNG",
     description="Renders one dashboard chart as a PNG image.",
     dependencies=[Depends(require_bearer)],
-    responses={404: {"description": "Dashboard or chart not found"}},
+    responses={**CHART_NOT_FOUND_RESPONSE, **DATABRICKS_ERROR_RESPONSES},
     tags=["dashboards"],
 )
 async def chart_png(
@@ -142,9 +151,9 @@ async def chart_png(
     except (DashboardNotFound, ChartNotFound) as exc:
         raise HTTPException(status_code=404, detail="dashboard or chart not found") from exc
     except DatabricksTimeoutError as exc:
-        raise HTTPException(status_code=504, detail="Databricks request timed out") from exc
+        raise HTTPException(status_code=504, detail=DATABRICKS_TIMEOUT_DETAIL) from exc
     except DatabricksIntegrationError as exc:
-        raise HTTPException(status_code=502, detail="Databricks integration failed") from exc
+        raise HTTPException(status_code=502, detail=DATABRICKS_INTEGRATION_DETAIL) from exc
 
 
 @router.get(
@@ -153,7 +162,7 @@ async def chart_png(
     summary="Render an individual chart with Chart.js",
     description="Returns self-contained HTML that renders one chart with Chart.js. It can be loaded directly or used as an iframe source.",
     dependencies=[Depends(require_bearer)],
-    responses={404: {"description": "Dashboard or chart not found"}, 502: {"description": "Databricks unavailable"}, 504: {"description": "Databricks timeout"}},
+    responses={**CHART_NOT_FOUND_RESPONSE, **DATABRICKS_ERROR_RESPONSES},
     tags=["dashboards"],
 )
 async def chartjs_chart(
@@ -238,6 +247,6 @@ async def chartjs_chart(
     except (DashboardNotFound, ChartNotFound) as exc:
         raise HTTPException(status_code=404, detail="dashboard or chart not found") from exc
     except DatabricksTimeoutError as exc:
-        raise HTTPException(status_code=504, detail="Databricks request timed out") from exc
+        raise HTTPException(status_code=504, detail=DATABRICKS_TIMEOUT_DETAIL) from exc
     except DatabricksIntegrationError as exc:
-        raise HTTPException(status_code=502, detail="Databricks integration failed") from exc
+        raise HTTPException(status_code=502, detail=DATABRICKS_INTEGRATION_DETAIL) from exc

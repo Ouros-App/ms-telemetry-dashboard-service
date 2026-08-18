@@ -49,49 +49,78 @@ class DatabricksHttpClient:
         json_body: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         started = time.perf_counter()
-        retries = self.settings.http_max_retries
         try:
-            for attempt in range(retries + 1):
-                try:
-                    response = await self.client.request(
-                        method,
-                        url,
-                        headers=headers,
-                        data=data,
-                        params=params,
-                        json=json_body,
-                    )
-                    if response.status_code in {429, 500, 502, 503, 504} and attempt < retries:
-                        await asyncio.sleep(self.settings.http_retry_backoff_seconds * (attempt + 1))
-                        continue
-                    response.raise_for_status()
-                    try:
-                        payload = response.json()
-                    except json.JSONDecodeError as exc:
-                        DATABRICKS_ERRORS.labels(operation, "invalid_json").inc()
-                        raise DatabricksIntegrationError("Databricks returned invalid JSON") from exc
-                    if not isinstance(payload, dict):
-                        raise DatabricksIntegrationError("Databricks returned a non-object response")
-                    DATABRICKS_REQUESTS.labels(operation, str(response.status_code)).inc()
-                    return payload
-                except httpx.TimeoutException as exc:
-                    if attempt < retries:
-                        await asyncio.sleep(self.settings.http_retry_backoff_seconds * (attempt + 1))
-                        continue
-                    DATABRICKS_ERRORS.labels(operation, "timeout").inc()
-                    raise DatabricksTimeoutError("Databricks request timed out") from exc
-                except httpx.RequestError as exc:
-                    if attempt < retries:
-                        await asyncio.sleep(self.settings.http_retry_backoff_seconds * (attempt + 1))
-                        continue
-                    DATABRICKS_ERRORS.labels(operation, "connection").inc()
-                    raise DatabricksIntegrationError("Databricks connection failed") from exc
-                except httpx.HTTPStatusError as exc:
-                    DATABRICKS_ERRORS.labels(operation, f"http_{exc.response.status_code}").inc()
-                    raise DatabricksIntegrationError("Databricks rejected the request") from exc
+            response = await self._request_with_retries(
+                operation,
+                method,
+                url,
+                headers=headers,
+                data=data,
+                params=params,
+                json_body=json_body,
+            )
+            return self._decode_response(operation, response)
         finally:
             DATABRICKS_DURATION.labels(operation).observe(time.perf_counter() - started)
+
+    async def _request_with_retries(
+        self,
+        operation: str,
+        method: str,
+        url: str,
+        *,
+        headers: dict[str, str] | None,
+        data: dict[str, str] | None,
+        params: dict[str, str] | None,
+        json_body: dict[str, Any] | None,
+    ) -> httpx.Response:
+        retries = self.settings.http_max_retries
+        for attempt in range(retries + 1):
+            try:
+                response = await self.client.request(
+                    method,
+                    url,
+                    headers=headers,
+                    data=data,
+                    params=params,
+                    json=json_body,
+                )
+                if response.status_code in {429, 500, 502, 503, 504} and attempt < retries:
+                    await self._backoff(attempt)
+                    continue
+                response.raise_for_status()
+                return response
+            except httpx.TimeoutException as exc:
+                if attempt < retries:
+                    await self._backoff(attempt)
+                    continue
+                DATABRICKS_ERRORS.labels(operation, "timeout").inc()
+                raise DatabricksTimeoutError("Databricks request timed out") from exc
+            except httpx.RequestError as exc:
+                if attempt < retries:
+                    await self._backoff(attempt)
+                    continue
+                DATABRICKS_ERRORS.labels(operation, "connection").inc()
+                raise DatabricksIntegrationError("Databricks connection failed") from exc
+            except httpx.HTTPStatusError as exc:
+                DATABRICKS_ERRORS.labels(operation, f"http_{exc.response.status_code}").inc()
+                raise DatabricksIntegrationError("Databricks rejected the request") from exc
         raise DatabricksIntegrationError("Databricks request failed")
+
+    async def _backoff(self, attempt: int) -> None:
+        await asyncio.sleep(self.settings.http_retry_backoff_seconds * (attempt + 1))
+
+    @staticmethod
+    def _decode_response(operation: str, response: httpx.Response) -> dict[str, Any]:
+        try:
+            payload = response.json()
+        except json.JSONDecodeError as exc:
+            DATABRICKS_ERRORS.labels(operation, "invalid_json").inc()
+            raise DatabricksIntegrationError("Databricks returned invalid JSON") from exc
+        if not isinstance(payload, dict):
+            raise DatabricksIntegrationError("Databricks returned a non-object response")
+        DATABRICKS_REQUESTS.labels(operation, str(response.status_code)).inc()
+        return payload
 
 
 class DatabricksAuthClient:

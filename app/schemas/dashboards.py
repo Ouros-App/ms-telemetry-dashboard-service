@@ -60,7 +60,7 @@ class DatabricksTokenResponse(BaseModel):
 
 
 class DatabricksDashboardSummary(BaseModel):
-    dashboard_id: str = Field(min_length=1, max_length=200)
+    dashboard_id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$")
     display_name: str = Field(min_length=1, max_length=200)
     lifecycle_state: Literal["ACTIVE", "TRASHED"] = "ACTIVE"
 
