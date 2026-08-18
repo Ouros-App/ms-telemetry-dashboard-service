@@ -90,18 +90,10 @@ class DatabricksHttpClient:
                     continue
                 response.raise_for_status()
                 return response
-            except httpx.TimeoutException as exc:
-                if attempt < retries:
-                    await self._backoff(attempt)
-                    continue
-                DATABRICKS_ERRORS.labels(operation, "timeout").inc()
-                raise DatabricksTimeoutError("Databricks request timed out") from exc
-            except httpx.RequestError as exc:
-                if attempt < retries:
-                    await self._backoff(attempt)
-                    continue
-                DATABRICKS_ERRORS.labels(operation, "connection").inc()
-                raise DatabricksIntegrationError("Databricks connection failed") from exc
+            except (httpx.TimeoutException, httpx.RequestError) as exc:
+                if attempt >= retries:
+                    raise self._transport_error(operation, exc) from exc
+                await self._backoff(attempt)
             except httpx.HTTPStatusError as exc:
                 DATABRICKS_ERRORS.labels(operation, f"http_{exc.response.status_code}").inc()
                 raise DatabricksIntegrationError("Databricks rejected the request") from exc
@@ -109,6 +101,14 @@ class DatabricksHttpClient:
 
     async def _backoff(self, attempt: int) -> None:
         await asyncio.sleep(self.settings.http_retry_backoff_seconds * (attempt + 1))
+
+    @staticmethod
+    def _transport_error(operation: str, error: httpx.RequestError) -> DatabricksIntegrationError:
+        if isinstance(error, httpx.TimeoutException):
+            DATABRICKS_ERRORS.labels(operation, "timeout").inc()
+            return DatabricksTimeoutError("Databricks request timed out")
+        DATABRICKS_ERRORS.labels(operation, "connection").inc()
+        return DatabricksIntegrationError("Databricks connection failed")
 
     @staticmethod
     def _decode_response(operation: str, response: httpx.Response) -> dict[str, Any]:

@@ -40,8 +40,9 @@ class FailingService:
     ],
 )
 async def test_routes_map_databricks_timeout_to_504(handler, args) -> None:
+    service = FailingService(DatabricksTimeoutError("timeout"))
     with pytest.raises(HTTPException) as error:
-        await handler(*args, service=FailingService(DatabricksTimeoutError("timeout")))
+        await handler(*args, service=service)
 
     assert error.value.status_code == 504
     assert error.value.detail == routes.DATABRICKS_TIMEOUT_DETAIL
@@ -59,8 +60,9 @@ async def test_routes_map_databricks_timeout_to_504(handler, args) -> None:
     ],
 )
 async def test_routes_map_databricks_failure_to_502(handler, args) -> None:
+    service = FailingService(DatabricksIntegrationError("failure"))
     with pytest.raises(HTTPException) as error:
-        await handler(*args, service=FailingService(DatabricksIntegrationError("failure")))
+        await handler(*args, service=service)
 
     assert error.value.status_code == 502
     assert error.value.detail == routes.DATABRICKS_INTEGRATION_DETAIL
@@ -77,8 +79,9 @@ async def test_routes_map_databricks_failure_to_502(handler, args) -> None:
     ],
 )
 async def test_routes_map_missing_resources_to_404(handler, args, exception) -> None:
+    service = FailingService(exception)
     with pytest.raises(HTTPException) as error:
-        await handler(*args, service=FailingService(exception))
+        await handler(*args, service=service)
 
     assert error.value.status_code == 404
 

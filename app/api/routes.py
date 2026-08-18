@@ -28,14 +28,6 @@ router = APIRouter()
 
 DATABRICKS_TIMEOUT_DETAIL = "Databricks request timed out"
 DATABRICKS_INTEGRATION_DETAIL = "Databricks integration failed"
-DATABRICKS_ERROR_RESPONSES = {
-    status.HTTP_502_BAD_GATEWAY: {"description": DATABRICKS_INTEGRATION_DETAIL},
-    status.HTTP_504_GATEWAY_TIMEOUT: {"description": DATABRICKS_TIMEOUT_DETAIL},
-}
-DASHBOARD_NOT_FOUND_RESPONSE = {status.HTTP_404_NOT_FOUND: {"description": "Dashboard not found"}}
-CHART_NOT_FOUND_RESPONSE = {
-    status.HTTP_404_NOT_FOUND: {"description": "Dashboard or chart not found"}
-}
 
 
 def get_dashboard_service(request: Request) -> DashboardService:
@@ -70,7 +62,10 @@ def metrics() -> Response:
     "/v1/dashboards",
     summary="List Databricks dashboards",
     description="Returns every active dashboard visible to the configured Databricks credentials.",
-    responses=DATABRICKS_ERROR_RESPONSES,
+    responses={
+        502: {"description": DATABRICKS_INTEGRATION_DETAIL},
+        504: {"description": DATABRICKS_TIMEOUT_DETAIL},
+    },
     dependencies=[Depends(require_bearer)],
     tags=["dashboards"],
 )
@@ -88,7 +83,11 @@ async def list_dashboards(
 @router.get(
     "/v1/dashboards/{dashboard_id}",
     summary="Get a dashboard",
-    responses={**DASHBOARD_NOT_FOUND_RESPONSE, **DATABRICKS_ERROR_RESPONSES},
+    responses={
+        404: {"description": "Dashboard not found"},
+        502: {"description": DATABRICKS_INTEGRATION_DETAIL},
+        504: {"description": DATABRICKS_TIMEOUT_DETAIL},
+    },
     dependencies=[Depends(require_bearer)],
     tags=["dashboards"],
 )
@@ -109,7 +108,11 @@ async def get_dashboard(
 @router.get(
     "/v1/dashboards/{dashboard_id}/charts",
     summary="List charts in a dashboard",
-    responses={**DASHBOARD_NOT_FOUND_RESPONSE, **DATABRICKS_ERROR_RESPONSES},
+    responses={
+        404: {"description": "Dashboard not found"},
+        502: {"description": DATABRICKS_INTEGRATION_DETAIL},
+        504: {"description": DATABRICKS_TIMEOUT_DETAIL},
+    },
     dependencies=[Depends(require_bearer)],
     tags=["dashboards"],
 )
@@ -133,7 +136,11 @@ async def list_charts(
     summary="Render a dashboard chart as PNG",
     description="Renders one dashboard chart as a PNG image.",
     dependencies=[Depends(require_bearer)],
-    responses={**CHART_NOT_FOUND_RESPONSE, **DATABRICKS_ERROR_RESPONSES},
+    responses={
+        404: {"description": "Dashboard or chart not found"},
+        502: {"description": DATABRICKS_INTEGRATION_DETAIL},
+        504: {"description": DATABRICKS_TIMEOUT_DETAIL},
+    },
     tags=["dashboards"],
 )
 async def chart_png(
@@ -162,7 +169,11 @@ async def chart_png(
     summary="Render an individual chart with Chart.js",
     description="Returns self-contained HTML that renders one chart with Chart.js. It can be loaded directly or used as an iframe source.",
     dependencies=[Depends(require_bearer)],
-    responses={**CHART_NOT_FOUND_RESPONSE, **DATABRICKS_ERROR_RESPONSES},
+    responses={
+        404: {"description": "Dashboard or chart not found"},
+        502: {"description": DATABRICKS_INTEGRATION_DETAIL},
+        504: {"description": DATABRICKS_TIMEOUT_DETAIL},
+    },
     tags=["dashboards"],
 )
 async def chartjs_chart(
