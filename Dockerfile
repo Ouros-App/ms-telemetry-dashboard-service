@@ -17,15 +17,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copiar o restante da aplicação
 COPY app ./app
-COPY .env .
-
-# Verificar templates
-RUN test -f app/templates/workflows/fastapi.yml \
-    && test -f app/templates/workflows/frontend.yml \
-    && test -f app/templates/workflows/springboot.yml \
-    && test -f app/templates/workflows/generic.yml
+COPY data ./data
 
 EXPOSE ${APP_PORT}
 
 # CORREÇÃO: Usar sh -c para garantir expansão da variável
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${APP_PORT:-8000}"]
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

@@ -1,104 +1,75 @@
-# FastAPI Microservice Template
+# ms-telemetry-dashboard-service
 
-Template minimo para iniciar um microservico com FastAPI.
+Microserviço FastAPI para dashboards de telemetria publicados no Databricks. Ele lista dashboards e gráficos e oferece dois formatos de visualização: PNG e Chart.js.
 
-## Estrutura
+O serviço também lista os gráficos de cada dashboard e mantém a execução de consultas no SQL Warehouse para os endpoints legados de imagem.
+
+## Arquitetura
 
 ```text
-.
-├── app/
-│   ├── __init__.py
-│   ├── api/
-│   │   ├── __init__.py
-│   │   └── routes.py
-│   ├── core/
-│   │   ├── __init__.py
-│   │   └── config.py
-│   ├── models/
-│   │   └── __init__.py
-│   ├── repositories/
-│   │   └── __init__.py
-│   ├── schemas/
-│   │   ├── __init__.py
-│   │   └── common.py
-│   ├── services/
-│   │   └── __init__.py
-│   └── main.py
-├── tests/
-│   └── __init__.py
-├── .env.example
-├── .gitignore
-├── Dockerfile
-├── docker-compose.yml
-├── README.md
-└── requirements.txt
+router -> DashboardService -> DatabricksDashboardProvider
+                         -> DatabricksAuthClient -> Databricks OAuth/API
 ```
 
-## Pastas principais
+`GET /v1/dashboards` consulta diretamente os dashboards ativos visíveis para as credenciais configuradas no Databricks. O `id` retornado é o próprio `dashboard_id` do Databricks, portanto pode ser usado nos demais endpoints. O catálogo local é opcional e serve apenas para substituir título, descrição ou ID público de um dashboard específico.
 
-- `app/main.py`: cria a aplicacao FastAPI e registra as rotas.
-- `app/api/`: rotas e agrupamento de endpoints.
-- `app/core/`: configuracoes centrais do servico.
-- `app/schemas/`: contratos de entrada e saida com Pydantic.
-- `app/services/`: regras de negocio.
-- `app/repositories/`: acesso a dados ou integracoes externas.
-- `app/models/`: modelos internos ou modelos de banco, quando existirem.
-- `tests/`: testes automatizados.
+## Configuração
 
-## Rotas
+Copie `.env.example` para `.env` e preencha:
 
-- `GET /` retorna uma mensagem simples da aplicacao.
-- `GET /health` retorna o status de saude do servico.
+| Variável | Obrigatória para `/ready` | Descrição |
+| --- | --- | --- |
+| `API_BEARER_TOKEN` | sim | Token usado no header `Authorization: Bearer ...` |
+| `DASHBOARD_CATALOG_PATH` | não | Catálogo JSON opcional para metadados e aliases públicos |
+| `DATABRICKS_HOST` | sim | URL HTTPS do workspace |
+| `DATABRICKS_CLIENT_ID` | sim | Application ID do service principal |
+| `DATABRICKS_CLIENT_SECRET` | sim | Secret OAuth do service principal |
+| `DATABRICKS_TOKEN_URL` | não | Sobrescreve `/oidc/v1/token` derivado do host |
+| `HTTP_TIMEOUT_SECONDS` | não | Timeout das chamadas externas |
+| `HTTP_MAX_RETRIES` | não | Tentativas adicionais para timeout, conexão, 429 e 5xx |
+| `CORS_ORIGINS` | não | Lista JSON de origins permitidos |
 
-## Rodando localmente
+O catálogo local não é obrigatório para listar dashboards. Se usado, ele pode conter metadados para dashboards específicos; entradas com `enabled: false` não removem dashboards da API. O Service Principal precisa acessar o workspace, os dashboards e o SQL Warehouse usado por eles.
 
-Crie e ative um ambiente virtual:
+Os endpoints de negócio exigem `Authorization: Bearer $API_BEARER_TOKEN`. `/health`, `/ready` e `/docs` permanecem públicos para monitoramento e documentação.
+
+## Endpoints
+
+- `GET /health`: saúde do processo, sem chamada ao Databricks.
+- `GET /ready`: valida a configuração necessária para acessar o Databricks.
+- `GET /metrics`: métricas Prometheus.
+- `GET /v1/dashboards`: lista todos os dashboards ativos visíveis para o token do Databricks.
+- `GET /v1/dashboards/{id}`: busca pelo ID público retornado na listagem.
+- `GET /v1/dashboards/{id}/charts`: lista os gráficos do dashboard.
+- `GET /v1/dashboards/{id}/charts/{chart_id}/png`: renderiza um gráfico como imagem PNG.
+- `GET /v1/dashboards/{id}/charts/{chart_id}/chartjs`: retorna HTML pronto para usar como `src` de um iframe individual, renderizado com Chart.js.
+
+## Execução
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-```
-
-Instale as dependencias:
-
-```bash
 pip install -r requirements.txt
-```
-
-Inicie a API:
-
-```bash
 uvicorn app.main:app --reload
 ```
 
-Acesse:
-
-- API: `http://localhost:8000`
-- Health check: `http://localhost:8000/health`
-- Docs: `http://localhost:8000/docs`
-
-## Rodando com Docker Compose
-
-Crie o arquivo `.env` a partir do exemplo:
-
 ```bash
-cp .env.example .env
+curl http://localhost:8000/v1/dashboards
+curl http://localhost:8000/v1/dashboards/PUBLIC_ID/charts
+curl http://localhost:8000/v1/dashboards/PUBLIC_ID/charts/CHART_ID/chartjs
+curl http://localhost:8000/v1/dashboards/PUBLIC_ID/charts/CHART_ID/png --output chart.png
 ```
 
-Suba o servico:
+Exemplo de header:
 
 ```bash
-docker compose up --build
+curl -H "Authorization: Bearer $API_BEARER_TOKEN" http://localhost:8000/v1/dashboards
 ```
 
-Para parar:
+O segundo comando usa um `id` público retornado pelo primeiro e exige credenciais Databricks válidas.
+
+## Testes
 
 ```bash
-docker compose down
+pytest -q
 ```
-
-## Variaveis de ambiente
-
-| Nome | Padrao | Descricao |
-| --- | --- | --- |
-| `APP_PORT` | `8000` | Porta publicada no host pelo Docker Compose. |
