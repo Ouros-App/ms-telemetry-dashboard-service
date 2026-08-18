@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     description: str = "API for Databricks telemetry dashboards and charts."
     version: str = "0.1.0"
     app_port: int = 8000
+    log_level: str = "INFO"
     api_bearer_token: str | None = None
     dashboard_catalog_path: Path = Path("data/dashboards.json")
     databricks_host: str | None = None
@@ -41,6 +42,8 @@ class Settings(BaseSettings):
             "DATABRICKS_CLIENT_SECRET": self.databricks_client_secret,
         }
         errors = [name for name, value in required.items() if not value]
+        if self.log_level.upper() not in {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}:
+            errors.append("LOG_LEVEL_INVALID")
         for name, value in (("DATABRICKS_HOST", self.databricks_host), ("DATABRICKS_TOKEN_URL", self.token_url)):
             if value:
                 parsed = urlsplit(value)
