@@ -9,6 +9,7 @@ import httpx
 from pydantic import ValidationError
 
 from app.core.config import Settings
+from app.core.logging import get_logger
 from app.core.metrics import (
     DATABRICKS_DURATION,
     DATABRICKS_ERRORS,
@@ -49,6 +50,7 @@ class DatabricksHttpClient:
         json_body: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         started = time.perf_counter()
+        outcome = "error"
         try:
             response = await self._request_with_retries(
                 operation,
@@ -59,9 +61,21 @@ class DatabricksHttpClient:
                 params=params,
                 json_body=json_body,
             )
-            return self._decode_response(operation, response)
+            payload = self._decode_response(operation, response)
+            outcome = "success"
+            return payload
         finally:
-            DATABRICKS_DURATION.labels(operation).observe(time.perf_counter() - started)
+            duration_ms = (time.perf_counter() - started) * 1000
+            DATABRICKS_DURATION.labels(operation).observe(duration_ms / 1000)
+            get_logger("databricks.http").info(
+                "Databricks operation completed",
+                extra={
+                    "event": "databricks_operation_completed",
+                    "operation": operation,
+                    "duration_ms": round(duration_ms, 2),
+                    "outcome": outcome,
+                },
+            )
 
     async def _request_with_retries(
         self,
@@ -76,6 +90,17 @@ class DatabricksHttpClient:
     ) -> httpx.Response:
         retries = self.settings.http_max_retries
         for attempt in range(retries + 1):
+            get_logger("databricks.http").debug(
+                "Databricks request started",
+                extra={
+                    "event": "databricks_request_started",
+                    "operation": operation,
+                    "method": method,
+                    "path": httpx.URL(url).path,
+                    "attempt": attempt + 1,
+                    "max_retries": retries,
+                },
+            )
             try:
                 response = await self.client.request(
                     method,
@@ -86,6 +111,17 @@ class DatabricksHttpClient:
                     json=json_body,
                 )
                 if response.status_code in {429, 500, 502, 503, 504} and attempt < retries:
+                    get_logger("databricks.http").warning(
+                        "Databricks request will be retried",
+                        extra={
+                            "event": "databricks_request_retry",
+                            "operation": operation,
+                            "attempt": attempt + 1,
+                            "max_retries": retries,
+                            "upstream_status": response.status_code,
+                            "retryable": True,
+                        },
+                    )
                     await self._backoff(attempt)
                     continue
                 response.raise_for_status()
