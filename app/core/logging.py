@@ -16,6 +16,7 @@ _LOG_FIELDS = {
     "attempt",
     "max_retries",
     "upstream_status",
+    "retry_reason",
     "retryable",
     "outcome",
     "errors",
@@ -24,6 +25,13 @@ _LOG_FIELDS = {
     "catalog_path",
     "catalog_entries",
     "expires_in",
+}
+_LOG_LEVELS = {
+    "CRITICAL": logging.CRITICAL,
+    "ERROR": logging.ERROR,
+    "WARNING": logging.WARNING,
+    "INFO": logging.INFO,
+    "DEBUG": logging.DEBUG,
 }
 
 
@@ -51,15 +59,19 @@ class JsonFormatter(logging.Formatter):
 
 
 def configure_logging(level_name: str = "INFO") -> None:
-    level = getattr(logging, level_name.upper(), logging.INFO)
-    if not isinstance(level, int):
-        level = logging.INFO
+    level = _LOG_LEVELS.get(level_name.upper(), logging.INFO)
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(JsonFormatter())
     root = logging.getLogger()
     root.handlers.clear()
     root.addHandler(handler)
     root.setLevel(level)
+    for logger_name in ("uvicorn.access", "uvicorn.error"):
+        uvicorn_logger = logging.getLogger(logger_name)
+        uvicorn_logger.handlers.clear()
+        uvicorn_logger.addHandler(handler)
+        uvicorn_logger.setLevel(level)
+        uvicorn_logger.propagate = False
 
 
 def get_logger(name: str) -> logging.Logger:

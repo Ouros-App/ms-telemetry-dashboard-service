@@ -18,9 +18,13 @@ from app.core.metrics import (
 )
 from app.schemas.dashboards import DatabricksTokenResponse
 
+DATABRICKS_HTTP_LOGGER = get_logger("databricks.http")
+
 
 class DatabricksIntegrationError(Exception):
-    pass
+    def __init__(self, message: str, *, upstream_status: int | None = None) -> None:
+        super().__init__(message)
+        self.upstream_status = upstream_status
 
 
 class DatabricksTimeoutError(DatabricksIntegrationError):
@@ -51,6 +55,7 @@ class DatabricksHttpClient:
     ) -> dict[str, Any]:
         started = time.perf_counter()
         outcome = "error"
+        upstream_status: int | None = None
         try:
             response = await self._request_with_retries(
                 operation,
@@ -61,19 +66,25 @@ class DatabricksHttpClient:
                 params=params,
                 json_body=json_body,
             )
+            upstream_status = response.status_code
             payload = self._decode_response(operation, response)
             outcome = "success"
             return payload
+        except DatabricksIntegrationError as exc:
+            if exc.upstream_status is not None:
+                upstream_status = exc.upstream_status
+            raise
         finally:
             duration_ms = (time.perf_counter() - started) * 1000
             DATABRICKS_DURATION.labels(operation).observe(duration_ms / 1000)
-            get_logger("databricks.http").info(
+            DATABRICKS_HTTP_LOGGER.info(
                 "Databricks operation completed",
                 extra={
                     "event": "databricks_operation_completed",
                     "operation": operation,
                     "duration_ms": round(duration_ms, 2),
                     "outcome": outcome,
+                    "upstream_status": upstream_status,
                 },
             )
 
@@ -90,7 +101,7 @@ class DatabricksHttpClient:
     ) -> httpx.Response:
         retries = self.settings.http_max_retries
         for attempt in range(retries + 1):
-            get_logger("databricks.http").debug(
+            DATABRICKS_HTTP_LOGGER.debug(
                 "Databricks request started",
                 extra={
                     "event": "databricks_request_started",
@@ -111,7 +122,7 @@ class DatabricksHttpClient:
                     json=json_body,
                 )
                 if response.status_code in {429, 500, 502, 503, 504} and attempt < retries:
-                    get_logger("databricks.http").warning(
+                    DATABRICKS_HTTP_LOGGER.warning(
                         "Databricks request will be retried",
                         extra={
                             "event": "databricks_request_retry",
@@ -129,10 +140,24 @@ class DatabricksHttpClient:
             except (httpx.TimeoutException, httpx.RequestError) as exc:
                 if attempt >= retries:
                     raise self._transport_error(operation, exc) from exc
+                DATABRICKS_HTTP_LOGGER.warning(
+                    "Databricks request will be retried",
+                    extra={
+                        "event": "databricks_request_retry",
+                        "operation": operation,
+                        "attempt": attempt + 1,
+                        "max_retries": retries,
+                        "retry_reason": "timeout" if isinstance(exc, httpx.TimeoutException) else "connection",
+                        "retryable": True,
+                    },
+                )
                 await self._backoff(attempt)
             except httpx.HTTPStatusError as exc:
                 DATABRICKS_ERRORS.labels(operation, f"http_{exc.response.status_code}").inc()
-                raise DatabricksIntegrationError("Databricks rejected the request") from exc
+                raise DatabricksIntegrationError(
+                    "Databricks rejected the request",
+                    upstream_status=exc.response.status_code,
+                ) from exc
         raise DatabricksIntegrationError("Databricks request failed")
 
     async def _backoff(self, attempt: int) -> None:

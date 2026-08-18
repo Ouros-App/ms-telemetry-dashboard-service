@@ -1,4 +1,5 @@
 import json
+import logging
 
 import httpx
 import pytest
@@ -86,6 +87,73 @@ async def test_http_retries_transient_status() -> None:
 
     assert await http.request_json("test", "GET", "https://workspace.example.com") == {"ok": True}
     assert calls == 2
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_http_logs_upstream_status_on_completion(caplog: pytest.LogCaptureFixture) -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"ok": True})
+
+    settings = Settings(http_max_retries=0)
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    http = DatabricksHttpClient(client, settings)
+
+    with caplog.at_level(logging.INFO, logger="databricks.http"):
+        await http.request_json("test", "GET", "https://workspace.example.com")
+
+    completed = next(
+        record for record in caplog.records if getattr(record, "event", None) == "databricks_operation_completed"
+    )
+    assert completed.upstream_status == 200
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_http_logs_upstream_status_on_http_error(caplog: pytest.LogCaptureFixture) -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"error": "bad request"})
+
+    settings = Settings(http_max_retries=0)
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    http = DatabricksHttpClient(client, settings)
+
+    with caplog.at_level(logging.INFO, logger="databricks.http"), pytest.raises(DatabricksIntegrationError):
+        await http.request_json("test", "GET", "https://workspace.example.com")
+
+    completed = next(
+        record for record in caplog.records if getattr(record, "event", None) == "databricks_operation_completed"
+    )
+    assert completed.upstream_status == 400
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("retry_reason", ["connection", "timeout"])
+async def test_http_logs_transport_retry_reason(retry_reason: str, caplog: pytest.LogCaptureFixture) -> None:
+    calls = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            if retry_reason == "timeout":
+                raise httpx.ReadTimeout("connection details must not be logged")
+            raise httpx.ConnectError("connection details must not be logged")
+        return httpx.Response(200, json={"ok": True})
+
+    settings = Settings(http_max_retries=1, http_retry_backoff_seconds=0)
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    http = DatabricksHttpClient(client, settings)
+
+    with caplog.at_level(logging.WARNING, logger="databricks.http"):
+        await http.request_json("test", "GET", "https://workspace.example.com")
+
+    retry = next(record for record in caplog.records if getattr(record, "event", None) == "databricks_request_retry")
+    assert retry.retry_reason == retry_reason
+    assert retry.attempt == 1
+    assert retry.max_retries == 1
+    assert "connection details" not in retry.getMessage()
     await client.aclose()
 
 
