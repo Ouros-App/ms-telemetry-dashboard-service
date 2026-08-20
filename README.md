@@ -1,5 +1,17 @@
 # ms-telemetry-dashboard-service
 
+<!-- REPO-METADATA:START -->
+<div align="center">
+
+[![Repo Size](https://img.shields.io/github/repo-size/Ouros-App/ms-telemetry-dashboard-service?style=flat-square&label=REPO%20SIZE)](https://github.com/Ouros-App/ms-telemetry-dashboard-service)
+[![Languages](https://img.shields.io/github/languages/count/Ouros-App/ms-telemetry-dashboard-service?style=flat-square&label=LANGUAGES)](https://github.com/Ouros-App/ms-telemetry-dashboard-service/languages)
+[![Forks](https://img.shields.io/github/forks/Ouros-App/ms-telemetry-dashboard-service?style=flat-square&label=FORKS)](https://github.com/Ouros-App/ms-telemetry-dashboard-service/network/members)
+[![Issues](https://img.shields.io/github/issues/Ouros-App/ms-telemetry-dashboard-service?style=flat-square&label=ISSUES)](https://github.com/Ouros-App/ms-telemetry-dashboard-service/issues)
+[![Pull Requests](https://img.shields.io/github/issues-pr/Ouros-App/ms-telemetry-dashboard-service?style=flat-square&label=PULL%20REQUESTS)](https://github.com/Ouros-App/ms-telemetry-dashboard-service/pulls)
+
+</div>
+<!-- REPO-METADATA:END -->
+
 Microserviço FastAPI que consulta dashboards de telemetria no Databricks e disponibiliza seus gráficos em dados, HTML com Chart.js ou imagens PNG.
 
 ## Status e escopo
@@ -127,3 +139,12 @@ O CI também executa SonarCloud e CodeQL.
 ## Licença
 
 Este projeto está sob a licença MIT, conforme o arquivo [LICENSE](LICENSE).
+
+
+## Principais contribuidores
+
+<!-- CONTRIBUTORS:START -->
+- [@Nicolas25vlad](https://github.com/Nicolas25vlad) — 3 contribuições
+<!-- CONTRIBUTORS:END -->
+
+> Atualizado automaticamente semanalmente pelo workflow de metadados do README.
