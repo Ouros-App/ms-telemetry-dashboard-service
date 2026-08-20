@@ -1,49 +1,68 @@
 # ms-telemetry-dashboard-service
 
-Microserviço FastAPI para dashboards de telemetria publicados no Databricks. Ele lista dashboards e gráficos e oferece dois formatos de visualização: PNG e Chart.js.
+Microserviço FastAPI que consulta dashboards de telemetria no Databricks e disponibiliza seus gráficos em dados, HTML com Chart.js ou imagens PNG.
 
-O serviço também lista os gráficos de cada dashboard e mantém a execução de consultas no SQL Warehouse para os endpoints legados de imagem.
+## Status e escopo
 
-## Arquitetura
+O serviço possui:
+
+- consulta de dashboards ativos visíveis para as credenciais Databricks configuradas;
+- listagem de dashboards e gráficos;
+- renderização de gráficos em PNG;
+- retorno de uma página HTML individual com Chart.js;
+- catálogo JSON local opcional para metadados;
+- autenticação Bearer nas rotas de negócio;
+- métricas Prometheus, logs JSON, cache de gráficos e tentativas de repetição para chamadas externas.
+
+O arquivo `data/dashboards.json` existe no repositório e atualmente contém uma lista vazia. A fonte principal dos dashboards é o workspace Databricks.
+
+## Principais componentes
 
 ```text
-router -> DashboardService -> DatabricksDashboardProvider
-                         -> DatabricksAuthClient -> Databricks OAuth/API
+router
+  -> DashboardService
+      -> DatabricksDashboardProvider
+          -> DatabricksHttpClient
+          -> DatabricksAuthClient
 ```
 
-`GET /v1/dashboards` consulta diretamente os dashboards ativos visíveis para as credenciais configuradas no Databricks. O `id` retornado é o próprio `dashboard_id` do Databricks, portanto pode ser usado nos demais endpoints. O catálogo local é opcional e serve apenas para substituir título, descrição ou ID público de um dashboard específico.
+- `app/main.py`: inicialização da aplicação, clientes Databricks, catálogo, middleware, CORS e métricas.
+- `app/api/routes.py`: rotas de saúde, prontidão, métricas, dashboards e gráficos.
+- `app/services/`: regras de consulta e cache dos dashboards e gráficos.
+- `app/providers/`: integração com a API do Databricks.
+- `app/clients/`: cliente HTTP e autenticação OAuth do Databricks.
+- `app/repositories/catalog.py`: leitura do catálogo local.
+- `tests/`: testes de API, autenticação, gráficos, configuração, logs, serviço, provider e rotas.
 
-## Configuração
+## Pré-requisitos
 
-Copie `.env.example` para `.env` e preencha:
+- Python 3.12 para execução local.
+- Acesso a um workspace Databricks por service principal OAuth.
+- Permissão do service principal para acessar o workspace, os dashboards e o SQL Warehouse usado por eles.
+- Docker é opcional; o repositório inclui um `Dockerfile`.
 
-| Variável | Obrigatória para `/ready` | Descrição |
-| --- | --- | --- |
-| `API_BEARER_TOKEN` | sim | Token usado no header `Authorization: Bearer ...` |
-| `LOG_LEVEL` | não | Nível de log: `DEBUG`, `INFO`, `WARNING`, `ERROR` ou `CRITICAL` |
-| `DASHBOARD_CATALOG_PATH` | não | Catálogo JSON opcional para metadados e aliases públicos |
-| `DATABRICKS_HOST` | sim | URL HTTPS do workspace |
-| `DATABRICKS_CLIENT_ID` | sim | Application ID do service principal |
-| `DATABRICKS_CLIENT_SECRET` | sim | Secret OAuth do service principal |
-| `DATABRICKS_TOKEN_URL` | não | Sobrescreve `/oidc/v1/token` derivado do host |
-| `HTTP_TIMEOUT_SECONDS` | não | Timeout das chamadas externas |
-| `HTTP_MAX_RETRIES` | não | Tentativas adicionais para timeout, conexão, 429 e 5xx |
-| `CORS_ORIGINS` | não | Lista JSON de origins permitidos |
+## Instalação e configuração
 
-O catálogo local não é obrigatório para listar dashboards. Se usado, ele pode conter metadados para dashboards específicos; entradas com `enabled: false` não removem dashboards da API. O Service Principal precisa acessar o workspace, os dashboards e o SQL Warehouse usado por eles.
+Copie `.env.example` para `.env`. As variáveis disponíveis são:
 
-Os endpoints de negócio exigem `Authorization: Bearer $API_BEARER_TOKEN`. `/health`, `/ready` e `/docs` permanecem públicos para monitoramento e documentação.
+| Variável | Uso |
+| --- | --- |
+| `APP_PORT` | Porta configurada no ambiente de execução; o valor de exemplo é `8000`. |
+| `PROJECT_NAME` | Nome exibido pela aplicação. |
+| `LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING`, `ERROR` ou `CRITICAL`. |
+| `API_BEARER_TOKEN` | Token usado nas rotas de negócio. |
+| `DASHBOARD_CATALOG_PATH` | Caminho do catálogo JSON; o padrão é `data/dashboards.json`. |
+| `DATABRICKS_HOST` | URL HTTPS do workspace Databricks. |
+| `DATABRICKS_CLIENT_ID` / `DATABRICKS_CLIENT_SECRET` | Credenciais OAuth do service principal. |
+| `DATABRICKS_TOKEN_URL` | URL OAuth opcional; por padrão é derivada do host. |
+| `HTTP_TIMEOUT_SECONDS` / `HTTP_MAX_RETRIES` | Timeout e tentativas adicionais das chamadas externas. |
+| `CHART_CACHE_TTL_SECONDS` | Tempo de vida do cache de gráficos. |
+| `SQL_WAIT_TIMEOUT_SECONDS` | Limite de espera de consultas SQL. |
+| `HTTP_RETRY_BACKOFF_SECONDS` | Intervalo de backoff entre tentativas. |
+| `TOKEN_REFRESH_MARGIN_SECONDS` | Margem para renovar o token OAuth. |
+| `CORS_ORIGINS` | Lista JSON de origens permitidas, por exemplo `["https://frontend.example.com"]`. |
 
-## Endpoints
-
-- `GET /health`: saúde do processo, sem chamada ao Databricks.
-- `GET /ready`: valida a configuração necessária para acessar o Databricks.
-- `GET /metrics`: métricas Prometheus.
-- `GET /v1/dashboards`: lista todos os dashboards ativos visíveis para o token do Databricks.
-- `GET /v1/dashboards/{id}`: busca pelo ID público retornado na listagem.
-- `GET /v1/dashboards/{id}/charts`: lista os gráficos do dashboard.
-- `GET /v1/dashboards/{id}/charts/{chart_id}/png`: renderiza um gráfico como imagem PNG.
-- `GET /v1/dashboards/{id}/charts/{chart_id}/chartjs`: retorna HTML pronto para usar como `src` de um iframe individual, renderizado com Chart.js.
+`/ready` considera obrigatórios `API_BEARER_TOKEN`, `DATABRICKS_HOST`, `DATABRICKS_CLIENT_ID` e `DATABRICKS_CLIENT_SECRET`, além de validar os parâmetros de configuração.
 
 ## Execução
 
@@ -54,25 +73,57 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
+A aplicação fica disponível por padrão em [http://localhost:8000](http://localhost:8000).
+
+O Dockerfile também inicia `uvicorn app.main:app` e usa a porta `8000` por padrão.
+
+## Uso da API
+
+Rotas públicas:
+
+- `GET /health`: saúde do processo, sem chamada ao Databricks.
+- `GET /ready`: verifica a configuração necessária para acessar o Databricks.
+- `GET /metrics`: métricas Prometheus.
+- `GET /docs`: documentação gerada pelo FastAPI.
+
+Rotas de negócio, protegidas por Bearer:
+
+- `GET /v1/dashboards`: lista dashboards ativos.
+- `GET /v1/dashboards/{id}`: busca um dashboard.
+- `GET /v1/dashboards/{id}/charts`: lista os gráficos do dashboard.
+- `GET /v1/dashboards/{id}/charts/{chart_id}/png`: retorna PNG.
+- `GET /v1/dashboards/{id}/charts/{chart_id}/chartjs`: retorna HTML com Chart.js.
+
+Use um `id` retornado por `/v1/dashboards` nas chamadas seguintes:
+
 ```bash
-curl http://localhost:8000/v1/dashboards
-curl http://localhost:8000/v1/dashboards/PUBLIC_ID/charts
-curl http://localhost:8000/v1/dashboards/PUBLIC_ID/charts/CHART_ID/chartjs
-curl http://localhost:8000/v1/dashboards/PUBLIC_ID/charts/CHART_ID/png --output chart.png
+curl -H "Authorization: Bearer $API_BEARER_TOKEN" \
+  http://localhost:8000/v1/dashboards
+
+curl -H "Authorization: Bearer $API_BEARER_TOKEN" \
+  http://localhost:8000/v1/dashboards/PUBLIC_ID/charts
+
+curl -H "Authorization: Bearer $API_BEARER_TOKEN" \
+  http://localhost:8000/v1/dashboards/PUBLIC_ID/charts/CHART_ID/chartjs
+
+curl -H "Authorization: Bearer $API_BEARER_TOKEN" \
+  http://localhost:8000/v1/dashboards/PUBLIC_ID/charts/CHART_ID/png \
+  --output chart.png
 ```
 
-Exemplo de header:
+Os logs são emitidos em JSON e incluem evento, request ID, rota, status, duração e tentativas do Databricks, sem registrar tokens, secrets ou payloads de consultas.
 
-```bash
-curl -H "Authorization: Bearer $API_BEARER_TOKEN" http://localhost:8000/v1/dashboards
-```
-
-O segundo comando usa um `id` público retornado pelo primeiro e exige credenciais Databricks válidas.
-
-Para depuração, defina `LOG_LEVEL=DEBUG`. Os logs são emitidos em JSON no stdout e incluem evento, request ID, rota, status, duração e tentativas do Databricks, sem registrar tokens, secrets ou payloads de consultas.
-
-## Testes
+## Testes e qualidade
 
 ```bash
 pytest -q
+ruff check .
+pytest --cov=app --cov-report=xml:coverage.xml
+python -m compileall .
 ```
+
+O CI também executa SonarCloud e CodeQL.
+
+## Licença
+
+Este projeto está sob a licença MIT, conforme o arquivo [LICENSE](LICENSE).
