@@ -6,6 +6,7 @@ from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
+    Query,
     Request,
     Response,
     status,
@@ -16,7 +17,12 @@ from prometheus_client import CONTENT_TYPE_LATEST
 from app.clients.databricks import DatabricksIntegrationError, DatabricksTimeoutError
 from app.core.auth import require_bearer
 from app.core.metrics import metrics_payload
-from app.schemas.common import HealthResponse, MessageResponse, ReadinessResponse
+from app.schemas.common import (
+    ErrorResponse,
+    HealthResponse,
+    MessageResponse,
+    ReadinessResponse,
+)
 from app.schemas.dashboards import (
     DashboardChartListResponse,
     DashboardListResponse,
@@ -28,6 +34,10 @@ router = APIRouter()
 
 DATABRICKS_TIMEOUT_DETAIL = "Databricks request timed out"
 DATABRICKS_INTEGRATION_DETAIL = "Databricks integration failed"
+AUTH_RESPONSES = {
+    401: {"model": ErrorResponse, "description": "Missing or invalid bearer token"},
+    503: {"model": ErrorResponse, "description": "Bearer authentication is not configured"},
+}
 
 
 def get_dashboard_service(request: Request) -> DashboardService:
@@ -63,6 +73,7 @@ def metrics() -> Response:
     summary="List Databricks dashboards",
     description="Returns every active dashboard visible to the configured Databricks credentials.",
     responses={
+        **AUTH_RESPONSES,
         502: {"description": DATABRICKS_INTEGRATION_DETAIL},
         504: {"description": DATABRICKS_TIMEOUT_DETAIL},
     },
@@ -84,6 +95,7 @@ async def list_dashboards(
     "/v1/dashboards/{dashboard_id}",
     summary="Get a dashboard",
     responses={
+        **AUTH_RESPONSES,
         404: {"description": "Dashboard not found"},
         502: {"description": DATABRICKS_INTEGRATION_DETAIL},
         504: {"description": DATABRICKS_TIMEOUT_DETAIL},
@@ -109,6 +121,7 @@ async def get_dashboard(
     "/v1/dashboards/{dashboard_id}/charts",
     summary="List charts in a dashboard",
     responses={
+        **AUTH_RESPONSES,
         404: {"description": "Dashboard not found"},
         502: {"description": DATABRICKS_INTEGRATION_DETAIL},
         504: {"description": DATABRICKS_TIMEOUT_DETAIL},
@@ -134,9 +147,14 @@ async def list_charts(
     "/v1/dashboards/{dashboard_id}/charts/{chart_id}/png",
     response_class=Response,
     summary="Render a dashboard chart as PNG",
-    description="Renders one dashboard chart as a PNG image.",
+    description="Renders one dashboard chart as a PNG image. Omit user_id for the global view.",
     dependencies=[Depends(require_bearer)],
     responses={
+        200: {
+            "description": "PNG chart image",
+            "content": {"image/png": {}},
+        },
+        **AUTH_RESPONSES,
         404: {"description": "Dashboard or chart not found"},
         502: {"description": DATABRICKS_INTEGRATION_DETAIL},
         504: {"description": DATABRICKS_TIMEOUT_DETAIL},
@@ -147,9 +165,19 @@ async def chart_png(
     dashboard_id: str,
     chart_id: str,
     service: Annotated[DashboardService, Depends(get_dashboard_service)],
+    user_id: Annotated[
+        str | None,
+        Query(
+            min_length=1,
+            max_length=128,
+            pattern=r"^[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}$",
+            description="Filters the chart by user_id. Omit for the global view.",
+        ),
+    ] = None,
 ) -> Response:
     try:
-        image = await service.chart_png(dashboard_id, chart_id)
+        chart_kwargs = {"user_id": user_id} if user_id is not None else {}
+        image = await service.chart_png(dashboard_id, chart_id, **chart_kwargs)
         return Response(
             content=image,
             media_type="image/png",
@@ -167,9 +195,14 @@ async def chart_png(
     "/v1/dashboards/{dashboard_id}/charts/{chart_id}/chartjs",
     response_class=HTMLResponse,
     summary="Render an individual chart with Chart.js",
-    description="Returns self-contained HTML that renders one chart with Chart.js. It can be loaded directly or used as an iframe source.",
+    description="Returns self-contained HTML that renders one chart with Chart.js. It can be loaded directly or used as an iframe source. Omit user_id for the global view.",
     dependencies=[Depends(require_bearer)],
     responses={
+        200: {
+            "description": "Self-contained HTML chart",
+            "content": {"text/html": {}},
+        },
+        **AUTH_RESPONSES,
         404: {"description": "Dashboard or chart not found"},
         502: {"description": DATABRICKS_INTEGRATION_DETAIL},
         504: {"description": DATABRICKS_TIMEOUT_DETAIL},
@@ -180,9 +213,19 @@ async def chartjs_chart(
     dashboard_id: str,
     chart_id: str,
     service: Annotated[DashboardService, Depends(get_dashboard_service)],
+    user_id: Annotated[
+        str | None,
+        Query(
+            min_length=1,
+            max_length=128,
+            pattern=r"^[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}$",
+            description="Filters the chart by user_id. Omit for the global view.",
+        ),
+    ] = None,
 ) -> HTMLResponse:
     try:
-        chart, rows = await service.chart_data(dashboard_id, chart_id)
+        chart_kwargs = {"user_id": user_id} if user_id is not None else {}
+        chart, rows = await service.chart_data(dashboard_id, chart_id, **chart_kwargs)
         payload = json.dumps(
             {
                 "title": chart.title,

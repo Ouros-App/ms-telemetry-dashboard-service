@@ -1,6 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from app.clients.databricks import DatabricksIntegrationError
 from app.core.config import settings
 from app.main import app
 from app.providers.databricks import DatabricksDashboardProvider
@@ -31,6 +32,18 @@ def test_chart_statement_groups_dimension_fields() -> None:
     statement = DatabricksDashboardProvider._build_chart_statement(chart())
 
     assert statement.endswith("GROUP BY 1")
+
+
+def test_chart_statement_filters_by_user_id() -> None:
+    statement = DatabricksDashboardProvider._build_chart_statement(chart(), user_id="user-123")
+
+    assert "WHERE dashboard_source.user_id = 'user-123'" in statement
+    assert statement.endswith("GROUP BY 1")
+
+
+def test_chart_statement_rejects_unsafe_user_id() -> None:
+    with pytest.raises(DatabricksIntegrationError, match="Invalid user_id filter"):
+        DatabricksDashboardProvider._build_chart_statement(chart(), user_id="user' OR 1=1")
 
 
 def test_chart_renderer_returns_png() -> None:
@@ -81,9 +94,40 @@ async def test_chart_service_reuses_png_for_cache_ttl() -> None:
     assert provider.query_calls == 1
 
 
+@pytest.mark.asyncio
+async def test_chart_service_does_not_share_png_cache_between_users() -> None:
+    dashboard = DashboardRecord(
+        id="dashboard-a", provider="databricks", title="Dashboard A", dashboard_id="dashboard-a"
+    )
+
+    class Provider:
+        query_calls = 0
+
+        async def list_dashboards(self):
+            return [dashboard]
+
+        async def get_chart(self, item, chart_id):
+            return chart("counter")
+
+        async def execute_chart_query(self, item, user_id=None):
+            self.query_calls += 1
+            return [{"value": user_id or "global"}]
+
+    provider = Provider()
+    service = DashboardService(provider, chart_cache_ttl_seconds=30)
+
+    await service.chart_png("dashboard-a", "counter", user_id="user-a")
+    await service.chart_png("dashboard-a", "counter", user_id="user-b")
+
+    assert provider.query_calls == 2
+
+
 def test_chartjs_endpoint_returns_interactive_html(monkeypatch: pytest.MonkeyPatch) -> None:
+    received: dict[str, str] = {}
+
     class Service:
-        async def chart_data(self, dashboard_id, chart_id):
+        async def chart_data(self, dashboard_id, chart_id, **kwargs):
+            received.update(kwargs)
             return chart(), [{"region": "South", "sum(revenue)": 12.5}]
 
     with TestClient(app) as client:
@@ -91,6 +135,7 @@ def test_chartjs_endpoint_returns_interactive_html(monkeypatch: pytest.MonkeyPat
         monkeypatch.setattr(app.state, "dashboard_service", Service())
         response = client.get(
             "/v1/dashboards/dashboard-a/charts/revenue/chartjs",
+            params={"user_id": "user-123"},
             headers={"Authorization": "Bearer test-token"},
         )
 
@@ -99,3 +144,4 @@ def test_chartjs_endpoint_returns_interactive_html(monkeypatch: pytest.MonkeyPat
     assert "chart.js@4.4.3" in response.text
     assert "new Chart" in response.text
     assert "South" in response.text
+    assert received == {"user_id": "user-123"}
