@@ -69,4 +69,10 @@ def test_openapi_declares_bearer_security() -> None:
         response = client.get("/openapi.json")
 
     assert response.status_code == 200
-    assert "HTTPBearer" in response.json()["components"]["securitySchemes"]
+    document = response.json()
+    assert "HTTPBearer" in document["components"]["securitySchemes"]
+    assert {tag["name"] for tag in document["tags"]} == {"service", "dashboards"}
+    chart_path = document["paths"]["/v1/dashboards/{dashboard_id}/charts/{chart_id}/chartjs"]["get"]
+    user_id = next(parameter for parameter in chart_path["parameters"] if parameter["name"] == "user_id")
+    assert user_id["required"] is False
+    assert "ErrorResponse" in document["components"]["schemas"]

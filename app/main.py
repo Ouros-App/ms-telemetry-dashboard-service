@@ -23,6 +23,17 @@ from app.services.dashboard import DashboardService
 logger = get_logger(__name__)
 http_logger = get_logger("http")
 
+OPENAPI_TAGS = [
+    {
+        "name": "service",
+        "description": "Health, readiness and operational endpoints.",
+    },
+    {
+        "name": "dashboards",
+        "description": "Databricks dashboards and chart rendering endpoints.",
+    },
+]
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -66,7 +77,13 @@ async def lifespan(app: FastAPI):
 
 
 configure_logging(settings.log_level)
-app = FastAPI(title=settings.project_name, description=settings.description, version=settings.version, lifespan=lifespan)
+app = FastAPI(
+    title=settings.project_name,
+    description=settings.description,
+    version=settings.version,
+    openapi_tags=OPENAPI_TAGS,
+    lifespan=lifespan,
+)
 if settings.cors_origins and "*" not in settings.cors_origins:
     app.add_middleware(
         CORSMiddleware,
