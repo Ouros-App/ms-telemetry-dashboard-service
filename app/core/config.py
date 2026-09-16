@@ -3,6 +3,10 @@ from urllib.parse import urlsplit
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core.infisical import load_infisical_secrets
+
+load_infisical_secrets()
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False)
