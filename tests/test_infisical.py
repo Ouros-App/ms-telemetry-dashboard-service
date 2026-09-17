@@ -53,7 +53,7 @@ def test_loads_secrets_from_infisical() -> None:
 
 
 def test_loads_secrets_before_settings_initialization() -> None:
-    import app.core.config as config
+    from app.core import config
 
     env = {
         "INFISICAL_TOKEN": "token",
