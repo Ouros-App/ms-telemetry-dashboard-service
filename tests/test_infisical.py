@@ -53,8 +53,6 @@ def test_loads_secrets_from_infisical() -> None:
 
 
 def test_loads_secrets_before_settings_initialization() -> None:
-    from app.core import config
-
     env = {
         "INFISICAL_TOKEN": "token",
         "INFISICAL_PROJECT_ID": "project",
@@ -65,6 +63,8 @@ def test_loads_secrets_before_settings_initialization() -> None:
         secrets=[SimpleNamespace(secretKey="API_BEARER_TOKEN", secretValue="loaded-token")]
     )
     with patch.dict(os.environ, env, clear=True), patch("app.core.infisical.InfisicalSDKClient") as client:
+        from app.core import config
+
         client.return_value.secrets.list_secrets.return_value = response
         importlib.reload(config)
 
