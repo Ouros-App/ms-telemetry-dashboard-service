@@ -25,6 +25,7 @@ from app.schemas.dashboards import (
 
 PROVIDER_NOT_CONFIGURED_DETAIL = "Databricks provider is not configured"
 SAFE_PATH_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$")
+SAFE_USER_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}$")
 
 
 class DatabricksDashboardProvider:
@@ -98,11 +99,13 @@ class DatabricksDashboardProvider:
             raise KeyError(chart_id)
         return chart
 
-    async def execute_chart_query(self, chart: DashboardChartDefinition) -> list[dict[str, Any]]:
+    async def execute_chart_query(
+        self, chart: DashboardChartDefinition, user_id: str | None = None
+    ) -> list[dict[str, Any]]:
         if not self.settings.databricks_host:
             raise DatabricksIntegrationError(PROVIDER_NOT_CONFIGURED_DETAIL)
         token = await self.auth.get_access_token()
-        statement = self._build_chart_statement(chart)
+        statement = self._build_chart_statement(chart, user_id=user_id)
         url = f"{self.settings.databricks_host.rstrip('/')}/api/2.0/sql/statements"
         payload = await self.http.request_json(
             "dashboard_chart_query",
@@ -213,11 +216,15 @@ class DatabricksDashboardProvider:
             return None
 
     @staticmethod
-    def _build_chart_statement(chart: DashboardChartDefinition) -> str:
+    def _build_chart_statement(chart: DashboardChartDefinition, user_id: str | None = None) -> str:
         fields = ", ".join(
             f"{field.expression} AS `{field.name.replace('`', '``')}`" for field in chart.fields
         )
         statement = f"SELECT {fields} FROM ({chart.dataset_query}) AS dashboard_source"
+        if user_id is not None:
+            if not SAFE_USER_ID.fullmatch(user_id):
+                raise DatabricksIntegrationError("Invalid user_id filter")
+            statement += f" WHERE dashboard_source.user_id = '{user_id}'"
         dimensions = [
             str(index + 1)
             for index, field in enumerate(chart.fields)

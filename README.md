@@ -76,6 +76,31 @@ Copie `.env.example` para `.env`. As variáveis disponíveis são:
 
 `/ready` considera obrigatórios `API_BEARER_TOKEN`, `DATABRICKS_HOST`, `DATABRICKS_CLIENT_ID` e `DATABRICKS_CLIENT_SECRET`, além de validar os parâmetros de configuração.
 
+Os endpoints de negócio exigem `Authorization: Bearer $API_BEARER_TOKEN`. `/health`, `/ready`, `/docs`, `/redoc` e `/openapi.json` permanecem públicos para monitoramento e documentação.
+
+## Documentação da API
+
+Com o serviço em execução, a documentação interativa está disponível em:
+
+- Swagger UI: `http://localhost:8000/docs`
+- ReDoc: `http://localhost:8000/redoc`
+- OpenAPI JSON: `http://localhost:8000/openapi.json`
+
+O Swagger documenta o bearer obrigatório, os schemas de resposta, os erros HTTP e o parâmetro opcional `user_id` dos endpoints de gráfico.
+
+## Endpoints
+
+- `GET /health`: saúde do processo, sem chamada ao Databricks.
+- `GET /ready`: valida a configuração necessária para acessar o Databricks.
+- `GET /metrics`: métricas Prometheus.
+- `GET /v1/dashboards`: lista todos os dashboards ativos visíveis para o token do Databricks.
+- `GET /v1/dashboards/{id}`: busca pelo ID público retornado na listagem.
+- `GET /v1/dashboards/{id}/charts`: lista os gráficos do dashboard.
+- `GET /v1/dashboards/{id}/charts/{chart_id}/png`: renderiza um gráfico como imagem PNG. Aceita `?user_id=...` para filtrar o gráfico por usuário.
+- `GET /v1/dashboards/{id}/charts/{chart_id}/chartjs`: retorna HTML pronto para usar como `src` de um iframe individual, renderizado com Chart.js. Aceita `?user_id=...` para filtrar o gráfico por usuário.
+
+Sem `user_id`, a consulta continua global. Com `user_id`, o dataset precisa expor uma coluna `user_id` e a consulta recebe `WHERE dashboard_source.user_id = '...'` antes da agregação. O bearer configurado neste serviço é único e estático; portanto, ele não identifica o usuário final nem impede, sozinho, que um cliente troque o `user_id`. Para aplicar a regra “usuário comum só pode consultar o próprio ID”, o front deve enviar uma identidade validada por um gateway/JWT, ou o serviço precisa receber essa identidade por uma camada de autenticação confiável.
+
 ## Execução
 
 ```bash
@@ -121,6 +146,7 @@ curl -H "Authorization: Bearer $API_BEARER_TOKEN" \
 curl -H "Authorization: Bearer $API_BEARER_TOKEN" \
   http://localhost:8000/v1/dashboards/PUBLIC_ID/charts/CHART_ID/png \
   --output chart.png
+curl -H "Authorization: Bearer $API_BEARER_TOKEN" "http://localhost:8000/v1/dashboards/PUBLIC_ID/charts/CHART_ID/chartjs?user_id=USER_ID"
 ```
 
 Os logs são emitidos em JSON e incluem evento, request ID, rota, status, duração e tentativas do Databricks, sem registrar tokens, secrets ou payloads de consultas.
