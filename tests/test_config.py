@@ -83,3 +83,23 @@ def test_partial_keycloak_config_is_not_ready() -> None:
 
     assert "KEYCLOAK_CONFIG_PARTIAL" in config.configuration_errors()
     assert not config.ready
+
+
+def test_keycloak_urls_and_role_are_validated() -> None:
+    config = Settings(
+        api_bearer_token=None,
+        keycloak_issuer_url="http://user:pass@issuer.example/realms/ouros",
+        keycloak_audience="ms-telemetry-dashboard-service",
+        keycloak_jwks_url="ftp://issuer.example/certs",
+        keycloak_required_role="   ",
+        databricks_host="https://workspace.example.com",
+        databricks_client_id="client",
+        databricks_client_secret="secret",
+    )
+
+    errors = config.configuration_errors()
+
+    assert "KEYCLOAK_ISSUER_URL_INVALID" in errors
+    assert "KEYCLOAK_JWKS_URL_INVALID" in errors
+    assert "KEYCLOAK_REQUIRED_ROLE_INVALID" in errors
+    assert not config.ready
