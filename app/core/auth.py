@@ -112,11 +112,13 @@ def _parse_database_id(value: Any) -> int | None:
     if value is None:
         return None
     if isinstance(value, bool):
-        raise ValueError("database_id must be a positive integer")
+        raise TypeError("database_id must be an integer")
     if isinstance(value, str) and value.isascii() and value.isdecimal():
         value = int(value)
-    if not isinstance(value, int) or value <= 0:
-        raise ValueError("database_id must be a positive integer")
+    if not isinstance(value, int):
+        raise TypeError("database_id must be an integer")
+    if value <= 0:
+        raise ValueError("database_id must be positive")
     return value
 
 
@@ -128,7 +130,7 @@ def _principal_from_claims(claims: dict[str, Any]) -> Principal | None:
 
     try:
         database_id = _parse_database_id(claims.get("database_id"))
-    except ValueError:
+    except (TypeError, ValueError):
         return None
 
     account_type = claims.get("account_type")
