@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.core.config import settings
+from app.core.auth import Principal, require_bearer
 from app.main import app
 from app.providers.databricks import DatabricksDashboardProvider
 from app.schemas.dashboards import (
@@ -86,13 +86,24 @@ def test_chartjs_endpoint_returns_interactive_html(monkeypatch: pytest.MonkeyPat
         async def chart_data(self, dashboard_id, chart_id):
             return chart(), [{"region": "South", "sum(revenue)": 12.5}]
 
-    with TestClient(app) as client:
-        monkeypatch.setattr(settings, "api_bearer_token", "test-token")
-        monkeypatch.setattr(app.state, "dashboard_service", Service())
-        response = client.get(
-            "/v1/dashboards/dashboard-a/charts/revenue/chartjs",
-            headers={"Authorization": "Bearer test-token"},
+    async def principal() -> Principal:
+        return Principal(
+            subject="keycloak-admin",
+            database_id=1,
+            account_type="admin",
+            roles=frozenset({"admin"}),
         )
+
+    app.dependency_overrides[require_bearer] = principal
+    try:
+        with TestClient(app) as client:
+            monkeypatch.setattr(app.state, "dashboard_service", Service())
+            response = client.get(
+                "/v1/dashboards/dashboard-a/charts/revenue/chartjs",
+                headers={"Authorization": "Bearer signed-keycloak-token"},
+            )
+    finally:
+        app.dependency_overrides.pop(require_bearer, None)
 
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
