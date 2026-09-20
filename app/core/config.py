@@ -57,12 +57,25 @@ class Settings(BaseSettings):
             errors.append("KEYCLOAK_CONFIG_PARTIAL")
         if not ((keycloak_issuer and keycloak_audience) or self.api_bearer_token):
             errors.append("AUTHENTICATION_NOT_CONFIGURED")
+        if not self.keycloak_required_role.strip():
+            errors.append("KEYCLOAK_REQUIRED_ROLE_INVALID")
         if self.log_level.upper() not in {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}:
             errors.append("LOG_LEVEL_INVALID")
-        for name, value in (("DATABRICKS_HOST", self.databricks_host), ("DATABRICKS_TOKEN_URL", self.token_url)):
+        url_settings = (
+            ("DATABRICKS_HOST", self.databricks_host),
+            ("DATABRICKS_TOKEN_URL", self.token_url),
+            ("KEYCLOAK_ISSUER_URL", self.keycloak_issuer_url),
+            ("KEYCLOAK_JWKS_URL", self.keycloak_jwks_url),
+        )
+        for name, value in url_settings:
             if value:
                 parsed = urlsplit(value)
-                if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+                if (
+                    parsed.scheme != "https"
+                    or not parsed.hostname
+                    or parsed.username
+                    or parsed.password
+                ):
                     errors.append(f"{name}_INVALID")
         if self.token_refresh_margin_seconds < 0:
             errors.append("TOKEN_REFRESH_MARGIN_SECONDS_INVALID")
