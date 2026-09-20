@@ -7,11 +7,16 @@ from typing import Annotated, Any
 from fastapi import HTTPException, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import InvalidTokenError, PyJWKClient, decode
-from jwt.exceptions import PyJWKClientConnectionError, PyJWKClientError
+from jwt.exceptions import PyJWKClientConnectionError, PyJWKClientError, PyJWKSetError
 
 from app.core.config import settings
 
 bearer_scheme = HTTPBearer(auto_error=False)
+
+
+class AuthenticationKeyServiceError(RuntimeError):
+    """Raised when the configured JWKS endpoint cannot provide valid keys."""
+
 
 
 @dataclass(frozen=True)
@@ -53,8 +58,28 @@ def _decode_keycloak_token(token: str) -> dict[str, Any] | None:
     if not issuer or not audience or not jwks_url:
         return None
 
+    jwks_client = _get_jwks_client(jwks_url)
     try:
-        signing_key = _get_jwks_client(jwks_url).get_signing_key_from_jwt(token)
+        jwks_client.get_jwk_set()
+    except PyJWKClientConnectionError:
+        raise
+    except (PyJWKClientError, PyJWKSetError, ValueError, TypeError) as exc:
+        raise AuthenticationKeyServiceError(
+            "JWKS endpoint returned an invalid key set"
+        ) from exc
+
+    try:
+        signing_key = jwks_client.get_signing_key_from_jwt(token)
+    except PyJWKClientConnectionError:
+        raise
+    except PyJWKSetError as exc:
+        raise AuthenticationKeyServiceError(
+            "JWKS endpoint returned an invalid key set"
+        ) from exc
+    except (InvalidTokenError, PyJWKClientError, ValueError):
+        return None
+
+    try:
         claims = decode(
             token,
             signing_key.key,
@@ -63,9 +88,7 @@ def _decode_keycloak_token(token: str) -> dict[str, Any] | None:
             audience=audience,
             options={"require": ["exp", "iat", "iss", "aud", "sub"]},
         )
-    except PyJWKClientConnectionError:
-        raise
-    except (InvalidTokenError, PyJWKClientError, ValueError):
+    except InvalidTokenError:
         return None
     return claims if isinstance(claims, dict) else None
 
@@ -128,7 +151,7 @@ async def require_bearer(
 
     try:
         claims = await asyncio.to_thread(_decode_keycloak_token, token)
-    except PyJWKClientConnectionError as exc:
+    except (PyJWKClientConnectionError, AuthenticationKeyServiceError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Authentication key service unavailable",
@@ -142,7 +165,7 @@ async def require_bearer(
         raise _unauthorized()
 
     required_role = settings.keycloak_required_role.strip()
-    if required_role and required_role not in principal.roles:
+    if not required_role or required_role not in principal.roles:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient role",
