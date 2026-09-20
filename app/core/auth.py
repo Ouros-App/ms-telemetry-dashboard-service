@@ -18,7 +18,6 @@ class AuthenticationKeyServiceError(RuntimeError):
     """Raised when the configured JWKS endpoint cannot provide valid keys."""
 
 
-
 @dataclass(frozen=True)
 class Principal:
     subject: str
@@ -51,13 +50,7 @@ def _jwks_url() -> str | None:
     )
 
 
-def _decode_keycloak_token(token: str) -> dict[str, Any] | None:
-    issuer = settings.keycloak_issuer_url
-    audience = settings.keycloak_audience
-    jwks_url = _jwks_url()
-    if not issuer or not audience or not jwks_url:
-        return None
-
+def _get_signing_key(token: str, jwks_url: str) -> Any | None:
     jwks_client = _get_jwks_client(jwks_url)
     try:
         jwks_client.get_jwk_set()
@@ -69,7 +62,7 @@ def _decode_keycloak_token(token: str) -> dict[str, Any] | None:
         ) from exc
 
     try:
-        signing_key = jwks_client.get_signing_key_from_jwt(token)
+        return jwks_client.get_signing_key_from_jwt(token)
     except PyJWKClientConnectionError:
         raise
     except PyJWKSetError as exc:
@@ -77,6 +70,18 @@ def _decode_keycloak_token(token: str) -> dict[str, Any] | None:
             "JWKS endpoint returned an invalid key set"
         ) from exc
     except (InvalidTokenError, PyJWKClientError, ValueError):
+        return None
+
+
+def _decode_keycloak_token(token: str) -> dict[str, Any] | None:
+    issuer = settings.keycloak_issuer_url
+    audience = settings.keycloak_audience
+    jwks_url = _jwks_url()
+    if not issuer or not audience or not jwks_url:
+        return None
+
+    signing_key = _get_signing_key(token, jwks_url)
+    if signing_key is None:
         return None
 
     try:
@@ -93,24 +98,37 @@ def _decode_keycloak_token(token: str) -> dict[str, Any] | None:
     return claims if isinstance(claims, dict) else None
 
 
+def _parse_roles(claims: dict[str, Any]) -> frozenset[str] | None:
+    realm_access = claims.get("realm_access")
+    if not isinstance(realm_access, dict):
+        return None
+    roles = realm_access.get("roles")
+    if not isinstance(roles, list) or not all(isinstance(role, str) for role in roles):
+        return None
+    return frozenset(roles)
+
+
+def _parse_database_id(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise ValueError("database_id must be a positive integer")
+    if isinstance(value, str) and value.isascii() and value.isdecimal():
+        value = int(value)
+    if not isinstance(value, int) or value <= 0:
+        raise ValueError("database_id must be a positive integer")
+    return value
+
+
 def _principal_from_claims(claims: dict[str, Any]) -> Principal | None:
     subject = claims.get("sub")
-    realm_access = claims.get("realm_access")
-    roles = realm_access.get("roles") if isinstance(realm_access, dict) else None
-    if (
-        not isinstance(subject, str)
-        or not subject.strip()
-        or not isinstance(roles, list)
-        or not all(isinstance(role, str) for role in roles)
-    ):
+    roles = _parse_roles(claims)
+    if not isinstance(subject, str) or not subject.strip() or roles is None:
         return None
 
-    database_id = claims.get("database_id")
-    if isinstance(database_id, bool):
-        return None
-    if isinstance(database_id, str) and database_id.isascii() and database_id.isdecimal():
-        database_id = int(database_id)
-    if database_id is not None and (not isinstance(database_id, int) or database_id <= 0):
+    try:
+        database_id = _parse_database_id(claims.get("database_id"))
+    except ValueError:
         return None
 
     account_type = claims.get("account_type")
@@ -121,34 +139,32 @@ def _principal_from_claims(claims: dict[str, Any]) -> Principal | None:
         subject=subject,
         database_id=database_id,
         account_type=account_type,
-        roles=frozenset(roles),
+        roles=roles,
     )
 
 
-async def require_bearer(
-    credentials: Annotated[HTTPAuthorizationCredentials | None, Security(bearer_scheme)],
-) -> Principal:
-    if credentials is None or credentials.scheme.lower() != "bearer":
-        raise _unauthorized()
-
-    token = credentials.credentials
+def _legacy_principal(token: str) -> Principal | None:
     legacy_token = settings.api_bearer_token
-    if legacy_token and compare_digest(token, legacy_token):
-        return Principal(
-            subject="legacy-shared-client",
-            database_id=None,
-            account_type=None,
-            roles=frozenset(),
-        )
+    if not legacy_token or not compare_digest(token, legacy_token):
+        return None
+    return Principal(
+        subject="legacy-shared-client",
+        database_id=None,
+        account_type=None,
+        roles=frozenset(),
+    )
 
-    if not settings.keycloak_issuer_url or not settings.keycloak_audience:
-        if legacy_token:
-            raise _unauthorized()
+
+def _require_role(principal: Principal) -> None:
+    required_role = settings.keycloak_required_role.strip()
+    if not required_role or required_role not in principal.roles:
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Authentication is not configured",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient role",
         )
 
+
+async def _keycloak_principal(token: str) -> Principal:
     try:
         claims = await asyncio.to_thread(_decode_keycloak_token, token)
     except (PyJWKClientConnectionError, AuthenticationKeyServiceError) as exc:
@@ -164,10 +180,27 @@ async def require_bearer(
     if principal is None:
         raise _unauthorized()
 
-    required_role = settings.keycloak_required_role.strip()
-    if not required_role or required_role not in principal.roles:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Insufficient role",
-        )
+    _require_role(principal)
     return principal
+
+
+async def require_bearer(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Security(bearer_scheme)],
+) -> Principal:
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise _unauthorized()
+
+    token = credentials.credentials
+    legacy_principal = _legacy_principal(token)
+    if legacy_principal is not None:
+        return legacy_principal
+
+    if not settings.keycloak_issuer_url or not settings.keycloak_audience:
+        if settings.api_bearer_token:
+            raise _unauthorized()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication is not configured",
+        )
+
+    return await _keycloak_principal(token)
