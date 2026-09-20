@@ -4,9 +4,10 @@ from unittest.mock import Mock, patch
 import pytest
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
-from jwt.exceptions import PyJWKClientConnectionError
+from jwt.exceptions import PyJWKClientConnectionError, PyJWKClientError, PyJWKSetError
 
 from app.core.auth import (
+    AuthenticationKeyServiceError,
     _decode_keycloak_token,
     _principal_from_claims,
     require_bearer,
@@ -128,3 +129,54 @@ async def test_legacy_bearer_remains_rollout_fallback() -> None:
         principal = await require_bearer(_credentials("legacy-token"))
 
     assert principal.subject == "legacy-shared-client"
+
+
+def test_malformed_jwks_is_key_service_failure() -> None:
+    jwks = Mock()
+    jwks.get_jwk_set.side_effect = PyJWKSetError("invalid JWKS")
+
+    with (
+        patch.object(settings, "keycloak_issuer_url", "https://issuer.example"),
+        patch.object(settings, "keycloak_audience", "ms-telemetry-dashboard-service"),
+        patch.object(settings, "keycloak_jwks_url", "https://issuer.example/certs"),
+        patch("app.core.auth._get_jwks_client", return_value=jwks),
+        pytest.raises(AuthenticationKeyServiceError),
+    ):
+        _decode_keycloak_token("signed-token")
+
+
+def test_unknown_kid_remains_invalid_token() -> None:
+    jwks = Mock()
+    jwks.get_jwk_set.return_value = object()
+    jwks.get_signing_key_from_jwt.side_effect = PyJWKClientError(
+        "Unable to find a signing key that matches"
+    )
+
+    with (
+        patch.object(settings, "keycloak_issuer_url", "https://issuer.example"),
+        patch.object(settings, "keycloak_audience", "ms-telemetry-dashboard-service"),
+        patch.object(settings, "keycloak_jwks_url", "https://issuer.example/certs"),
+        patch("app.core.auth._get_jwks_client", return_value=jwks),
+    ):
+        assert _decode_keycloak_token("signed-token") is None
+
+
+@pytest.mark.asyncio
+async def test_empty_required_role_fails_closed() -> None:
+    claims = {
+        "sub": "keycloak-subject",
+        "database_id": 42,
+        "account_type": "admin",
+        "realm_access": {"roles": ["admin"]},
+    }
+    with (
+        patch.object(settings, "api_bearer_token", None),
+        patch.object(settings, "keycloak_issuer_url", "https://issuer.example"),
+        patch.object(settings, "keycloak_audience", "ms-telemetry-dashboard-service"),
+        patch.object(settings, "keycloak_required_role", "   "),
+        patch("app.core.auth._decode_keycloak_token", return_value=claims),
+        pytest.raises(HTTPException) as raised,
+    ):
+        await require_bearer(_credentials())
+
+    assert raised.value.status_code == 403
