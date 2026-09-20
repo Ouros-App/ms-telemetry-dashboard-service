@@ -60,7 +60,12 @@ def test_loads_secrets_before_settings_initialization() -> None:
         "INFISICAL_PATH": "/service",
     }
     response = SimpleNamespace(
-        secrets=[SimpleNamespace(secretKey="API_BEARER_TOKEN", secretValue="loaded-token")]
+        secrets=[
+            SimpleNamespace(
+                secretKey="DATABRICKS_CLIENT_SECRET",
+                secretValue="loaded-secret",
+            )
+        ]
     )
     with patch.dict(os.environ, env, clear=True), patch("app.core.infisical.InfisicalSDKClient") as client:
         from app.core import config
@@ -68,4 +73,4 @@ def test_loads_secrets_before_settings_initialization() -> None:
         client.return_value.secrets.list_secrets.return_value = response
         importlib.reload(config)
 
-    assert config.settings.api_bearer_token == "loaded-token"
+    assert config.settings.databricks_client_secret == "loaded-secret"
