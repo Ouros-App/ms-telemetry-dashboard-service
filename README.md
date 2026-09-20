@@ -23,7 +23,7 @@ O serviço possui:
 - renderização de gráficos em PNG;
 - retorno de uma página HTML individual com Chart.js;
 - catálogo JSON local opcional para metadados;
-- autenticação JWT do Keycloak nas rotas de negócio, com Bearer compartilhado apenas como fallback de rollout;
+- autenticação JWT do Keycloak nas rotas de negócio, com Bearer compartilhado apenas como autenticação Keycloak;
 - métricas Prometheus, logs JSON, cache de gráficos e tentativas de repetição para chamadas externas.
 
 O arquivo `data/dashboards.json` existe no repositório e atualmente contém uma lista vazia. A fonte principal dos dashboards é o workspace Databricks.
@@ -64,7 +64,6 @@ Copie `.env.example` para `.env`. As variáveis disponíveis são:
 | `INFISICAL_HOST` | Host do Infisical; padrão `https://app.infisical.com`. |
 | `PROJECT_NAME` | Nome exibido pela aplicação. |
 | `LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING`, `ERROR` ou `CRITICAL`. |
-| `API_BEARER_TOKEN` | Bearer compartilhado legado, mantido apenas como fallback de rollout. |
 | `KEYCLOAK_ISSUER_URL` / `KEYCLOAK_AUDIENCE` / `KEYCLOAK_JWKS_URL` | Contrato do resource server; valida assinatura RS256, issuer, audience e expiração. |
 | `KEYCLOAK_REQUIRED_ROLE` | Realm role obrigatória nas rotas de dashboards; padrão `admin`. |
 | `DASHBOARD_CATALOG_PATH` | Caminho do catálogo JSON; o padrão é `data/dashboards.json`. |
