@@ -49,6 +49,11 @@ class Settings(BaseSettings):
             "DATABRICKS_CLIENT_SECRET": self.databricks_client_secret,
         }
         errors = [name for name, value in required.items() if not value]
+        if not (
+            (self.keycloak_issuer_url and self.keycloak_audience)
+            or self.api_bearer_token
+        ):
+            errors.append("AUTHENTICATION_NOT_CONFIGURED")
         if self.log_level.upper() not in {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}:
             errors.append("LOG_LEVEL_INVALID")
         for name, value in (("DATABRICKS_HOST", self.databricks_host), ("DATABRICKS_TOKEN_URL", self.token_url)):
