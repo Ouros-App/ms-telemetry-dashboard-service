@@ -69,3 +69,17 @@ def test_missing_all_auth_modes_makes_configuration_not_ready() -> None:
 
     assert "AUTHENTICATION_NOT_CONFIGURED" in config.configuration_errors()
     assert not config.ready
+
+
+def test_partial_keycloak_config_is_not_ready() -> None:
+    config = Settings(
+        api_bearer_token="legacy-token",
+        keycloak_issuer_url="https://ouros-keycloak.discloud.app/realms/ouros",
+        keycloak_audience=None,
+        databricks_host="https://workspace.example.com",
+        databricks_client_id="client",
+        databricks_client_secret="secret",
+    )
+
+    assert "KEYCLOAK_CONFIG_PARTIAL" in config.configuration_errors()
+    assert not config.ready
