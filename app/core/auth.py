@@ -1,7 +1,6 @@
 import asyncio
 from dataclasses import dataclass
 from functools import lru_cache
-from secrets import compare_digest
 from typing import Annotated, Any
 
 from fastapi import HTTPException, Security, status
@@ -145,18 +144,6 @@ def _principal_from_claims(claims: dict[str, Any]) -> Principal | None:
     )
 
 
-def _legacy_principal(token: str) -> Principal | None:
-    legacy_token = settings.api_bearer_token
-    if not legacy_token or not compare_digest(token, legacy_token):
-        return None
-    return Principal(
-        subject="legacy-shared-client",
-        database_id=None,
-        account_type=None,
-        roles=frozenset(),
-    )
-
-
 def _require_role(principal: Principal) -> None:
     required_role = settings.keycloak_required_role.strip()
     if not required_role or required_role not in principal.roles:
@@ -192,17 +179,10 @@ async def require_bearer(
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise _unauthorized()
 
-    token = credentials.credentials
-    legacy_principal = _legacy_principal(token)
-    if legacy_principal is not None:
-        return legacy_principal
-
     if not settings.keycloak_issuer_url or not settings.keycloak_audience:
-        if settings.api_bearer_token:
-            raise _unauthorized()
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Authentication is not configured",
         )
 
-    return await _keycloak_principal(token)
+    return await _keycloak_principal(credentials.credentials)
