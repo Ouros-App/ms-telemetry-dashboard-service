@@ -312,6 +312,22 @@ async def test_provider_executes_pending_chart_query() -> None:
     assert operations == ["dashboard_chart_query", "dashboard_chart_query_status"]
 
 
+def test_provider_builds_user_scoped_chart_statement() -> None:
+    chart = DashboardChartDefinition(
+        id="chart-a",
+        title="Chart A",
+        type="counter",
+        warehouse_id="warehouse",
+        dataset_query="SELECT user_id, COUNT(*) AS total FROM source",
+        fields=[{"name": "total", "expression": "total"}],
+        encodings={"value": {"fieldName": "total"}},
+    )
+
+    statement = DatabricksDashboardProvider._build_chart_statement(chart, user_id="user-123")
+
+    assert "WHERE dashboard_source.user_id = 'user-123'" in statement
+
+
 def test_provider_extracts_chart_definition() -> None:
     definition = DatabricksDashboardDefinition(
         dashboard_id="dashboard-a",
