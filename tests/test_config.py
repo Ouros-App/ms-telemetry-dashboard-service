@@ -18,7 +18,7 @@ def test_invalid_runtime_settings_make_configuration_not_ready() -> None:
     assert not config.ready
 
 
-def test_missing_bearer_token_makes_configuration_not_ready() -> None:
+def test_legacy_bearer_is_not_required_for_readiness() -> None:
     config = Settings(
         api_bearer_token=None,
         databricks_host="https://workspace.example.com",
@@ -26,7 +26,8 @@ def test_missing_bearer_token_makes_configuration_not_ready() -> None:
         databricks_client_secret="secret",
     )
 
-    assert "API_BEARER_TOKEN" in config.configuration_errors()
+    assert "API_BEARER_TOKEN" not in config.configuration_errors()
+    assert config.ready
 
 
 def test_settings_validate_urls_and_runtime_limits() -> None:
