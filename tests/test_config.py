@@ -18,7 +18,7 @@ def test_invalid_runtime_settings_make_configuration_not_ready() -> None:
     assert not config.ready
 
 
-def test_missing_bearer_token_makes_configuration_not_ready() -> None:
+def test_legacy_bearer_is_not_required_for_readiness() -> None:
     config = Settings(
         api_bearer_token=None,
         databricks_host="https://workspace.example.com",
@@ -26,7 +26,8 @@ def test_missing_bearer_token_makes_configuration_not_ready() -> None:
         databricks_client_secret="secret",
     )
 
-    assert "API_BEARER_TOKEN" in config.configuration_errors()
+    assert "API_BEARER_TOKEN" not in config.configuration_errors()
+    assert config.ready
 
 
 def test_settings_validate_urls_and_runtime_limits() -> None:
@@ -54,3 +55,51 @@ def test_settings_derive_token_url_only_when_host_is_configured() -> None:
 
     assert config.token_url is None
     assert "DATABRICKS_HOST" in config.configuration_errors()
+
+
+def test_missing_all_auth_modes_makes_configuration_not_ready() -> None:
+    config = Settings(
+        api_bearer_token=None,
+        keycloak_issuer_url=None,
+        keycloak_audience=None,
+        databricks_host="https://workspace.example.com",
+        databricks_client_id="client",
+        databricks_client_secret="secret",
+    )
+
+    assert "AUTHENTICATION_NOT_CONFIGURED" in config.configuration_errors()
+    assert not config.ready
+
+
+def test_partial_keycloak_config_is_not_ready() -> None:
+    config = Settings(
+        api_bearer_token="legacy-token",
+        keycloak_issuer_url="https://ouros-keycloak.discloud.app/realms/ouros",
+        keycloak_audience=None,
+        databricks_host="https://workspace.example.com",
+        databricks_client_id="client",
+        databricks_client_secret="secret",
+    )
+
+    assert "KEYCLOAK_CONFIG_PARTIAL" in config.configuration_errors()
+    assert not config.ready
+
+
+def test_keycloak_urls_and_role_are_validated() -> None:
+    config = Settings(
+        api_bearer_token=None,
+        keycloak_issuer_url="http://user:pass@issuer.example/realms/ouros",
+        keycloak_audience="ms-telemetry-dashboard-service",
+        keycloak_jwks_url="ftp://issuer.example/certs",
+        keycloak_required_role="   ",
+        databricks_host="https://workspace.example.com",
+        databricks_client_id="client",
+        databricks_client_secret="secret",
+    )
+
+    errors = config.configuration_errors()
+
+    assert "KEYCLOAK_ISSUER_URL_INVALID" in errors
+    assert "KEYCLOAK_JWKS_URL_INVALID" in errors
+    assert "KEYCLOAK_REQUIRED_ROLE_INVALID" in errors
+    assert not config.ready

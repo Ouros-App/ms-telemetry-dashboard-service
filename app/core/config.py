@@ -8,6 +8,16 @@ from app.core.infisical import load_infisical_secrets
 load_infisical_secrets()
 
 
+def _https_url_is_valid(value: str) -> bool:
+    parsed = urlsplit(value)
+    return bool(
+        parsed.scheme == "https"
+        and parsed.hostname
+        and not parsed.username
+        and not parsed.password
+    )
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False)
 
@@ -17,6 +27,10 @@ class Settings(BaseSettings):
     app_port: int = 8000
     log_level: str = "INFO"
     api_bearer_token: str | None = None
+    keycloak_issuer_url: str | None = "https://ouros-keycloak.discloud.app/realms/ouros"
+    keycloak_audience: str | None = "ms-telemetry-dashboard-service"
+    keycloak_jwks_url: str | None = None
+    keycloak_required_role: str = "admin"
     dashboard_catalog_path: Path = Path("data/dashboards.json")
     databricks_host: str | None = None
     databricks_client_id: str | None = None
@@ -38,21 +52,47 @@ class Settings(BaseSettings):
             return f"{self.databricks_host.rstrip('/')}/oidc/v1/token"
         return None
 
-    def configuration_errors(self) -> list[str]:
+    def _required_configuration_errors(self) -> list[str]:
         required = {
-            "API_BEARER_TOKEN": self.api_bearer_token,
             "DATABRICKS_HOST": self.databricks_host,
             "DATABRICKS_CLIENT_ID": self.databricks_client_id,
             "DATABRICKS_CLIENT_SECRET": self.databricks_client_secret,
         }
-        errors = [name for name, value in required.items() if not value]
+        return [name for name, value in required.items() if not value]
+
+    def _authentication_configuration_errors(self) -> list[str]:
+        errors: list[str] = []
+        issuer_configured = bool(self.keycloak_issuer_url)
+        audience_configured = bool(self.keycloak_audience)
+        keycloak_configured = issuer_configured and audience_configured
+
+        if issuer_configured != audience_configured:
+            errors.append("KEYCLOAK_CONFIG_PARTIAL")
+        if self.keycloak_jwks_url and not keycloak_configured:
+            errors.append("KEYCLOAK_CONFIG_PARTIAL")
+        if not keycloak_configured and not self.api_bearer_token:
+            errors.append("AUTHENTICATION_NOT_CONFIGURED")
+        if not self.keycloak_required_role.strip():
+            errors.append("KEYCLOAK_REQUIRED_ROLE_INVALID")
+        return errors
+
+    def _url_configuration_errors(self) -> list[str]:
+        url_settings = (
+            ("DATABRICKS_HOST", self.databricks_host),
+            ("DATABRICKS_TOKEN_URL", self.token_url),
+            ("KEYCLOAK_ISSUER_URL", self.keycloak_issuer_url),
+            ("KEYCLOAK_JWKS_URL", self.keycloak_jwks_url),
+        )
+        return [
+            f"{name}_INVALID"
+            for name, value in url_settings
+            if value and not _https_url_is_valid(value)
+        ]
+
+    def _runtime_configuration_errors(self) -> list[str]:
+        errors: list[str] = []
         if self.log_level.upper() not in {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}:
             errors.append("LOG_LEVEL_INVALID")
-        for name, value in (("DATABRICKS_HOST", self.databricks_host), ("DATABRICKS_TOKEN_URL", self.token_url)):
-            if value:
-                parsed = urlsplit(value)
-                if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
-                    errors.append(f"{name}_INVALID")
         if self.token_refresh_margin_seconds < 0:
             errors.append("TOKEN_REFRESH_MARGIN_SECONDS_INVALID")
         if self.chart_cache_ttl_seconds < 1:
@@ -62,6 +102,14 @@ class Settings(BaseSettings):
         if "*" in self.cors_origins:
             errors.append("CORS_ORIGINS_INVALID")
         return errors
+
+    def configuration_errors(self) -> list[str]:
+        return [
+            *self._required_configuration_errors(),
+            *self._authentication_configuration_errors(),
+            *self._url_configuration_errors(),
+            *self._runtime_configuration_errors(),
+        ]
 
     @property
     def ready(self) -> bool:
