@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     app_port: int = 8000
     log_level: str = "INFO"
     api_bearer_token: str | None = None
+    keycloak_issuer_url: str | None = "https://ouros-keycloak.discloud.app/realms/ouros"
+    keycloak_audience: str | None = "ms-telemetry-dashboard-service"
+    keycloak_jwks_url: str | None = None
+    keycloak_required_role: str = "admin"
     dashboard_catalog_path: Path = Path("data/dashboards.json")
     databricks_host: str | None = None
     databricks_client_id: str | None = None
@@ -40,7 +44,6 @@ class Settings(BaseSettings):
 
     def configuration_errors(self) -> list[str]:
         required = {
-            "API_BEARER_TOKEN": self.api_bearer_token,
             "DATABRICKS_HOST": self.databricks_host,
             "DATABRICKS_CLIENT_ID": self.databricks_client_id,
             "DATABRICKS_CLIENT_SECRET": self.databricks_client_secret,
