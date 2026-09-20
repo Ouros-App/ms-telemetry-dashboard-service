@@ -23,7 +23,7 @@ O serviço possui:
 - renderização de gráficos em PNG;
 - retorno de uma página HTML individual com Chart.js;
 - catálogo JSON local opcional para metadados;
-- autenticação Bearer nas rotas de negócio;
+- autenticação JWT do Keycloak nas rotas de negócio, com Bearer compartilhado apenas como fallback de rollout;
 - métricas Prometheus, logs JSON, cache de gráficos e tentativas de repetição para chamadas externas.
 
 O arquivo `data/dashboards.json` existe no repositório e atualmente contém uma lista vazia. A fonte principal dos dashboards é o workspace Databricks.
@@ -64,7 +64,9 @@ Copie `.env.example` para `.env`. As variáveis disponíveis são:
 | `INFISICAL_HOST` | Host do Infisical; padrão `https://app.infisical.com`. |
 | `PROJECT_NAME` | Nome exibido pela aplicação. |
 | `LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING`, `ERROR` ou `CRITICAL`. |
-| `API_BEARER_TOKEN` | Token usado nas rotas de negócio. |
+| `API_BEARER_TOKEN` | Bearer compartilhado legado, mantido apenas como fallback de rollout. |
+| `KEYCLOAK_ISSUER_URL` / `KEYCLOAK_AUDIENCE` / `KEYCLOAK_JWKS_URL` | Contrato do resource server; valida assinatura RS256, issuer, audience e expiração. |
+| `KEYCLOAK_REQUIRED_ROLE` | Realm role obrigatória nas rotas de dashboards; padrão `admin`. |
 | `DASHBOARD_CATALOG_PATH` | Caminho do catálogo JSON; o padrão é `data/dashboards.json`. |
 | `DATABRICKS_HOST` | URL HTTPS do workspace Databricks. |
 | `DATABRICKS_CLIENT_ID` / `DATABRICKS_CLIENT_SECRET` | Credenciais OAuth do service principal. |
@@ -76,7 +78,7 @@ Copie `.env.example` para `.env`. As variáveis disponíveis são:
 | `TOKEN_REFRESH_MARGIN_SECONDS` | Margem para renovar o token OAuth. |
 | `CORS_ORIGINS` | Lista JSON de origens permitidas, por exemplo `["https://frontend.example.com"]`. |
 
-`/ready` considera obrigatórios `API_BEARER_TOKEN`, `DATABRICKS_HOST`, `DATABRICKS_CLIENT_ID` e `DATABRICKS_CLIENT_SECRET`, além de validar os parâmetros de configuração.
+`/ready` considera obrigatórios `DATABRICKS_HOST`, `DATABRICKS_CLIENT_ID` e `DATABRICKS_CLIENT_SECRET`, além de validar os parâmetros de configuração. O JWT é validado por request contra o JWKS do Keycloak.
 
 ### Infisical
 
@@ -111,7 +113,7 @@ Rotas públicas:
 - `GET /metrics`: métricas Prometheus.
 - `GET /docs`: documentação gerada pelo FastAPI.
 
-Rotas de negócio, protegidas por Bearer:
+Rotas de negócio, protegidas por access token do Keycloak com audience `ms-telemetry-dashboard-service` e realm role `admin` (ou pelo bearer legado durante o rollout):
 
 - `GET /v1/dashboards`: lista dashboards ativos.
 - `GET /v1/dashboards/{id}`: busca um dashboard.
@@ -122,16 +124,16 @@ Rotas de negócio, protegidas por Bearer:
 Use um `id` retornado por `/v1/dashboards` nas chamadas seguintes:
 
 ```bash
-curl -H "Authorization: Bearer $API_BEARER_TOKEN" \
+curl -H "Authorization: Bearer $KEYCLOAK_ACCESS_TOKEN" \
   http://localhost:8000/v1/dashboards
 
-curl -H "Authorization: Bearer $API_BEARER_TOKEN" \
+curl -H "Authorization: Bearer $KEYCLOAK_ACCESS_TOKEN" \
   http://localhost:8000/v1/dashboards/PUBLIC_ID/charts
 
-curl -H "Authorization: Bearer $API_BEARER_TOKEN" \
+curl -H "Authorization: Bearer $KEYCLOAK_ACCESS_TOKEN" \
   http://localhost:8000/v1/dashboards/PUBLIC_ID/charts/CHART_ID/chartjs
 
-curl -H "Authorization: Bearer $API_BEARER_TOKEN" \
+curl -H "Authorization: Bearer $KEYCLOAK_ACCESS_TOKEN" \
   http://localhost:8000/v1/dashboards/PUBLIC_ID/charts/CHART_ID/png \
   --output chart.png
 ```
