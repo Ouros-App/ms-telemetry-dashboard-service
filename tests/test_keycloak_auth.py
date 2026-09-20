@@ -120,13 +120,14 @@ async def test_jwks_outage_is_service_unavailable() -> None:
 
 @pytest.mark.asyncio
 async def test_legacy_shared_token_is_rejected() -> None:
+    credentials = _credentials("old-shared-token")
     with (
         patch.object(settings, "keycloak_issuer_url", "https://issuer.example"),
         patch.object(settings, "keycloak_audience", "ms-telemetry-dashboard-service"),
         patch("app.core.auth._decode_keycloak_token", return_value=None),
         pytest.raises(HTTPException) as raised,
     ):
-        await require_bearer(_credentials("old-shared-token"))
+        await require_bearer(credentials)
 
     assert raised.value.status_code == 401
 
