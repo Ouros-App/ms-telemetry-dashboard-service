@@ -60,6 +60,8 @@ Copie `.env.example` para `.env`. As variáveis disponíveis são:
 | Variável | Uso |
 | --- | --- |
 | `APP_PORT` | Porta configurada no ambiente de execução; o valor de exemplo é `8000`. |
+| `INFISICAL_TOKEN` / `INFISICAL_PROJECT_ID` / `INFISICAL_ENV` / `INFISICAL_PATH` | Bootstrap opcional do Infisical. Configure as quatro juntas; `INFISICAL_ENV` aceita `prod` ou `dev`. |
+| `INFISICAL_HOST` | Host do Infisical; padrão `https://app.infisical.com`. |
 | `PROJECT_NAME` | Nome exibido pela aplicação. |
 | `LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING`, `ERROR` ou `CRITICAL`. |
 | `API_BEARER_TOKEN` | Token usado nas rotas de negócio. |
@@ -75,6 +77,17 @@ Copie `.env.example` para `.env`. As variáveis disponíveis são:
 | `CORS_ORIGINS` | Lista JSON de origens permitidas, por exemplo `["https://frontend.example.com"]`. |
 
 `/ready` considera obrigatórios `API_BEARER_TOKEN`, `DATABRICKS_HOST`, `DATABRICKS_CLIENT_ID` e `DATABRICKS_CLIENT_SECRET`, além de validar os parâmetros de configuração.
+
+### Infisical
+
+O serviço carrega os secrets do Infisical antes da criação de `Settings`. Para desenvolvimento local, deixe todas as variáveis de bootstrap vazias e use valores locais no `.env`. Em deploy, configure as quatro variáveis de bootstrap juntas; configuração parcial ou `INFISICAL_ENV` diferente de `prod`/`dev` interrompe o startup para evitar fallback silencioso.
+
+Secrets de aplicação esperados no path `/ms-telemetry-dashboard-service`:
+
+- `API_BEARER_TOKEN`;
+- `DATABRICKS_CLIENT_SECRET`.
+
+`DATABRICKS_CLIENT_ID` e `DATABRICKS_HOST` são configuração e podem permanecer no ambiente de deploy, embora o client ID também possa ser centralizado no Infisical se desejado. `INFISICAL_TOKEN` é o único bootstrap secreto necessário fora do cofre; project ID, environment, path e host são configuração.
 
 ## Execução
 
