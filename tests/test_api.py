@@ -18,6 +18,8 @@ class StubDashboardService:
 @pytest.fixture(autouse=True)
 def configured_bearer_token(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "api_bearer_token", "test-token")
+    monkeypatch.setattr(settings, "keycloak_issuer_url", None)
+    monkeypatch.setattr(settings, "keycloak_audience", None)
 
 
 def test_health_has_request_id_and_does_not_require_databricks() -> None:
