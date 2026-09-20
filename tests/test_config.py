@@ -55,3 +55,17 @@ def test_settings_derive_token_url_only_when_host_is_configured() -> None:
 
     assert config.token_url is None
     assert "DATABRICKS_HOST" in config.configuration_errors()
+
+
+def test_missing_all_auth_modes_makes_configuration_not_ready() -> None:
+    config = Settings(
+        api_bearer_token=None,
+        keycloak_issuer_url=None,
+        keycloak_audience=None,
+        databricks_host="https://workspace.example.com",
+        databricks_client_id="client",
+        databricks_client_secret="secret",
+    )
+
+    assert "AUTHENTICATION_NOT_CONFIGURED" in config.configuration_errors()
+    assert not config.ready
