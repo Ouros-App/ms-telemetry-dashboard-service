@@ -49,10 +49,13 @@ class Settings(BaseSettings):
             "DATABRICKS_CLIENT_SECRET": self.databricks_client_secret,
         }
         errors = [name for name, value in required.items() if not value]
-        if not (
-            (self.keycloak_issuer_url and self.keycloak_audience)
-            or self.api_bearer_token
-        ):
+        keycloak_issuer = bool(self.keycloak_issuer_url)
+        keycloak_audience = bool(self.keycloak_audience)
+        if keycloak_issuer != keycloak_audience:
+            errors.append("KEYCLOAK_CONFIG_PARTIAL")
+        if self.keycloak_jwks_url and not (keycloak_issuer and keycloak_audience):
+            errors.append("KEYCLOAK_CONFIG_PARTIAL")
+        if not ((keycloak_issuer and keycloak_audience) or self.api_bearer_token):
             errors.append("AUTHENTICATION_NOT_CONFIGURED")
         if self.log_level.upper() not in {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}:
             errors.append("LOG_LEVEL_INVALID")
