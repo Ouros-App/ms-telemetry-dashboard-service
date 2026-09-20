@@ -89,6 +89,7 @@ async def test_non_admin_keycloak_token_is_forbidden() -> None:
         "account_type": "farm_owner",
         "realm_access": {"roles": ["farm_owner"]},
     }
+    credentials = _credentials()
     with (
         patch.object(settings, "api_bearer_token", None),
         patch.object(settings, "keycloak_issuer_url", "https://issuer.example"),
@@ -97,13 +98,14 @@ async def test_non_admin_keycloak_token_is_forbidden() -> None:
         patch("app.core.auth._decode_keycloak_token", return_value=claims),
         pytest.raises(HTTPException) as raised,
     ):
-        await require_bearer(_credentials())
+        await require_bearer(credentials)
 
     assert raised.value.status_code == 403
 
 
 @pytest.mark.asyncio
 async def test_jwks_outage_is_service_unavailable() -> None:
+    credentials = _credentials()
     with (
         patch.object(settings, "api_bearer_token", None),
         patch.object(settings, "keycloak_issuer_url", "https://issuer.example"),
@@ -114,7 +116,7 @@ async def test_jwks_outage_is_service_unavailable() -> None:
         ),
         pytest.raises(HTTPException) as raised,
     ):
-        await require_bearer(_credentials())
+        await require_bearer(credentials)
 
     assert raised.value.status_code == 503
 
@@ -169,6 +171,7 @@ async def test_empty_required_role_fails_closed() -> None:
         "account_type": "admin",
         "realm_access": {"roles": ["admin"]},
     }
+    credentials = _credentials()
     with (
         patch.object(settings, "api_bearer_token", None),
         patch.object(settings, "keycloak_issuer_url", "https://issuer.example"),
@@ -177,6 +180,6 @@ async def test_empty_required_role_fails_closed() -> None:
         patch("app.core.auth._decode_keycloak_token", return_value=claims),
         pytest.raises(HTTPException) as raised,
     ):
-        await require_bearer(_credentials())
+        await require_bearer(credentials)
 
     assert raised.value.status_code == 403
