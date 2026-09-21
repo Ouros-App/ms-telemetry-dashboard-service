@@ -26,7 +26,6 @@ class Settings(BaseSettings):
     version: str = "0.1.0"
     app_port: int = 8000
     log_level: str = "INFO"
-    api_bearer_token: str | None = None
     keycloak_issuer_url: str | None = "https://ouros-keycloak.discloud.app/realms/ouros"
     keycloak_audience: str | None = "ms-telemetry-dashboard-service"
     keycloak_jwks_url: str | None = None
@@ -70,7 +69,7 @@ class Settings(BaseSettings):
             errors.append("KEYCLOAK_CONFIG_PARTIAL")
         if self.keycloak_jwks_url and not keycloak_configured:
             errors.append("KEYCLOAK_CONFIG_PARTIAL")
-        if not keycloak_configured and not self.api_bearer_token:
+        if not keycloak_configured:
             errors.append("AUTHENTICATION_NOT_CONFIGURED")
         if not self.keycloak_required_role.strip():
             errors.append("KEYCLOAK_REQUIRED_ROLE_INVALID")

@@ -70,7 +70,6 @@ async def test_admin_keycloak_token_is_accepted() -> None:
         "realm_access": {"roles": ["admin"]},
     }
     with (
-        patch.object(settings, "api_bearer_token", None),
         patch.object(settings, "keycloak_issuer_url", "https://issuer.example"),
         patch.object(settings, "keycloak_audience", "ms-telemetry-dashboard-service"),
         patch.object(settings, "keycloak_required_role", "admin"),
@@ -91,7 +90,6 @@ async def test_non_admin_keycloak_token_is_forbidden() -> None:
     }
     credentials = _credentials()
     with (
-        patch.object(settings, "api_bearer_token", None),
         patch.object(settings, "keycloak_issuer_url", "https://issuer.example"),
         patch.object(settings, "keycloak_audience", "ms-telemetry-dashboard-service"),
         patch.object(settings, "keycloak_required_role", "admin"),
@@ -107,7 +105,6 @@ async def test_non_admin_keycloak_token_is_forbidden() -> None:
 async def test_jwks_outage_is_service_unavailable() -> None:
     credentials = _credentials()
     with (
-        patch.object(settings, "api_bearer_token", None),
         patch.object(settings, "keycloak_issuer_url", "https://issuer.example"),
         patch.object(settings, "keycloak_audience", "ms-telemetry-dashboard-service"),
         patch(
@@ -122,15 +119,17 @@ async def test_jwks_outage_is_service_unavailable() -> None:
 
 
 @pytest.mark.asyncio
-async def test_legacy_bearer_remains_rollout_fallback() -> None:
+async def test_legacy_shared_token_is_rejected() -> None:
+    credentials = _credentials("old-shared-token")
     with (
-        patch.object(settings, "api_bearer_token", "legacy-token"),
         patch.object(settings, "keycloak_issuer_url", "https://issuer.example"),
         patch.object(settings, "keycloak_audience", "ms-telemetry-dashboard-service"),
+        patch("app.core.auth._decode_keycloak_token", return_value=None),
+        pytest.raises(HTTPException) as raised,
     ):
-        principal = await require_bearer(_credentials("legacy-token"))
+        await require_bearer(credentials)
 
-    assert principal.subject == "legacy-shared-client"
+    assert raised.value.status_code == 401
 
 
 def test_malformed_jwks_is_key_service_failure() -> None:
@@ -173,7 +172,6 @@ async def test_empty_required_role_fails_closed() -> None:
     }
     credentials = _credentials()
     with (
-        patch.object(settings, "api_bearer_token", None),
         patch.object(settings, "keycloak_issuer_url", "https://issuer.example"),
         patch.object(settings, "keycloak_audience", "ms-telemetry-dashboard-service"),
         patch.object(settings, "keycloak_required_role", "   "),
