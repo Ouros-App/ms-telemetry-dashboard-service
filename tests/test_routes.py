@@ -88,14 +88,14 @@ async def test_routes_map_missing_resources_to_404(handler, args, exception) -> 
 
 def test_readiness_reports_configuration_errors() -> None:
     request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(settings=SimpleNamespace(
-        configuration_errors=lambda: ["API_BEARER_TOKEN"],
+        configuration_errors=lambda: ["AUTHENTICATION_NOT_CONFIGURED"],
     ))))
     response = Response()
 
     result = routes.readiness(request, response)
 
     assert result.status == "not_ready"
-    assert result.errors == ["API_BEARER_TOKEN"]
+    assert result.errors == ["AUTHENTICATION_NOT_CONFIGURED"]
     assert response.status_code == 503
 
 
