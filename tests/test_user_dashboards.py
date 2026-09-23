@@ -357,3 +357,28 @@ async def test_plotly_renderer_covers_line_and_pie_shapes() -> None:
         [{"label": "active", "value": 3}],
     )
     assert 'type: "pie"' in pie_html
+
+
+def test_user_plotly_route_reports_analytics_outage_as_temporary(
+    authenticated_farm_owner,
+    monkeypatch,
+) -> None:
+    from app.repositories.analytics import AnalyticsUnavailable
+
+    class UnavailableService(StubUserDashboardService):
+        async def plotly_html(self, principal, dashboard_id, chart_id):
+            raise AnalyticsUnavailable("offline")
+
+    with TestClient(app) as client:
+        monkeypatch.setattr(
+            app.state,
+            "user_dashboard_service",
+            UnavailableService(),
+        )
+        response = client.get(
+            "/v1/user/dashboards/overview/charts/current-flock/plotly",
+            headers={"Authorization": "Bearer signed-token"},
+        )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "User analytics is temporarily unavailable"
