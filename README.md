@@ -12,12 +12,18 @@
 </div>
 <!-- REPO-METADATA:END -->
 
-Microserviço FastAPI com dois fluxos independentes de dashboards: administração via Databricks e dashboards do app via PostgreSQL Analytics. O fluxo admin mantém dados/HTML Chart.js/PNG; o fluxo de usuário retorna HTML Plotly.js já filtrado pelo escopo assinado no JWT.
+Microserviço FastAPI com três responsabilidades desacopladas: telemetria operacional do Ouros, dashboards administrativos via Databricks e dashboards do app via PostgreSQL Analytics. A telemetria agrega sinais Prometheus do Midas e do Knowledge MCP, estima custo de tokens por tabela versionada e produz um baseline técnico para estudos futuros de escalabilidade.
 
 ## Status e escopo
 
 O serviço possui:
 
+- agregação on-demand de endpoints Prometheus configurados;
+- uptime de processo, CPU, RAM, latência HTTP, falhas e concorrência por serviço;
+- métricas do Midas para tempo ponta a ponta, chamadas LLM, tokens e round-trip do MCP;
+- métricas internas do Knowledge MCP por tool;
+- estimativa de custo de lista por token, sem confundir estimativa com fatura real;
+- baseline para alimentar um simulador futuro de usuários, hardware, réplicas e custos;
 - consulta de dashboards administrativos ativos visíveis para as credenciais Databricks configuradas;
 - dashboards de usuário derivados do PostgreSQL Analytics com isolamento por `farm_id` ou `enterprise_id` do JWT;
 - listagem de dashboards e gráficos;
@@ -32,11 +38,14 @@ O arquivo `data/dashboards.json` existe no repositório e atualmente contém uma
 ## Principais componentes
 
 ```text
+Midas /metrics ---------┐
+                       ├─> PrometheusScrapeClient -> TelemetryService
+Knowledge MCP /metrics -┘              |                  |
+                                      cost          capacity baseline
+
 admin routes
   -> DashboardService
       -> DatabricksDashboardProvider
-          -> DatabricksHttpClient
-          -> DatabricksAuthClient
 
 user routes
   -> UserDashboardService
@@ -46,8 +55,12 @@ user routes
       -> Plotly renderer
 ```
 
-- `app/main.py`: inicialização da aplicação, clientes Databricks, catálogo, middleware, CORS e métricas.
-- `app/api/routes.py`: rotas de saúde, prontidão, métricas, dashboards e gráficos.
+- `app/main.py`: inicialização da aplicação, coletor Prometheus, Databricks, Analytics, middleware e CORS.
+- `app/api/routes.py`: rotas de saúde, telemetria, baseline, dashboards e gráficos.
+- `app/services/telemetry.py`: agregação dos sinais técnicos.
+- `app/services/pricing.py`: catálogo e cálculo de custo estimado.
+- `app/services/capacity.py`: normalização das métricas para estudos de escala.
+- `data/model_pricing.json`: preços e modo de cobrança versionados por modelo.
 - `app/services/`: regras de consulta e cache dos dashboards e gráficos.
 - `app/providers/`: providers independentes para Databricks e PostgreSQL Analytics.
 - `app/repositories/analytics.py`: acesso read-only ao banco Analytics com queries parametrizadas.
@@ -74,6 +87,10 @@ Copie `.env.example` para `.env`. As variáveis disponíveis são:
 | `INFISICAL_HOST` | Host do Infisical; padrão `https://app.infisical.com`. |
 | `PROJECT_NAME` | Nome exibido pela aplicação. |
 | `LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING`, `ERROR` ou `CRITICAL`. |
+| `METRICS_TOKEN` | Bearer dedicado ao scrape de `/metrics` deste serviço. |
+| `TELEMETRY_TARGETS` | Lista JSON de endpoints Prometheus; cada target define `name`, `kind`, `url` e token opcional. |
+| `TELEMETRY_SCRAPE_TIMEOUT_SECONDS` | Timeout individual de scrape; padrão `5`. |
+| `MODEL_PRICING_PATH` | Catálogo versionado de preços; padrão `data/model_pricing.json`. |
 | `KEYCLOAK_ISSUER_URL` / `KEYCLOAK_AUDIENCE` / `KEYCLOAK_JWKS_URL` | Contrato do resource server; valida assinatura RS256, issuer, audience e expiração. |
 | `KEYCLOAK_REQUIRED_ROLE` | Realm role obrigatória nas rotas de dashboards; padrão `admin`. |
 | `DASHBOARD_CATALOG_PATH` | Caminho do catálogo JSON; o padrão é `data/dashboards.json`. |
@@ -86,6 +103,8 @@ Copie `.env.example` para `.env`. As variáveis disponíveis são:
 | `ANALYTICS_COMMAND_TIMEOUT_SECONDS` | Timeout das queries do Analytics. |
 | `ANALYTICS_CONNECT_TIMEOUT_SECONDS` | Timeout curto para abrir uma conexão PostgreSQL; padrão `5`. |
 | `ANALYTICS_RETRY_BACKOFF_SECONDS` | Janela de backoff após falha de conexão para evitar tempestade de reconexões; padrão `5`. |
+| `ANALYTICS_SOCKS_HOST` / `ANALYTICS_SOCKS_PORT` | Proxy SOCKS5 opcional para alcançar o PostgreSQL do homelab. |
+| `ANALYTICS_SOCKS_CONNECT_TIMEOUT_SECONDS` | Timeout do handshake/conexão SOCKS5. |
 | `HTTP_TIMEOUT_SECONDS` / `HTTP_MAX_RETRIES` | Timeout e tentativas adicionais das chamadas externas. |
 | `CHART_CACHE_TTL_SECONDS` | Tempo de vida do cache de gráficos. |
 | `SQL_WAIT_TIMEOUT_SECONDS` | Limite de espera de consultas SQL. |
@@ -93,16 +112,18 @@ Copie `.env.example` para `.env`. As variáveis disponíveis são:
 | `TOKEN_REFRESH_MARGIN_SECONDS` | Margem para renovar o token OAuth. |
 | `CORS_ORIGINS` | Lista JSON de origens permitidas, por exemplo `["https://frontend.example.com"]`. |
 
-`/ready` considera obrigatórios `DATABRICKS_HOST`, `DATABRICKS_CLIENT_ID` e `DATABRICKS_CLIENT_SECRET`, além de validar os parâmetros de configuração. O JWT é validado por request contra o JWKS do Keycloak.
+`/ready` valida o núcleo operacional e o contrato Keycloak. Databricks e PostgreSQL Analytics são integrações opcionais e têm readiness/falhas independentes; a telemetria continua funcional sem credenciais Databricks. O JWT é validado por request contra o JWKS do Keycloak.
 
 ### Infisical
 
 O serviço carrega os secrets do Infisical antes da criação de `Settings`. Para desenvolvimento local, deixe todas as variáveis de bootstrap vazias e use valores locais no `.env`. Em deploy, configure as quatro variáveis de bootstrap juntas; configuração parcial ou `INFISICAL_ENV` diferente de `prod`/`dev` interrompe o startup para evitar fallback silencioso.
 
-Secrets de aplicação esperados no path `/ms-telemetry-dashboard-service`:
+Secrets de aplicação esperados no path `/ms-telemetry-dashboard-service` podem incluir:
 
-- `DATABRICKS_CLIENT_SECRET`;
-- `ANALYTICS_DATABASE_URL`.
+- `METRICS_TOKEN`;
+- tokens dos targets definidos em `TELEMETRY_TARGETS`;
+- `DATABRICKS_CLIENT_SECRET`, quando o fluxo admin estiver habilitado;
+- `ANALYTICS_DATABASE_URL`, quando o fluxo de usuário estiver habilitado.
 
 `DATABRICKS_CLIENT_ID` e `DATABRICKS_HOST` são configuração e podem permanecer no ambiente de deploy, embora o client ID também possa ser centralizado no Infisical se desejado. `ANALYTICS_DATABASE_URL` deve usar exclusivamente `analytics_ro` e apontar para o endereço privado do PostgreSQL no homelab; não use o writer do sincronizador. Em Discloud, configure `ANALYTICS_SOCKS_HOST=tailscale-proxy` e `ANALYTICS_SOCKS_PORT=1055`: o serviço abre um relay apenas em `127.0.0.1`, alcança o proxy pela VLAN da Discloud e deixa o proxy encaminhar o TCP até a subnet do homelab. O telemetry não precisa participar diretamente da Tailnet. `INFISICAL_TOKEN` é o único bootstrap secreto necessário fora do cofre; project ID, environment, path e host são configuração.
 
@@ -123,10 +144,18 @@ O Dockerfile também inicia `uvicorn app.main:app` e usa a porta `8000` por padr
 
 Rotas públicas:
 
-- `GET /health`: saúde do processo, sem chamada ao Databricks.
-- `GET /ready`: verifica a configuração necessária para acessar o Databricks.
-- `GET /metrics`: métricas Prometheus.
+- `GET /health`: liveness do processo.
+- `GET /ready`: readiness do núcleo operacional.
 - `GET /docs`: documentação gerada pelo FastAPI.
+
+`GET /metrics` usa o `METRICS_TOKEN` dedicado ao coletor, separado do JWT administrativo.
+
+### Telemetria operacional
+
+As rotas abaixo exigem o JWT administrativo do serviço:
+
+- `GET /v1/telemetry/summary`: disponibilidade dos targets, uptime, CPU/RAM, HTTP, latências, LLM/tokens, MCP e custo estimado;
+- `GET /v1/telemetry/capacity-baseline`: métricas normalizadas por chat e sinais de CPU/RAM/concorrência para um simulador posterior.
 
 ### Fluxo administrativo
 
@@ -186,6 +215,35 @@ O último endpoint retorna `text/html` com Plotly.js e pode ser carregado pelo f
 O pool PostgreSQL força transações read-only e valida `current_user = analytics_ro`. Quando `ANALYTICS_SOCKS_HOST` está configurado, cada conexão do `asyncpg` entra em um listener efêmero em `127.0.0.1`, que executa o handshake SOCKS5 e encaminha bytes ao host/porta definidos no próprio `ANALYTICS_DATABASE_URL`. O listener não é exposto externamente. Se o Analytics ou o proxy estiver indisponível, o fluxo admin continua funcionando e as rotas de usuário que precisam consultar dados retornam `503`. O connect usa timeout curto e backoff entre novas tentativas para evitar filas de reconexão durante uma queda. O pool é recriado de forma lazy após falhas, então um reboot do homelab não exige restart do telemetry.
 
 Os logs são emitidos em JSON e incluem evento, request ID, rota, status, duração e tentativas do Databricks, sem registrar tokens, secrets ou payloads de consultas.
+
+## Custos e baseline de escalabilidade
+
+O AI Server publica somente contadores técnicos. A conversão para dólares acontece aqui,
+usando `data/model_pricing.json`, para que uma mudança de preço não exija redeploy do
+Midas. `input_tokens` inclui tokens de cache; o cálculo separa
+`input_tokens - cached_input_tokens` na tarifa normal e o subconjunto em cache na
+tarifa específica, evitando dupla contagem.
+
+Modelos com preço público por token entram em `estimated_token_cost_usd`. Modelos
+precificados por infraestrutura, como NVIDIA NIM em produção, permanecem em
+`unpriced_tokens` em vez de receber um preço artificial. O valor é uma estimativa de
+lista, nunca uma fatura real.
+
+O endpoint de capacity baseline fornece chamadas LLM/chat, tokens/chat, chamadas MCP/chat,
+latências, RSS, CPU média aproximada e concorrência atual. Ele deliberadamente não escolhe
+hardware, número de réplicas ou margem de pico. Essas hipóteses ficam para um simulador
+separado capaz de projetar cenários como 100, 1.000 ou 100.000 usuários.
+
+Os contadores são acumulados desde o último restart de cada processo. Para disponibilidade
+percentual, tendências históricas e capacity planning estatisticamente robusto, os mesmos
+sinais devem ser armazenados em Prometheus/Grafana ou backend equivalente.
+
+### Privacidade e cardinalidade
+
+As métricas distribuídas usam apenas dimensões técnicas limitadas, como serviço, modelo,
+perfil e nome de tool. IDs de usuário, fazenda, empresa, thread, request e conteúdo de
+prompt não viram labels.
+
 
 ## Testes e qualidade
 
