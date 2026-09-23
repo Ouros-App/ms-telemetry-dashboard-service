@@ -22,13 +22,33 @@ def _resources_for_kind(
     if not resources:
         return None
     resident = sum(item.resident_memory_bytes or 0 for item in resources)
+    cpu_seconds_values = [
+        item.cpu_seconds_total
+        for item in resources
+        if item.cpu_seconds_total is not None
+    ]
+    uptime_values = [
+        item.process_uptime_seconds
+        for item in resources
+        if item.process_uptime_seconds is not None
+    ]
     cpu_values = [
         item.average_cpu_cores
         for item in resources
         if item.average_cpu_cores is not None
     ]
     return ResourceUsage(
+        process_uptime_seconds=(
+            _rounded(max(uptime_values), 3)
+            if uptime_values
+            else None
+        ),
         resident_memory_bytes=resident or None,
+        cpu_seconds_total=(
+            _rounded(sum(cpu_seconds_values), 6)
+            if cpu_seconds_values
+            else None
+        ),
         average_cpu_cores=(
             _rounded(sum(cpu_values), 6)
             if cpu_values
@@ -69,6 +89,10 @@ def build_capacity_baseline(
             midas_resident_memory_bytes=None,
             knowledge_mcp_average_cpu_cores=None,
             knowledge_mcp_resident_memory_bytes=None,
+            midas_process_uptime_seconds=None,
+            midas_cpu_seconds_per_chat=None,
+            knowledge_mcp_process_uptime_seconds=None,
+            knowledge_mcp_cpu_seconds_per_tool_call=None,
             current_chat_in_flight=None,
             current_llm_in_flight=None,
             current_mcp_in_flight=None,
@@ -90,6 +114,14 @@ def build_capacity_baseline(
     mcp_duration_count = sum(item.latency.count for item in midas.mcp_calls)
     midas_resources = _resources_for_kind(summary.services, "midas")
     mcp_resources = _resources_for_kind(summary.services, "knowledge_mcp")
+    knowledge_mcp_calls = (
+        sum(
+            item.requests + item.failed_requests + item.cancelled_requests
+            for item in summary.knowledge_mcp.tools
+        )
+        if summary.knowledge_mcp is not None
+        else 0
+    )
 
     return CapacityBaselineResponse(
         generated_at=summary.generated_at,
@@ -133,6 +165,37 @@ def build_capacity_baseline(
         knowledge_mcp_resident_memory_bytes=(
             mcp_resources.resident_memory_bytes
             if mcp_resources is not None
+            else None
+        ),
+        midas_process_uptime_seconds=(
+            midas_resources.process_uptime_seconds
+            if midas_resources is not None
+            else None
+        ),
+        midas_cpu_seconds_per_chat=(
+            _rounded(midas_resources.cpu_seconds_total / chats, 6)
+            if (
+                chats
+                and midas_resources is not None
+                and midas_resources.cpu_seconds_total is not None
+            )
+            else None
+        ),
+        knowledge_mcp_process_uptime_seconds=(
+            mcp_resources.process_uptime_seconds
+            if mcp_resources is not None
+            else None
+        ),
+        knowledge_mcp_cpu_seconds_per_tool_call=(
+            _rounded(
+                mcp_resources.cpu_seconds_total / knowledge_mcp_calls,
+                6,
+            )
+            if (
+                knowledge_mcp_calls
+                and mcp_resources is not None
+                and mcp_resources.cpu_seconds_total is not None
+            )
             else None
         ),
         current_chat_in_flight=midas.current_chat_in_flight,
