@@ -1,5 +1,5 @@
-from dataclasses import dataclass
 import math
+from dataclasses import dataclass
 
 import httpx
 from prometheus_client.parser import text_string_to_metric_families
