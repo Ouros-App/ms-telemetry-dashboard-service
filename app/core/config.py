@@ -18,12 +18,19 @@ def _https_url_is_valid(value: str) -> bool:
     )
 
 
+def _postgres_url_is_valid(value: str) -> bool:
+    try:
+        return urlsplit(value).scheme in {"postgres", "postgresql"}
+    except ValueError:
+        return False
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False)
 
     project_name: str = "Telemetry Dashboard Service"
-    description: str = "API for Databricks telemetry dashboards and charts."
-    version: str = "0.1.0"
+    description: str = "API for admin Databricks dashboards and scoped user analytics dashboards."
+    version: str = "0.2.0"
     app_port: int = 8000
     log_level: str = "INFO"
     keycloak_issuer_url: str | None = "https://ouros-keycloak.discloud.app/realms/ouros"
@@ -35,6 +42,16 @@ class Settings(BaseSettings):
     databricks_client_id: str | None = None
     databricks_client_secret: str | None = None
     databricks_token_url: str | None = None
+    analytics_database_url: str | None = None
+    analytics_expected_role: str = "analytics_ro"
+    analytics_pool_min_size: int = 1
+    analytics_pool_max_size: int = 5
+    analytics_command_timeout_seconds: float = 8.0
+    analytics_connect_timeout_seconds: float = 5.0
+    analytics_retry_backoff_seconds: float = 5.0
+    analytics_socks_host: str | None = None
+    analytics_socks_port: int = 1055
+    analytics_socks_connect_timeout_seconds: float = 5.0
     http_timeout_seconds: float = 10.0
     http_max_retries: int = 2
     http_retry_backoff_seconds: float = 0.1
@@ -101,6 +118,53 @@ class Settings(BaseSettings):
         if "*" in self.cors_origins:
             errors.append("CORS_ORIGINS_INVALID")
         return errors
+
+    def analytics_configuration_errors(self) -> list[str]:
+        errors: list[str] = []
+        if not self.analytics_database_url:
+            errors.append("ANALYTICS_DATABASE_URL")
+        elif not _postgres_url_is_valid(self.analytics_database_url):
+            errors.append("ANALYTICS_DATABASE_URL_INVALID")
+        if not self.analytics_expected_role.strip():
+            errors.append("ANALYTICS_EXPECTED_ROLE_INVALID")
+        if self.analytics_pool_min_size < 1:
+            errors.append("ANALYTICS_POOL_MIN_SIZE_INVALID")
+        if (
+            self.analytics_pool_max_size < self.analytics_pool_min_size
+            or self.analytics_pool_max_size > 20
+        ):
+            errors.append("ANALYTICS_POOL_MAX_SIZE_INVALID")
+        if (
+            self.analytics_command_timeout_seconds < 1
+            or self.analytics_command_timeout_seconds > 60
+        ):
+            errors.append("ANALYTICS_COMMAND_TIMEOUT_SECONDS_INVALID")
+        if not (0 < self.analytics_connect_timeout_seconds <= 30):
+            errors.append("ANALYTICS_CONNECT_TIMEOUT_SECONDS_INVALID")
+        if not (0 <= self.analytics_retry_backoff_seconds <= 60):
+            errors.append("ANALYTICS_RETRY_BACKOFF_SECONDS_INVALID")
+        if self.analytics_socks_host and self.analytics_database_url:
+            parsed_database_url = urlsplit(self.analytics_database_url)
+            try:
+                _ = parsed_database_url.port
+            except ValueError:
+                errors.append("ANALYTICS_DATABASE_URL_INVALID")
+            else:
+                if not parsed_database_url.hostname:
+                    errors.append("ANALYTICS_DATABASE_URL_SOCKS_TARGET_INVALID")
+        if self.analytics_socks_host and not (
+            1 <= self.analytics_socks_port <= 65535
+        ):
+            errors.append("ANALYTICS_SOCKS_PORT_INVALID")
+        if self.analytics_socks_host and not (
+            0 < self.analytics_socks_connect_timeout_seconds <= 30
+        ):
+            errors.append("ANALYTICS_SOCKS_CONNECT_TIMEOUT_SECONDS_INVALID")
+        return errors
+
+    @property
+    def user_analytics_configured(self) -> bool:
+        return not self.analytics_configuration_errors()
 
     def configuration_errors(self) -> list[str]:
         return [

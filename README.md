@@ -12,16 +12,17 @@
 </div>
 <!-- REPO-METADATA:END -->
 
-Microserviço FastAPI que consulta dashboards de telemetria no Databricks e disponibiliza seus gráficos em dados, HTML com Chart.js ou imagens PNG.
+Microserviço FastAPI com dois fluxos independentes de dashboards: administração via Databricks e dashboards do app via PostgreSQL Analytics. O fluxo admin mantém dados/HTML Chart.js/PNG; o fluxo de usuário retorna HTML Plotly.js já filtrado pelo escopo assinado no JWT.
 
 ## Status e escopo
 
 O serviço possui:
 
-- consulta de dashboards ativos visíveis para as credenciais Databricks configuradas;
+- consulta de dashboards administrativos ativos visíveis para as credenciais Databricks configuradas;
+- dashboards de usuário derivados do PostgreSQL Analytics com isolamento por `farm_id` ou `enterprise_id` do JWT;
 - listagem de dashboards e gráficos;
-- renderização de gráficos em PNG;
-- retorno de uma página HTML individual com Chart.js;
+- renderização de gráficos administrativos em PNG;
+- retorno de páginas HTML individuais com Chart.js no fluxo admin e Plotly.js no fluxo de usuário;
 - catálogo JSON local opcional para metadados;
 - autenticação JWT do Keycloak nas rotas de negócio, sem fallback de shared bearer;
 - métricas Prometheus, logs JSON, cache de gráficos e tentativas de repetição para chamadas externas.
@@ -31,17 +32,26 @@ O arquivo `data/dashboards.json` existe no repositório e atualmente contém uma
 ## Principais componentes
 
 ```text
-router
+admin routes
   -> DashboardService
       -> DatabricksDashboardProvider
           -> DatabricksHttpClient
           -> DatabricksAuthClient
+
+user routes
+  -> UserDashboardService
+      -> AnalyticsDashboardProvider
+          -> AnalyticsRepository
+              -> PostgreSQL Analytics (analytics_ro)
+      -> Plotly renderer
 ```
 
 - `app/main.py`: inicialização da aplicação, clientes Databricks, catálogo, middleware, CORS e métricas.
 - `app/api/routes.py`: rotas de saúde, prontidão, métricas, dashboards e gráficos.
 - `app/services/`: regras de consulta e cache dos dashboards e gráficos.
-- `app/providers/`: integração com a API do Databricks.
+- `app/providers/`: providers independentes para Databricks e PostgreSQL Analytics.
+- `app/repositories/analytics.py`: acesso read-only ao banco Analytics com queries parametrizadas.
+- `app/services/plotly_renderer.py`: geração do HTML Plotly.js do fluxo de usuário.
 - `app/clients/`: cliente HTTP e autenticação OAuth do Databricks.
 - `app/repositories/catalog.py`: leitura do catálogo local.
 - `tests/`: testes de API, autenticação, gráficos, configuração, logs, serviço, provider e rotas.
@@ -70,6 +80,12 @@ Copie `.env.example` para `.env`. As variáveis disponíveis são:
 | `DATABRICKS_HOST` | URL HTTPS do workspace Databricks. |
 | `DATABRICKS_CLIENT_ID` / `DATABRICKS_CLIENT_SECRET` | Credenciais OAuth do service principal. |
 | `DATABRICKS_TOKEN_URL` | URL OAuth opcional; por padrão é derivada do host. |
+| `ANALYTICS_DATABASE_URL` | DSN PostgreSQL do banco Analytics, usando o role read-only `analytics_ro`. |
+| `ANALYTICS_EXPECTED_ROLE` | Role PostgreSQL exigido pelo serviço; padrão `analytics_ro`. A conexão é recusada se `current_user` for diferente. |
+| `ANALYTICS_POOL_MIN_SIZE` / `ANALYTICS_POOL_MAX_SIZE` | Limites do pool de conexões do fluxo de usuário. |
+| `ANALYTICS_COMMAND_TIMEOUT_SECONDS` | Timeout das queries do Analytics. |
+| `ANALYTICS_CONNECT_TIMEOUT_SECONDS` | Timeout curto para abrir uma conexão PostgreSQL; padrão `5`. |
+| `ANALYTICS_RETRY_BACKOFF_SECONDS` | Janela de backoff após falha de conexão para evitar tempestade de reconexões; padrão `5`. |
 | `HTTP_TIMEOUT_SECONDS` / `HTTP_MAX_RETRIES` | Timeout e tentativas adicionais das chamadas externas. |
 | `CHART_CACHE_TTL_SECONDS` | Tempo de vida do cache de gráficos. |
 | `SQL_WAIT_TIMEOUT_SECONDS` | Limite de espera de consultas SQL. |
@@ -85,9 +101,10 @@ O serviço carrega os secrets do Infisical antes da criação de `Settings`. Par
 
 Secrets de aplicação esperados no path `/ms-telemetry-dashboard-service`:
 
-- `DATABRICKS_CLIENT_SECRET`.
+- `DATABRICKS_CLIENT_SECRET`;
+- `ANALYTICS_DATABASE_URL`.
 
-`DATABRICKS_CLIENT_ID` e `DATABRICKS_HOST` são configuração e podem permanecer no ambiente de deploy, embora o client ID também possa ser centralizado no Infisical se desejado. `INFISICAL_TOKEN` é o único bootstrap secreto necessário fora do cofre; project ID, environment, path e host são configuração.
+`DATABRICKS_CLIENT_ID` e `DATABRICKS_HOST` são configuração e podem permanecer no ambiente de deploy, embora o client ID também possa ser centralizado no Infisical se desejado. `ANALYTICS_DATABASE_URL` deve usar exclusivamente `analytics_ro` e apontar para o endereço privado do PostgreSQL no homelab; não use o writer do sincronizador. Em Discloud, configure `ANALYTICS_SOCKS_HOST=tailscale-proxy` e `ANALYTICS_SOCKS_PORT=1055`: o serviço abre um relay apenas em `127.0.0.1`, alcança o proxy pela VLAN da Discloud e deixa o proxy encaminhar o TCP até a subnet do homelab. O telemetry não precisa participar diretamente da Tailnet. `INFISICAL_TOKEN` é o único bootstrap secreto necessário fora do cofre; project ID, environment, path e host são configuração.
 
 ## Execução
 
@@ -111,7 +128,9 @@ Rotas públicas:
 - `GET /metrics`: métricas Prometheus.
 - `GET /docs`: documentação gerada pelo FastAPI.
 
-Rotas de negócio, protegidas exclusivamente por access token do Keycloak com audience `ms-telemetry-dashboard-service` e realm role `admin`:
+### Fluxo administrativo
+
+As rotas administrativas continuam protegidas por access token do Keycloak com audience `ms-telemetry-dashboard-service` e realm role `admin`:
 
 - `GET /v1/dashboards`: lista dashboards ativos.
 - `GET /v1/dashboards/{id}`: busca um dashboard.
@@ -135,6 +154,36 @@ curl -H "Authorization: Bearer $KEYCLOAK_ACCESS_TOKEN" \
   http://localhost:8000/v1/dashboards/PUBLIC_ID/charts/CHART_ID/png \
   --output chart.png
 ```
+
+### Fluxo de dashboards do usuário
+
+O fluxo do app usa o mesmo access token validado, mas não exige role `admin`. São aceitos:
+
+- `farm_owner`, obrigatoriamente com `database_id`, role `farm_owner` e claim assinado `farm_id`;
+- `company_employee`, obrigatoriamente com `database_id`, role `company_employee` e claim assinado `enterprise_id`.
+
+O cliente **não envia farm/enterprise ID** nas rotas. O serviço deriva o escopo somente dos claims assinados pelo Keycloak e injeta esse escopo como parâmetros PostgreSQL. Isso impede trocar IDs na request para consultar dados de outra fazenda ou empresa.
+
+Rotas:
+
+- `GET /v1/user/dashboards`;
+- `GET /v1/user/dashboards/{dashboard_id}`;
+- `GET /v1/user/dashboards/{dashboard_id}/charts`;
+- `GET /v1/user/dashboards/{dashboard_id}/charts/{chart_id}/plotly`.
+
+Exemplo:
+
+```bash
+curl -H "Authorization: Bearer $KEYCLOAK_ACCESS_TOKEN" \
+  http://localhost:8000/v1/user/dashboards
+
+curl -H "Authorization: Bearer $KEYCLOAK_ACCESS_TOKEN" \
+  http://localhost:8000/v1/user/dashboards/overview/charts/current-flock/plotly
+```
+
+O último endpoint retorna `text/html` com Plotly.js e pode ser carregado pelo front. O HTML recebe CSP, `nosniff`, cache privado curto e serialização segura dos valores vindos do banco.
+
+O pool PostgreSQL força transações read-only e valida `current_user = analytics_ro`. Quando `ANALYTICS_SOCKS_HOST` está configurado, cada conexão do `asyncpg` entra em um listener efêmero em `127.0.0.1`, que executa o handshake SOCKS5 e encaminha bytes ao host/porta definidos no próprio `ANALYTICS_DATABASE_URL`. O listener não é exposto externamente. Se o Analytics ou o proxy estiver indisponível, o fluxo admin continua funcionando e as rotas de usuário que precisam consultar dados retornam `503`. O connect usa timeout curto e backoff entre novas tentativas para evitar filas de reconexão durante uma queda. O pool é recriado de forma lazy após falhas, então um reboot do homelab não exige restart do telemetry.
 
 Os logs são emitidos em JSON e incluem evento, request ID, rota, status, duração e tentativas do Databricks, sem registrar tokens, secrets ou payloads de consultas.
 
