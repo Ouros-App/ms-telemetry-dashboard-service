@@ -144,14 +144,6 @@ class Settings(BaseSettings):
             and self.databricks_client_secret
         )
 
-    def _required_configuration_errors(self) -> list[str]:
-        required = {
-            "DATABRICKS_HOST": self.databricks_host,
-            "DATABRICKS_CLIENT_ID": self.databricks_client_id,
-            "DATABRICKS_CLIENT_SECRET": self.databricks_client_secret,
-        }
-        return [name for name, value in required.items() if not value]
-
     def _authentication_configuration_errors(self) -> list[str]:
         errors: list[str] = []
         issuer_configured = bool(self.keycloak_issuer_url)
