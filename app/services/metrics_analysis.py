@@ -238,6 +238,13 @@ def tool_usage(
                         {"tool": tool, "outcome": "error"},
                     )
                 ),
+                cancelled_requests=int(
+                    metric_sum(
+                        snapshots,
+                        request_metric,
+                        {"tool": tool, "outcome": "cancelled"},
+                    )
+                ),
                 latency=latency_summary(
                     snapshots,
                     duration_metric,
