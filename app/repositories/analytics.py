@@ -1,9 +1,11 @@
 import asyncio
 import time
 from typing import Any
+from urllib.parse import urlsplit
 
 import asyncpg
 
+from app.clients.socks5 import Socks5TcpRelay
 from app.core.metrics import ANALYTICS_DURATION, ANALYTICS_ERRORS, ANALYTICS_QUERIES
 
 
@@ -33,13 +35,29 @@ class AnalyticsRepository:
         max_size: int = 5,
         command_timeout_seconds: float = 8.0,
         expected_role: str = "analytics_ro",
+        socks_proxy_host: str | None = None,
+        socks_proxy_port: int = 1055,
+        socks_connect_timeout_seconds: float = 5.0,
     ) -> None:
         self.database_url = database_url
         self.min_size = min_size
         self.max_size = max_size
         self.command_timeout_seconds = command_timeout_seconds
         self.expected_role = expected_role
+        self.socks_proxy_host = (
+            socks_proxy_host.strip() if socks_proxy_host and socks_proxy_host.strip() else None
+        )
+        self.socks_proxy_port = socks_proxy_port
+        self.socks_connect_timeout_seconds = socks_connect_timeout_seconds
+
+        parsed_database_url = urlsplit(database_url)
+        self._target_host = parsed_database_url.hostname
+        self._target_port = parsed_database_url.port or 5432
+        if self.socks_proxy_host and not self._target_host:
+            raise ValueError("Analytics database URL must include a host when SOCKS5 is enabled")
+
         self._pool: asyncpg.Pool | None = None
+        self._relay: Socks5TcpRelay | None = None
         self._pool_lock = asyncio.Lock()
 
     async def _validate_connection(self, connection: asyncpg.Connection) -> None:
@@ -52,6 +70,20 @@ class AnalyticsRepository:
                 "Analytics connection did not satisfy the read-only contract"
             )
 
+    async def _ensure_relay(self) -> Socks5TcpRelay | None:
+        if self.socks_proxy_host is None:
+            return None
+        if self._relay is None:
+            self._relay = Socks5TcpRelay(
+                self.socks_proxy_host,
+                self.socks_proxy_port,
+                self._target_host,
+                self._target_port,
+                connect_timeout_seconds=self.socks_connect_timeout_seconds,
+            )
+            await self._relay.start()
+        return self._relay
+
     async def _get_pool(self) -> asyncpg.Pool:
         if self._pool is not None:
             return self._pool
@@ -59,6 +91,15 @@ class AnalyticsRepository:
         async with self._pool_lock:
             if self._pool is not None:
                 return self._pool
+
+            relay = await self._ensure_relay()
+            connect_overrides: dict[str, Any] = {}
+            if relay is not None:
+                connect_overrides = {
+                    "host": relay.local_host,
+                    "port": relay.local_port,
+                }
+
             try:
                 self._pool = await asyncpg.create_pool(
                     dsn=self.database_url,
@@ -72,6 +113,7 @@ class AnalyticsRepository:
                         "search_path": "analytics,pg_catalog",
                     },
                     init=self._validate_connection,
+                    **connect_overrides,
                 )
             except _CONNECTION_ERRORS as exc:
                 raise AnalyticsUnavailable(
@@ -89,9 +131,13 @@ class AnalyticsRepository:
     async def close(self) -> None:
         async with self._pool_lock:
             pool = self._pool
+            relay = self._relay
             self._pool = None
+            self._relay = None
         if pool is not None:
             await pool.close()
+        if relay is not None:
+            await relay.close()
 
     async def ping(self) -> None:
         pool = await self._get_pool()
