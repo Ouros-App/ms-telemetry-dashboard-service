@@ -2,11 +2,13 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 
+import asyncpg
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import router
+from app.api.user_dashboards import router as user_dashboard_router
 from app.clients.databricks import DatabricksAuthClient, DatabricksHttpClient
 from app.core.config import settings
 from app.core.logging import (
@@ -16,9 +18,12 @@ from app.core.logging import (
     set_request_id,
 )
 from app.core.metrics import HTTP_DURATION, HTTP_REQUESTS, metric_path
+from app.providers.analytics import AnalyticsDashboardProvider
 from app.providers.databricks import DatabricksDashboardProvider
+from app.repositories.analytics import AnalyticsRepository, AnalyticsUnavailable
 from app.repositories.catalog import CatalogError, DashboardCatalog
 from app.services.dashboard import DashboardService
+from app.services.user_dashboard import UserDashboardService
 
 logger = get_logger(__name__)
 http_logger = get_logger("http")
@@ -32,6 +37,7 @@ async def lifespan(app: FastAPI):
             "event": "service_starting",
             "configured": settings.ready,
             "databricks_configured": bool(settings.databricks_host),
+            "analytics_configured": settings.user_analytics_configured,
             "catalog_path": str(settings.dashboard_catalog_path),
         },
     )
@@ -39,11 +45,16 @@ async def lifespan(app: FastAPI):
     if configuration_errors:
         logger.warning(
             "service configuration is incomplete",
-            extra={"event": "configuration_not_ready", "errors": sorted(set(configuration_errors))},
+            extra={
+                "event": "configuration_not_ready",
+                "errors": sorted(set(configuration_errors)),
+            },
         )
+
     client = httpx.AsyncClient(timeout=settings.http_timeout_seconds)
     http = DatabricksHttpClient(client, settings)
     auth = DatabricksAuthClient(http, settings)
+
     try:
         catalog = DashboardCatalog.from_path(settings.dashboard_catalog_path)
         logger.info(
@@ -51,22 +62,75 @@ async def lifespan(app: FastAPI):
             extra={"event": "catalog_loaded", "catalog_entries": len(catalog)},
         )
     except CatalogError:
-        logger.exception("dashboard catalog could not be loaded", extra={"event": "catalog_load_failed"})
+        logger.exception(
+            "dashboard catalog could not be loaded",
+            extra={"event": "catalog_load_failed"},
+        )
         catalog = DashboardCatalog([])
-    provider = DatabricksDashboardProvider(http, auth, settings, catalog)
+
+    admin_provider = DatabricksDashboardProvider(http, auth, settings, catalog)
     app.state.settings = settings
-    app.state.dashboard_service = DashboardService(provider, settings.chart_cache_ttl_seconds)
+    app.state.dashboard_service = DashboardService(
+        admin_provider,
+        settings.chart_cache_ttl_seconds,
+    )
     app.state.http_client = client
+
+    analytics_pool: asyncpg.Pool | None = None
+    analytics_repository: AnalyticsRepository | None = None
+    if settings.analytics_database_url:
+        try:
+            analytics_pool = await asyncpg.create_pool(
+                dsn=settings.analytics_database_url,
+                min_size=settings.analytics_pool_min_size,
+                max_size=settings.analytics_pool_max_size,
+                command_timeout=settings.analytics_command_timeout_seconds,
+                max_inactive_connection_lifetime=300,
+                server_settings={
+                    "application_name": "ms-telemetry-dashboard-service",
+                    "default_transaction_read_only": "on",
+                    "search_path": "analytics,pg_catalog",
+                },
+            )
+            analytics_repository = AnalyticsRepository(analytics_pool)
+            await analytics_repository.ping()
+            logger.info(
+                "user analytics database connected",
+                extra={"event": "analytics_connected"},
+            )
+        except (AnalyticsUnavailable, asyncpg.PostgresError, OSError, TimeoutError):
+            logger.exception(
+                "user analytics database unavailable",
+                extra={"event": "analytics_connection_failed"},
+            )
+            if analytics_pool is not None:
+                await analytics_pool.close()
+                analytics_pool = None
+
+    app.state.analytics_pool = analytics_pool
+    app.state.analytics_ready = analytics_repository is not None
+    app.state.user_dashboard_service = UserDashboardService(
+        AnalyticsDashboardProvider(analytics_repository),
+        settings.chart_cache_ttl_seconds,
+    )
+
     logger.info("service started", extra={"event": "service_started"})
     try:
         yield
     finally:
         logger.info("service stopping", extra={"event": "service_stopping"})
+        if analytics_pool is not None:
+            await analytics_pool.close()
         await client.aclose()
 
 
 configure_logging(settings.log_level)
-app = FastAPI(title=settings.project_name, description=settings.description, version=settings.version, lifespan=lifespan)
+app = FastAPI(
+    title=settings.project_name,
+    description=settings.description,
+    version=settings.version,
+    lifespan=lifespan,
+)
 if settings.cors_origins and "*" not in settings.cors_origins:
     app.add_middleware(
         CORSMiddleware,
@@ -121,3 +185,4 @@ async def request_context(request: Request, call_next):
 
 
 app.include_router(router)
+app.include_router(user_dashboard_router)
