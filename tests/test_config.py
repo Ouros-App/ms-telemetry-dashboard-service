@@ -164,3 +164,12 @@ def test_socks_analytics_requires_target_hostname_in_dsn() -> None:
         "ANALYTICS_DATABASE_URL_SOCKS_TARGET_INVALID"
         in config.analytics_configuration_errors()
     )
+
+
+def test_socks_analytics_rejects_invalid_target_port_without_crashing() -> None:
+    config = base_settings(
+        analytics_database_url="postgresql://analytics_ro@192.168.15.11:99999/db",
+        analytics_socks_host="tailscale-proxy",
+    )
+
+    assert "ANALYTICS_DATABASE_URL_INVALID" in config.analytics_configuration_errors()
