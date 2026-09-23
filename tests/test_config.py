@@ -1,3 +1,6 @@
+import pytest
+from pydantic import ValidationError
+
 from app.core.config import Settings
 
 
@@ -18,12 +21,14 @@ def base_settings(**overrides) -> Settings:
 def test_invalid_runtime_settings_make_configuration_not_ready() -> None:
     config = base_settings(
         token_refresh_margin_seconds=-1,
+        telemetry_scrape_timeout_seconds=0,
         cors_origins=["*"],
     )
 
     errors = config.configuration_errors()
 
     assert "TOKEN_REFRESH_MARGIN_SECONDS_INVALID" in errors
+    assert "TELEMETRY_SCRAPE_TIMEOUT_SECONDS_INVALID" in errors
     assert "CORS_ORIGINS_INVALID" in errors
     assert not config.ready
 
@@ -56,7 +61,18 @@ def test_settings_derive_token_url_only_when_host_is_configured() -> None:
     config = base_settings(databricks_host=None, databricks_token_url=None)
 
     assert config.token_url is None
-    assert "DATABRICKS_HOST" in config.configuration_errors()
+    assert "DATABRICKS_HOST" not in config.configuration_errors()
+
+
+def test_observability_core_does_not_require_databricks() -> None:
+    config = base_settings(
+        databricks_host=None,
+        databricks_client_id=None,
+        databricks_client_secret=None,
+    )
+
+    assert config.ready
+    assert not config.databricks_configured
 
 
 def test_missing_keycloak_contract_makes_configuration_not_ready() -> None:
@@ -181,3 +197,40 @@ def test_malformed_ipv6_analytics_url_is_reported_without_crashing() -> None:
     )
 
     assert "ANALYTICS_DATABASE_URL_INVALID" in config.analytics_configuration_errors()
+
+
+def test_telemetry_targets_require_safe_urls_and_unique_names() -> None:
+    config = base_settings(
+        telemetry_targets=[
+            {
+                "name": "midas",
+                "kind": "midas",
+                "url": "https://midas.example.com/metrics",
+                "token": "secret",
+            },
+            {
+                "name": "midas",
+                "kind": "knowledge_mcp",
+                "url": "http://localhost:8000/metrics",
+                "token": "secret",
+            },
+        ]
+    )
+
+    assert "TELEMETRY_TARGET_NAMES_DUPLICATED" in config.configuration_errors()
+    assert config.telemetry_targets[0].token is not None
+    assert (
+        config.telemetry_targets[0].token.get_secret_value()
+        == "secret"
+    )
+
+    with pytest.raises(ValidationError):
+        base_settings(
+            telemetry_targets=[
+                {
+                    "name": "unsafe",
+                    "kind": "generic",
+                    "url": "http://remote.example.com/metrics",
+                }
+            ]
+        )
