@@ -84,6 +84,8 @@ Copie `.env.example` para `.env`. As variáveis disponíveis são:
 | `ANALYTICS_EXPECTED_ROLE` | Role PostgreSQL exigido pelo serviço; padrão `analytics_ro`. A conexão é recusada se `current_user` for diferente. |
 | `ANALYTICS_POOL_MIN_SIZE` / `ANALYTICS_POOL_MAX_SIZE` | Limites do pool de conexões do fluxo de usuário. |
 | `ANALYTICS_COMMAND_TIMEOUT_SECONDS` | Timeout das queries do Analytics. |
+| `ANALYTICS_CONNECT_TIMEOUT_SECONDS` | Timeout curto para abrir uma conexão PostgreSQL; padrão `5`. |
+| `ANALYTICS_RETRY_BACKOFF_SECONDS` | Janela de backoff após falha de conexão para evitar tempestade de reconexões; padrão `5`. |
 | `HTTP_TIMEOUT_SECONDS` / `HTTP_MAX_RETRIES` | Timeout e tentativas adicionais das chamadas externas. |
 | `CHART_CACHE_TTL_SECONDS` | Tempo de vida do cache de gráficos. |
 | `SQL_WAIT_TIMEOUT_SECONDS` | Limite de espera de consultas SQL. |
@@ -181,7 +183,7 @@ curl -H "Authorization: Bearer $KEYCLOAK_ACCESS_TOKEN" \
 
 O último endpoint retorna `text/html` com Plotly.js e pode ser carregado pelo front. O HTML recebe CSP, `nosniff`, cache privado curto e serialização segura dos valores vindos do banco.
 
-O pool PostgreSQL força transações read-only e valida `current_user = analytics_ro`. Quando `ANALYTICS_SOCKS_HOST` está configurado, cada conexão do `asyncpg` entra em um listener efêmero em `127.0.0.1`, que executa o handshake SOCKS5 e encaminha bytes ao host/porta definidos no próprio `ANALYTICS_DATABASE_URL`. O listener não é exposto externamente. Se o Analytics ou o proxy estiver indisponível, o fluxo admin continua funcionando e as rotas de usuário que precisam consultar dados retornam `503`. O pool é recriado de forma lazy após falhas, então um reboot do homelab não exige restart do telemetry.
+O pool PostgreSQL força transações read-only e valida `current_user = analytics_ro`. Quando `ANALYTICS_SOCKS_HOST` está configurado, cada conexão do `asyncpg` entra em um listener efêmero em `127.0.0.1`, que executa o handshake SOCKS5 e encaminha bytes ao host/porta definidos no próprio `ANALYTICS_DATABASE_URL`. O listener não é exposto externamente. Se o Analytics ou o proxy estiver indisponível, o fluxo admin continua funcionando e as rotas de usuário que precisam consultar dados retornam `503`. O connect usa timeout curto e backoff entre novas tentativas para evitar filas de reconexão durante uma queda. O pool é recriado de forma lazy após falhas, então um reboot do homelab não exige restart do telemetry.
 
 Os logs são emitidos em JSON e incluem evento, request ID, rota, status, duração e tentativas do Databricks, sem registrar tokens, secrets ou payloads de consultas.
 
