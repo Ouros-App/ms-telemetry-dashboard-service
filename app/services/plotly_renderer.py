@@ -6,6 +6,9 @@ from typing import Any
 from app.schemas.user_dashboards import UserChartDefinition
 
 PLOTLY_JS_URL = "https://cdn.plot.ly/plotly-2.35.2.min.js"
+PLOTLY_JS_SRI = (
+    "sha384-cCVCZkAjYNxaYKbM8lsArLznDF/SvMFr1jcZrvOpSTCa0W40ZAdLzHCEulnUa5i7"
+)
 
 
 def _safe_json(value: Any) -> str:
@@ -37,7 +40,7 @@ def render_plotly_html(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{title}</title>
-  <script nonce="{nonce}" src="{PLOTLY_JS_URL}"></script>
+  <script nonce="{nonce}" src="{PLOTLY_JS_URL}" integrity="{PLOTLY_JS_SRI}" crossorigin="anonymous"></script>
   <style>
     html, body, #plot {{ width: 100%; height: 100%; margin: 0; }}
     body {{ min-height: 320px; background: transparent; font-family: system-ui, sans-serif; }}
