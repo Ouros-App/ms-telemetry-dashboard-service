@@ -92,6 +92,8 @@ async def lifespan(app: FastAPI):
             min_size=settings.analytics_pool_min_size,
             max_size=settings.analytics_pool_max_size,
             command_timeout_seconds=settings.analytics_command_timeout_seconds,
+            connect_timeout_seconds=settings.analytics_connect_timeout_seconds,
+            retry_backoff_seconds=settings.analytics_retry_backoff_seconds,
             expected_role=settings.analytics_expected_role,
             socks_proxy_host=settings.analytics_socks_host,
             socks_proxy_port=settings.analytics_socks_port,
