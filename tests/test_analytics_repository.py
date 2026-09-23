@@ -120,3 +120,34 @@ async def test_repository_close_closes_active_pool() -> None:
 
     assert pool.closed
     assert repository._pool is None
+
+
+@pytest.mark.asyncio
+async def test_repository_fetch_discards_broken_pool_and_wraps_query_error() -> None:
+    from app.repositories.analytics import AnalyticsQueryError
+
+    pool = FakePool(acquire_error=OSError("connection dropped"))
+    repository = AnalyticsRepository("postgresql://reader@analytics/db")
+    repository._pool = pool
+
+    with pytest.raises(AnalyticsQueryError):
+        await repository.fetch("broken", "SELECT 1")
+
+    assert pool.terminated
+    assert repository._pool is None
+
+
+@pytest.mark.asyncio
+async def test_repository_reuses_existing_pool_without_recreating_it() -> None:
+    pool = FakePool(FakeConnection(rows=[{"value": 11}]))
+    repository = AnalyticsRepository("postgresql://reader@analytics/db")
+    repository._pool = pool
+
+    with patch(
+        "app.repositories.analytics.asyncpg.create_pool",
+        new=AsyncMock(),
+    ) as create_pool:
+        rows = await repository.fetch("existing", "SELECT 11 AS value")
+
+    assert rows == [{"value": 11}]
+    create_pool.assert_not_awaited()
