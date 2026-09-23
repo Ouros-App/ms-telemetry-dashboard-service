@@ -143,7 +143,7 @@ class Settings(BaseSettings):
         if self.analytics_socks_host and self.analytics_database_url:
             parsed_database_url = urlsplit(self.analytics_database_url)
             try:
-                parsed_database_url.port
+                _ = parsed_database_url.port
             except ValueError:
                 errors.append("ANALYTICS_DATABASE_URL_INVALID")
             else:
