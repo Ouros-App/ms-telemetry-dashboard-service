@@ -1,5 +1,6 @@
 from unittest.mock import AsyncMock, patch
 
+import asyncpg
 import pytest
 
 from app.repositories.analytics import AnalyticsRepository, AnalyticsUnavailable
@@ -89,7 +90,10 @@ async def test_repository_rejects_writer_role_even_if_database_is_reachable() ->
 async def test_repository_recreates_pool_after_homelab_outage() -> None:
     unavailable_pool = FakePool(acquire_error=OSError("offline"))
     recovered_pool = FakePool(FakeConnection(rows=[{"value": 10}]))
-    repository = AnalyticsRepository("postgresql://reader@analytics/db")
+    repository = AnalyticsRepository(
+        "postgresql://reader@analytics/db",
+        retry_backoff_seconds=0,
+    )
     create_pool = AsyncMock(side_effect=[unavailable_pool, recovered_pool])
 
     with patch(
@@ -201,6 +205,46 @@ async def test_repository_routes_pool_connections_through_socks5_relay() -> None
     )
     assert create_pool.await_args.kwargs["host"] == "127.0.0.1"
     assert create_pool.await_args.kwargs["port"] == 15432
+    assert create_pool.await_args.kwargs["timeout"] == 5.0
 
     await repository.close()
     assert relay.closed
+
+
+@pytest.mark.asyncio
+async def test_repository_backoff_prevents_connection_stampede() -> None:
+    repository = AnalyticsRepository(
+        "postgresql://reader@analytics/db",
+        retry_backoff_seconds=5,
+    )
+    create_pool = AsyncMock(side_effect=OSError("offline"))
+
+    with patch(
+        "app.repositories.analytics.asyncpg.create_pool",
+        new=create_pool,
+    ):
+        with pytest.raises(AnalyticsUnavailable):
+            await repository._get_pool()
+        with pytest.raises(AnalyticsUnavailable):
+            await repository._get_pool()
+
+    assert create_pool.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_query_error_does_not_terminate_healthy_pool() -> None:
+    from app.repositories.analytics import AnalyticsQueryError
+
+    connection = FakeConnection()
+    connection.fetch = AsyncMock(
+        side_effect=asyncpg.UndefinedColumnError("missing column")
+    )
+    pool = FakePool(connection)
+    repository = AnalyticsRepository("postgresql://reader@analytics/db")
+    repository._pool = pool
+
+    with pytest.raises(AnalyticsQueryError):
+        await repository.fetch("broken_query", "SELECT missing_column")
+
+    assert not pool.terminated
+    assert repository._pool is pool
