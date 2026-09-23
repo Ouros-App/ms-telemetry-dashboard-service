@@ -319,6 +319,10 @@ async def test_summary_estimates_groq_list_price_and_keeps_nim_unpriced(
     assert baseline.midas_resident_memory_bytes == 268_435_456
     assert baseline.knowledge_mcp_average_cpu_cores == 0.1
     assert baseline.knowledge_mcp_resident_memory_bytes == 134_217_728
+    assert baseline.midas_process_uptime_seconds == 100
+    assert baseline.midas_cpu_seconds_per_chat == 5
+    assert baseline.knowledge_mcp_process_uptime_seconds == 200
+    assert baseline.knowledge_mcp_cpu_seconds_per_tool_call == 4
 
 
 @pytest.mark.asyncio
