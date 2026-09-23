@@ -2,7 +2,6 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
 UserChartType = Literal["indicator", "bar", "line", "pie"]
 
 
