@@ -96,9 +96,11 @@ class AnalyticsRepository:
     async def ping(self) -> None:
         pool = await self._get_pool()
         try:
-            async with pool.acquire() as connection:
-                async with connection.transaction(readonly=True):
-                    await connection.fetchval("SELECT 1")
+            async with (
+                pool.acquire() as connection,
+                connection.transaction(readonly=True),
+            ):
+                await connection.fetchval("SELECT 1")
         except _CONNECTION_ERRORS as exc:
             await self._discard_pool(pool)
             raise AnalyticsUnavailable(
@@ -115,9 +117,11 @@ class AnalyticsRepository:
         pool: asyncpg.Pool | None = None
         try:
             pool = await self._get_pool()
-            async with pool.acquire() as connection:
-                async with connection.transaction(readonly=True):
-                    rows = await connection.fetch(query, *args)
+            async with (
+                pool.acquire() as connection,
+                connection.transaction(readonly=True),
+            ):
+                rows = await connection.fetch(query, *args)
             ANALYTICS_QUERIES.labels(operation, "success").inc()
             return [dict(row) for row in rows]
         except AnalyticsUnavailable:
