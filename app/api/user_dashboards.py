@@ -73,6 +73,9 @@ async def list_user_charts(
 @router.get(
     "/{dashboard_id}/charts/{chart_id}/plotly",
     response_class=HTMLResponse,
+    responses={
+        503: {"description": "User analytics is temporarily unavailable"},
+    },
     summary="Render a scoped user chart as Plotly HTML",
     description=(
         "Returns Plotly HTML generated exclusively from the scope carried by the "
