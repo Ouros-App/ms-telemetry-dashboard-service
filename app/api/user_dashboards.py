@@ -95,12 +95,7 @@ async def user_chart_plotly(
             status_code=404,
             detail="dashboard or chart not found",
         ) from exc
-    except AnalyticsUnavailable as exc:
-        raise HTTPException(
-            status_code=503,
-            detail="User analytics is not configured",
-        ) from exc
-    except AnalyticsQueryError as exc:
+    except (AnalyticsUnavailable, AnalyticsQueryError) as exc:
         raise HTTPException(
             status_code=503,
             detail="User analytics is temporarily unavailable",
