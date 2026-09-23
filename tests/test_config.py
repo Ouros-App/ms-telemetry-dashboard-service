@@ -115,3 +115,27 @@ def test_analytics_database_url_and_pool_are_validated_independently() -> None:
     assert "ANALYTICS_POOL_MIN_SIZE_INVALID" in errors
     assert "ANALYTICS_POOL_MAX_SIZE_INVALID" in errors
     assert "ANALYTICS_COMMAND_TIMEOUT_SECONDS_INVALID" in errors
+
+
+def test_analytics_socks_settings_are_validated_independently() -> None:
+    config = base_settings(
+        analytics_socks_host="tailscale-proxy",
+        analytics_socks_port=0,
+        analytics_socks_connect_timeout_seconds=31,
+    )
+
+    errors = config.analytics_configuration_errors()
+
+    assert config.ready
+    assert "ANALYTICS_SOCKS_PORT_INVALID" in errors
+    assert "ANALYTICS_SOCKS_CONNECT_TIMEOUT_SECONDS_INVALID" in errors
+
+
+def test_analytics_socks_settings_accept_discloud_vlan_proxy() -> None:
+    config = base_settings(
+        analytics_socks_host="tailscale-proxy",
+        analytics_socks_port=1055,
+        analytics_socks_connect_timeout_seconds=5,
+    )
+
+    assert config.analytics_configuration_errors() == []
