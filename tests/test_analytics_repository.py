@@ -151,3 +151,56 @@ async def test_repository_reuses_existing_pool_without_recreating_it() -> None:
 
     assert rows == [{"value": 11}]
     create_pool.assert_not_awaited()
+
+
+class FakeRelay:
+    local_host = "127.0.0.1"
+    local_port = 15432
+
+    def __init__(self) -> None:
+        self.started = False
+        self.closed = False
+
+    async def start(self) -> None:
+        self.started = True
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+@pytest.mark.asyncio
+async def test_repository_routes_pool_connections_through_socks5_relay() -> None:
+    pool = FakePool()
+    relay = FakeRelay()
+    repository = AnalyticsRepository(
+        "postgresql://analytics_ro:secret@192.168.15.11:55432/ouros_analytics_database",
+        socks_proxy_host="tailscale-proxy",
+        socks_proxy_port=1055,
+    )
+
+    with (
+        patch(
+            "app.repositories.analytics.Socks5TcpRelay",
+            return_value=relay,
+        ) as relay_class,
+        patch(
+            "app.repositories.analytics.asyncpg.create_pool",
+            new=AsyncMock(return_value=pool),
+        ) as create_pool,
+    ):
+        result = await repository._get_pool()
+
+    assert result is pool
+    assert relay.started
+    relay_class.assert_called_once_with(
+        "tailscale-proxy",
+        1055,
+        "192.168.15.11",
+        55432,
+        connect_timeout_seconds=5.0,
+    )
+    assert create_pool.await_args.kwargs["host"] == "127.0.0.1"
+    assert create_pool.await_args.kwargs["port"] == 15432
+
+    await repository.close()
+    assert relay.closed
