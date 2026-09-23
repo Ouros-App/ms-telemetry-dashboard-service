@@ -25,6 +25,12 @@ _CONNECTION_ERRORS = (
     ValueError,
 )
 
+_POOL_BROKEN_ERRORS = (
+    asyncpg.exceptions.ConnectionDoesNotExistError,
+    asyncpg.exceptions.PostgresConnectionError,
+    OSError,
+)
+
 
 class AnalyticsRepository:
     def __init__(
@@ -34,6 +40,8 @@ class AnalyticsRepository:
         min_size: int = 1,
         max_size: int = 5,
         command_timeout_seconds: float = 8.0,
+        connect_timeout_seconds: float = 5.0,
+        retry_backoff_seconds: float = 5.0,
         expected_role: str = "analytics_ro",
         socks_proxy_host: str | None = None,
         socks_proxy_port: int = 1055,
@@ -43,9 +51,13 @@ class AnalyticsRepository:
         self.min_size = min_size
         self.max_size = max_size
         self.command_timeout_seconds = command_timeout_seconds
+        self.connect_timeout_seconds = connect_timeout_seconds
+        self.retry_backoff_seconds = retry_backoff_seconds
         self.expected_role = expected_role
         self.socks_proxy_host = (
-            socks_proxy_host.strip() if socks_proxy_host and socks_proxy_host.strip() else None
+            socks_proxy_host.strip()
+            if socks_proxy_host and socks_proxy_host.strip()
+            else None
         )
         self.socks_proxy_port = socks_proxy_port
         self.socks_connect_timeout_seconds = socks_connect_timeout_seconds
@@ -59,6 +71,7 @@ class AnalyticsRepository:
         self._pool: asyncpg.Pool | None = None
         self._relay: Socks5TcpRelay | None = None
         self._pool_lock = asyncio.Lock()
+        self._retry_after = 0.0
 
     async def _validate_connection(self, connection: asyncpg.Connection) -> None:
         role = await connection.fetchval("SELECT current_user")
@@ -91,20 +104,23 @@ class AnalyticsRepository:
         async with self._pool_lock:
             if self._pool is not None:
                 return self._pool
-
-            relay = await self._ensure_relay()
-            connect_overrides: dict[str, Any] = {}
-            if relay is not None:
-                connect_overrides = {
-                    "host": relay.local_host,
-                    "port": relay.local_port,
-                }
+            if time.monotonic() < self._retry_after:
+                raise AnalyticsUnavailable("Analytics database is unavailable")
 
             try:
+                relay = await self._ensure_relay()
+                connect_overrides: dict[str, Any] = {}
+                if relay is not None:
+                    connect_overrides = {
+                        "host": relay.local_host,
+                        "port": relay.local_port,
+                    }
+
                 self._pool = await asyncpg.create_pool(
                     dsn=self.database_url,
                     min_size=self.min_size,
                     max_size=self.max_size,
+                    timeout=self.connect_timeout_seconds,
                     command_timeout=self.command_timeout_seconds,
                     max_inactive_connection_lifetime=300,
                     server_settings={
@@ -116,9 +132,13 @@ class AnalyticsRepository:
                     **connect_overrides,
                 )
             except _CONNECTION_ERRORS as exc:
+                self._retry_after = (
+                    time.monotonic() + self.retry_backoff_seconds
+                )
                 raise AnalyticsUnavailable(
                     "Analytics database is unavailable"
                 ) from exc
+            self._retry_after = 0.0
             return self._pool
 
     async def _discard_pool(self, pool: asyncpg.Pool) -> None:
@@ -148,7 +168,11 @@ class AnalyticsRepository:
             ):
                 await connection.fetchval("SELECT 1")
         except _CONNECTION_ERRORS as exc:
-            await self._discard_pool(pool)
+            if isinstance(exc, _POOL_BROKEN_ERRORS):
+                self._retry_after = (
+                    time.monotonic() + self.retry_backoff_seconds
+                )
+                await self._discard_pool(pool)
             raise AnalyticsUnavailable(
                 "Analytics database is unavailable"
             ) from exc
@@ -175,7 +199,10 @@ class AnalyticsRepository:
             ANALYTICS_ERRORS.labels(operation, "unavailable").inc()
             raise
         except _CONNECTION_ERRORS as exc:
-            if pool is not None:
+            if pool is not None and isinstance(exc, _POOL_BROKEN_ERRORS):
+                self._retry_after = (
+                    time.monotonic() + self.retry_backoff_seconds
+                )
                 await self._discard_pool(pool)
             ANALYTICS_QUERIES.labels(operation, "error").inc()
             ANALYTICS_ERRORS.labels(operation, type(exc).__name__).inc()
