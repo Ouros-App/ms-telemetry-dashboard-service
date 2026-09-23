@@ -39,6 +39,7 @@ class ModelUsage(BaseModel):
     model: str
     requests: int
     failed_requests: int
+    cancelled_requests: int = 0
     input_tokens: int
     cached_input_tokens: int
     output_tokens: int
@@ -54,6 +55,7 @@ class ToolUsage(BaseModel):
     tool: str
     requests: int
     failed_requests: int
+    cancelled_requests: int = 0
     latency: LatencySummary
 
 
