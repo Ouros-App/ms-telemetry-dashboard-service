@@ -87,40 +87,45 @@ class Socks5TcpRelay:
     async def _open_upstream(
         self,
     ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-        async with asyncio.timeout(self.connect_timeout_seconds):
-            reader, writer = await asyncio.open_connection(
-                self.proxy_host,
-                self.proxy_port,
-            )
+        writer: asyncio.StreamWriter | None = None
+        try:
+            async with asyncio.timeout(self.connect_timeout_seconds):
+                reader, writer = await asyncio.open_connection(
+                    self.proxy_host,
+                    self.proxy_port,
+                )
 
-            writer.write(b"\x05\x01\x00")
-            await writer.drain()
-            if await reader.readexactly(2) != b"\x05\x00":
+                writer.write(b"\x05\x01\x00")
+                await writer.drain()
+                if await reader.readexactly(2) != b"\x05\x00":
+                    raise Socks5RelayError(
+                        "SOCKS5 proxy does not allow unauthenticated connections"
+                    )
+
+                address_type, address = self._target_address()
+                writer.write(
+                    b"\x05\x01\x00"
+                    + bytes([address_type])
+                    + address
+                    + struct.pack("!H", self.target_port)
+                )
+                await writer.drain()
+
+                response = await reader.readexactly(4)
+                if response[0] != 0x05:
+                    raise Socks5RelayError("Invalid SOCKS5 proxy response")
+                if response[1] != 0x00:
+                    raise Socks5RelayError(
+                        f"SOCKS5 CONNECT failed with status {response[1]}"
+                    )
+                await self._consume_bound_address(reader, response[3])
+                return reader, writer
+        except Exception:
+            if writer is not None:
                 writer.close()
                 with suppress(Exception):
                     await writer.wait_closed()
-                raise Socks5RelayError(
-                    "SOCKS5 proxy does not allow unauthenticated connections"
-                )
-
-            address_type, address = self._target_address()
-            writer.write(
-                b"\x05\x01\x00"
-                + bytes([address_type])
-                + address
-                + struct.pack("!H", self.target_port)
-            )
-            await writer.drain()
-
-            response = await reader.readexactly(4)
-            if response[0] != 0x05:
-                raise Socks5RelayError("Invalid SOCKS5 proxy response")
-            if response[1] != 0x00:
-                raise Socks5RelayError(
-                    f"SOCKS5 CONNECT failed with status {response[1]}"
-                )
-            await self._consume_bound_address(reader, response[3])
-            return reader, writer
+            raise
 
     @staticmethod
     async def _pump(
