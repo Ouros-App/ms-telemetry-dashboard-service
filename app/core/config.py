@@ -19,12 +19,7 @@ def _https_url_is_valid(value: str) -> bool:
 
 
 def _postgres_url_is_valid(value: str) -> bool:
-    parsed = urlsplit(value)
-    return bool(
-        parsed.scheme in {"postgres", "postgresql"}
-        and parsed.hostname
-        and parsed.username
-    )
+    return urlsplit(value).scheme in {"postgres", "postgresql"}
 
 
 class Settings(BaseSettings):
@@ -49,6 +44,8 @@ class Settings(BaseSettings):
     analytics_pool_min_size: int = 1
     analytics_pool_max_size: int = 5
     analytics_command_timeout_seconds: float = 8.0
+    analytics_connect_timeout_seconds: float = 5.0
+    analytics_retry_backoff_seconds: float = 5.0
     analytics_socks_host: str | None = None
     analytics_socks_port: int = 1055
     analytics_socks_connect_timeout_seconds: float = 5.0
@@ -139,7 +136,19 @@ class Settings(BaseSettings):
             or self.analytics_command_timeout_seconds > 60
         ):
             errors.append("ANALYTICS_COMMAND_TIMEOUT_SECONDS_INVALID")
-        if self.analytics_socks_host and not (1 <= self.analytics_socks_port <= 65535):
+        if not (0 < self.analytics_connect_timeout_seconds <= 30):
+            errors.append("ANALYTICS_CONNECT_TIMEOUT_SECONDS_INVALID")
+        if not (0 <= self.analytics_retry_backoff_seconds <= 60):
+            errors.append("ANALYTICS_RETRY_BACKOFF_SECONDS_INVALID")
+        if (
+            self.analytics_socks_host
+            and self.analytics_database_url
+            and not urlsplit(self.analytics_database_url).hostname
+        ):
+            errors.append("ANALYTICS_DATABASE_URL_SOCKS_TARGET_INVALID")
+        if self.analytics_socks_host and not (
+            1 <= self.analytics_socks_port <= 65535
+        ):
             errors.append("ANALYTICS_SOCKS_PORT_INVALID")
         if self.analytics_socks_host and not (
             0 < self.analytics_socks_connect_timeout_seconds <= 30
