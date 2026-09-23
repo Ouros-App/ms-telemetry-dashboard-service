@@ -1,3 +1,4 @@
+import asyncio
 import time
 from typing import Any
 
@@ -14,17 +15,93 @@ class AnalyticsQueryError(RuntimeError):
     pass
 
 
+_CONNECTION_ERRORS = (
+    asyncpg.PostgresError,
+    asyncpg.InterfaceError,
+    OSError,
+    TimeoutError,
+    ValueError,
+)
+
+
 class AnalyticsRepository:
-    def __init__(self, pool: asyncpg.Pool) -> None:
-        self.pool = pool
+    def __init__(
+        self,
+        database_url: str,
+        *,
+        min_size: int = 1,
+        max_size: int = 5,
+        command_timeout_seconds: float = 8.0,
+        expected_role: str = "analytics_ro",
+    ) -> None:
+        self.database_url = database_url
+        self.min_size = min_size
+        self.max_size = max_size
+        self.command_timeout_seconds = command_timeout_seconds
+        self.expected_role = expected_role
+        self._pool: asyncpg.Pool | None = None
+        self._pool_lock = asyncio.Lock()
+
+    async def _get_pool(self) -> asyncpg.Pool:
+        if self._pool is not None:
+            return self._pool
+
+        async with self._pool_lock:
+            if self._pool is not None:
+                return self._pool
+            try:
+                self._pool = await asyncpg.create_pool(
+                    dsn=self.database_url,
+                    min_size=self.min_size,
+                    max_size=self.max_size,
+                    command_timeout=self.command_timeout_seconds,
+                    max_inactive_connection_lifetime=300,
+                    server_settings={
+                        "application_name": "ms-telemetry-dashboard-service",
+                        "default_transaction_read_only": "on",
+                        "search_path": "analytics,pg_catalog",
+                    },
+                )
+            except _CONNECTION_ERRORS as exc:
+                raise AnalyticsUnavailable(
+                    "Analytics database is unavailable"
+                ) from exc
+            return self._pool
+
+    async def _discard_pool(self, pool: asyncpg.Pool) -> None:
+        async with self._pool_lock:
+            if self._pool is not pool:
+                return
+            self._pool = None
+            pool.terminate()
+
+    async def close(self) -> None:
+        async with self._pool_lock:
+            pool = self._pool
+            self._pool = None
+        if pool is not None:
+            await pool.close()
 
     async def ping(self) -> None:
+        pool = await self._get_pool()
         try:
-            async with self.pool.acquire() as connection:
+            async with pool.acquire() as connection:
                 async with connection.transaction(readonly=True):
-                    await connection.fetchval("SELECT 1")
-        except (asyncpg.PostgresError, OSError, TimeoutError) as exc:
-            raise AnalyticsUnavailable("Analytics database is unavailable") from exc
+                    role = await connection.fetchval("SELECT current_user")
+                    readonly = await connection.fetchval(
+                        "SELECT current_setting('transaction_read_only')"
+                    )
+        except _CONNECTION_ERRORS as exc:
+            await self._discard_pool(pool)
+            raise AnalyticsUnavailable(
+                "Analytics database is unavailable"
+            ) from exc
+
+        if role != self.expected_role or readonly != "on":
+            await self._discard_pool(pool)
+            raise AnalyticsUnavailable(
+                "Analytics connection did not satisfy the read-only contract"
+            )
 
     async def fetch(
         self,
@@ -33,13 +110,21 @@ class AnalyticsRepository:
         *args: Any,
     ) -> list[dict[str, Any]]:
         started = time.monotonic()
+        pool: asyncpg.Pool | None = None
         try:
-            async with self.pool.acquire() as connection:
+            pool = await self._get_pool()
+            async with pool.acquire() as connection:
                 async with connection.transaction(readonly=True):
                     rows = await connection.fetch(query, *args)
             ANALYTICS_QUERIES.labels(operation, "success").inc()
             return [dict(row) for row in rows]
-        except (asyncpg.PostgresError, OSError, TimeoutError) as exc:
+        except AnalyticsUnavailable:
+            ANALYTICS_QUERIES.labels(operation, "error").inc()
+            ANALYTICS_ERRORS.labels(operation, "unavailable").inc()
+            raise
+        except _CONNECTION_ERRORS as exc:
+            if pool is not None:
+                await self._discard_pool(pool)
             ANALYTICS_QUERIES.labels(operation, "error").inc()
             ANALYTICS_ERRORS.labels(operation, type(exc).__name__).inc()
             raise AnalyticsQueryError("Analytics query failed") from exc
