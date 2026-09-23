@@ -10,7 +10,7 @@ from app.schemas.user_dashboards import (
     UserDashboardListResponse,
     UserDashboardPublic,
 )
-from app.services.plotly_renderer import render_plotly_html
+from app.services.plotly_renderer import PLOTLY_JS_SRI, render_plotly_html
 from app.services.user_dashboard import UserDashboardService, UserScopeError
 
 
@@ -152,6 +152,8 @@ async def test_plotly_renderer_escapes_database_text_from_inline_script() -> Non
     assert hostile not in html
     assert "\\u003c/script\\u003e" in html
     assert f'nonce="{nonce}"' in html
+    assert f'integrity="{PLOTLY_JS_SRI}"' in html
+    assert 'crossorigin="anonymous"' in html
     assert "Plotly.newPlot" in html
 
 
