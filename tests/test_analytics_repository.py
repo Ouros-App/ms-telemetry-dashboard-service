@@ -248,3 +248,42 @@ async def test_query_error_does_not_terminate_healthy_pool() -> None:
 
     assert not pool.terminated
     assert repository._pool is pool
+
+
+@pytest.mark.asyncio
+async def test_query_timeout_does_not_terminate_healthy_pool() -> None:
+    from app.repositories.analytics import AnalyticsQueryError
+
+    connection = FakeConnection()
+    connection.fetch = AsyncMock(side_effect=TimeoutError())
+    pool = FakePool(connection)
+    repository = AnalyticsRepository("postgresql://reader@analytics/db")
+    repository._pool = pool
+
+    with pytest.raises(AnalyticsQueryError):
+        await repository.fetch("slow_query", "SELECT pg_sleep(30)")
+
+    assert not pool.terminated
+    assert repository._pool is pool
+
+
+@pytest.mark.asyncio
+async def test_failed_relay_start_is_retried_on_next_attempt() -> None:
+    relay = FakeRelay()
+    relay.start = AsyncMock(side_effect=[OSError("too many files"), None])
+    repository = AnalyticsRepository(
+        "postgresql://analytics_ro:secret@192.168.15.11:55432/ouros_analytics_database",
+        socks_proxy_host="tailscale-proxy",
+    )
+
+    with patch(
+        "app.repositories.analytics.Socks5TcpRelay",
+        return_value=relay,
+    ):
+        with pytest.raises(OSError):
+            await repository._ensure_relay()
+
+        result = await repository._ensure_relay()
+
+    assert result is relay
+    assert relay.start.await_count == 2
