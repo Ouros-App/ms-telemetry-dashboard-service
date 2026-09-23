@@ -1,7 +1,11 @@
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
-from app.repositories.analytics import AnalyticsQueryError, AnalyticsRepository, AnalyticsUnavailable
+from app.repositories.analytics import (
+    AnalyticsQueryError,
+    AnalyticsRepository,
+    AnalyticsUnavailable,
+)
 from app.schemas.user_dashboards import (
     UserChartDefinition,
     UserChartSeries,
