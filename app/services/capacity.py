@@ -76,11 +76,15 @@ def build_capacity_baseline(
         )
 
     chats = max(midas.chat_requests - midas.blocked_requests, 0)
-    llm_calls = sum(item.requests + item.failed_requests for item in midas.llm)
+    llm_calls = sum(
+        item.requests + item.failed_requests + item.cancelled_requests
+        for item in midas.llm
+    )
     input_tokens = sum(item.input_tokens for item in midas.llm)
     output_tokens = sum(item.output_tokens for item in midas.llm)
     mcp_calls = sum(
-        item.requests + item.failed_requests for item in midas.mcp_calls
+        item.requests + item.failed_requests + item.cancelled_requests
+        for item in midas.mcp_calls
     )
     mcp_duration = sum(item.latency.total_seconds for item in midas.mcp_calls)
     mcp_duration_count = sum(item.latency.count for item in midas.mcp_calls)
