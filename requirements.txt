@@ -4,6 +4,7 @@ pydantic-settings==2.7.1
 infisicalsdk==1.0.14
 python-dotenv==1.2.2
 httpx==0.28.1
+asyncpg==0.30.0
 prometheus-client==0.21.1
 matplotlib==3.10.9
 pytest==8.3.4
