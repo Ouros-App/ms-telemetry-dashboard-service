@@ -1,0 +1,36 @@
+{
+  "as_of": "2026-09-23",
+  "currency": "USD",
+  "models": {
+    "openai/gpt-oss-20b": {
+      "provider": "groq",
+      "pricing_mode": "token",
+      "input_usd_per_million": 0.075,
+      "cached_input_usd_per_million": 0.037,
+      "output_usd_per_million": 0.30,
+      "source": "https://console.groq.com/docs/model/openai/gpt-oss-20b"
+    },
+    "openai/gpt-oss-120b": {
+      "provider": "groq",
+      "pricing_mode": "token",
+      "input_usd_per_million": 0.15,
+      "cached_input_usd_per_million": 0.075,
+      "output_usd_per_million": 0.60,
+      "source": "https://console.groq.com/docs/model/openai/gpt-oss-120b"
+    },
+    "nvidia/nemotron-3-nano-30b-a3b": {
+      "provider": "nvidia",
+      "pricing_mode": "infrastructure",
+      "source": "https://docs.api.nvidia.com/nim/docs/run-anywhere",
+      "license_usd_per_gpu_year_from": 4500,
+      "note": "NVIDIA NIM developer access can be free; production licensing is infrastructure/GPU based, not a public per-token API list price."
+    },
+    "nvidia/nemotron-3-super-120b-a12b": {
+      "provider": "nvidia",
+      "pricing_mode": "infrastructure",
+      "source": "https://docs.api.nvidia.com/nim/docs/run-anywhere",
+      "license_usd_per_gpu_year_from": 4500,
+      "note": "NVIDIA NIM developer access can be free; production licensing is infrastructure/GPU based, not a public per-token API list price."
+    }
+  }
+}
