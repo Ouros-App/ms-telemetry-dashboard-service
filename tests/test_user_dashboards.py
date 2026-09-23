@@ -239,8 +239,12 @@ def test_user_plotly_route_returns_hardened_html_headers(
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/html")
-    assert "nonce-fixed" in response.headers["content-security-policy"]
-    assert "https://cdn.plot.ly" in response.headers["content-security-policy"]
+    csp_directives = {
+        directive.strip()
+        for directive in response.headers["content-security-policy"].split(";")
+        if directive.strip()
+    }
+    assert "script-src 'nonce-fixed' https://cdn.plot.ly" in csp_directives
     assert response.headers["x-content-type-options"] == "nosniff"
 
 
@@ -250,3 +254,106 @@ def test_user_dashboard_route_requires_its_own_user_auth_dependency() -> None:
         response = client.get("/v1/user/dashboards")
 
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_user_service_exposes_dashboard_catalog_for_valid_scope() -> None:
+    service = UserDashboardService(AnalyticsDashboardProvider(FakeRepository()))
+
+    dashboards = await service.list_dashboards(farm_owner())
+    overview = await service.get_dashboard(farm_owner(), "overview")
+    charts = await service.list_charts(farm_owner(), "overview")
+
+    assert {item.id for item in dashboards.items} == {
+        "overview",
+        "production",
+        "consumption",
+        "goals",
+    }
+    assert overview.id == "overview"
+    assert {item.id for item in charts.items} >= {
+        "current-flock",
+        "capacity-utilization",
+        "mortality-rate",
+        "farm-capacity",
+    }
+
+
+@pytest.mark.asyncio
+async def test_user_service_maps_missing_catalog_items() -> None:
+    from app.services.user_dashboard import (
+        UserChartNotFound,
+        UserDashboardNotFound,
+    )
+
+    service = UserDashboardService(AnalyticsDashboardProvider(FakeRepository()))
+
+    with pytest.raises(UserDashboardNotFound):
+        await service.get_dashboard(farm_owner(), "missing")
+
+    with pytest.raises(UserDashboardNotFound):
+        await service.list_charts(farm_owner(), "missing")
+
+    with pytest.raises(UserChartNotFound):
+        await service.plotly_html(farm_owner(), "overview", "missing")
+
+
+@pytest.mark.asyncio
+async def test_provider_rejects_unknown_query_definition() -> None:
+    from app.repositories.analytics import AnalyticsQueryError
+    from app.schemas.user_dashboards import UserChartDefinition
+
+    provider = AnalyticsDashboardProvider(FakeRepository())
+    chart = UserChartDefinition(
+        id="unknown",
+        dashboard_id="overview",
+        title="Unknown",
+        type="indicator",
+        query_name="does_not_exist",
+        value_field="value",
+    )
+
+    with pytest.raises(AnalyticsQueryError):
+        await provider.execute_chart_query(
+            AnalyticsScope(account_type="farm_owner", farm_id=7),
+            chart,
+        )
+
+
+@pytest.mark.asyncio
+async def test_provider_requires_configured_analytics_repository() -> None:
+    from app.repositories.analytics import AnalyticsUnavailable
+
+    provider = AnalyticsDashboardProvider(None)
+    chart = await provider.get_chart("overview", "current-flock")
+
+    with pytest.raises(AnalyticsUnavailable):
+        await provider.execute_chart_query(
+            AnalyticsScope(account_type="farm_owner", farm_id=7),
+            chart,
+        )
+
+
+@pytest.mark.asyncio
+async def test_plotly_renderer_covers_line_and_pie_shapes() -> None:
+    provider = AnalyticsDashboardProvider(FakeRepository())
+
+    line_chart = await provider.get_chart("consumption", "monthly-consumption")
+    line_html, _ = render_plotly_html(
+        line_chart,
+        [
+            {
+                "month_start": "2026-09-01",
+                "water_consumed_m3": 12.5,
+                "energy_consumed_kwh": 33.0,
+            }
+        ],
+    )
+    assert 'type: chart.type === "line" ? "scatter" : "bar"' in line_html
+
+    pie_chart = await provider.get_chart("goals", "goal-status")
+    pie_html, _ = render_plotly_html(
+        pie_chart,
+        [{"label": "active", "value": 3}],
+    )
+    assert 'type: "pie"' in pie_html
