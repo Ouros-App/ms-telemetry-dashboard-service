@@ -194,6 +194,15 @@ async def test_summary_estimates_groq_list_price_and_keeps_nim_unpriced(
             2.0,
         ),
         (
+            "ai_server_llm_requests_total",
+            {
+                "profile": "fast",
+                "model": "unknown",
+                "outcome": "cancelled",
+            },
+            1.0,
+        ),
+        (
             "ai_server_llm_input_tokens_total",
             {
                 "profile": "powerful",
@@ -213,6 +222,11 @@ async def test_summary_estimates_groq_list_price_and_keeps_nim_unpriced(
             "ai_server_mcp_requests_total",
             {"tool": "get_consumption_summary", "outcome": "success"},
             5.0,
+        ),
+        (
+            "ai_server_mcp_requests_total",
+            {"tool": "get_consumption_summary", "outcome": "cancelled"},
+            1.0,
         ),
         (
             "ai_server_mcp_request_duration_seconds_count",
@@ -271,6 +285,11 @@ async def test_summary_estimates_groq_list_price_and_keeps_nim_unpriced(
     assert summary.midas.current_chat_in_flight == 2
     assert summary.midas.chat_latency.count == 10
     assert summary.midas.chat_latency.average_ms == 1500
+    cancelled_llm = next(
+        item for item in summary.midas.llm if item.model == "unknown"
+    )
+    assert cancelled_llm.cancelled_requests == 1
+    assert summary.midas.mcp_calls[0].cancelled_requests == 1
     assert summary.knowledge_mcp.current_tool_in_flight == 1
     assert summary.services[0].resources is not None
     assert summary.services[0].resources.process_uptime_seconds == 100
@@ -289,10 +308,10 @@ async def test_summary_estimates_groq_list_price_and_keeps_nim_unpriced(
     baseline = await service.capacity_baseline()
 
     assert baseline.chat_requests == 10
-    assert baseline.llm_calls_per_chat == 2.2
+    assert baseline.llm_calls_per_chat == 2.3
     assert baseline.input_tokens_per_chat == 1100
     assert baseline.output_tokens_per_chat == 350
-    assert baseline.mcp_calls_per_chat == 0.5
+    assert baseline.mcp_calls_per_chat == 0.6
     assert baseline.average_mcp_latency_ms == 200
     assert baseline.estimated_token_cost_usd_per_chat == pytest.approx(0.0001574)
     assert baseline.unpriced_tokens_per_chat == 150
