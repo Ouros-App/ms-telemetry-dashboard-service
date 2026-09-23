@@ -140,12 +140,15 @@ class Settings(BaseSettings):
             errors.append("ANALYTICS_CONNECT_TIMEOUT_SECONDS_INVALID")
         if not (0 <= self.analytics_retry_backoff_seconds <= 60):
             errors.append("ANALYTICS_RETRY_BACKOFF_SECONDS_INVALID")
-        if (
-            self.analytics_socks_host
-            and self.analytics_database_url
-            and not urlsplit(self.analytics_database_url).hostname
-        ):
-            errors.append("ANALYTICS_DATABASE_URL_SOCKS_TARGET_INVALID")
+        if self.analytics_socks_host and self.analytics_database_url:
+            parsed_database_url = urlsplit(self.analytics_database_url)
+            try:
+                parsed_database_url.port
+            except ValueError:
+                errors.append("ANALYTICS_DATABASE_URL_INVALID")
+            else:
+                if not parsed_database_url.hostname:
+                    errors.append("ANALYTICS_DATABASE_URL_SOCKS_TARGET_INVALID")
         if self.analytics_socks_host and not (
             1 <= self.analytics_socks_port <= 65535
         ):
