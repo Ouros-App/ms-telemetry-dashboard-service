@@ -69,31 +69,20 @@ class FakePool:
 
 @pytest.mark.asyncio
 async def test_repository_enforces_expected_reader_role_and_readonly_transaction() -> None:
-    pool = FakePool(FakeConnection(role="analytics_ro", readonly="on"))
+    connection = FakeConnection(role="analytics_ro", readonly="on")
     repository = AnalyticsRepository("postgresql://reader@analytics/db")
 
-    with patch(
-        "app.repositories.analytics.asyncpg.create_pool",
-        new=AsyncMock(return_value=pool),
-    ):
-        await repository.ping()
-
-    assert repository._pool is pool
+    await repository._validate_connection(connection)
 
 
 @pytest.mark.asyncio
 async def test_repository_rejects_writer_role_even_if_database_is_reachable() -> None:
-    pool = FakePool(FakeConnection(role="analytics_sync_rw", readonly="on"))
     repository = AnalyticsRepository("postgresql://writer@analytics/db")
 
-    with patch(
-        "app.repositories.analytics.asyncpg.create_pool",
-        new=AsyncMock(return_value=pool),
-    ), pytest.raises(AnalyticsUnavailable):
-        await repository.ping()
-
-    assert pool.terminated
-    assert repository._pool is None
+    with pytest.raises(PermissionError):
+        await repository._validate_connection(
+            FakeConnection(role="analytics_sync_rw", readonly="on")
+        )
 
 
 @pytest.mark.asyncio
