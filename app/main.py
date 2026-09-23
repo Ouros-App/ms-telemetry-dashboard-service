@@ -76,39 +76,40 @@ async def lifespan(app: FastAPI):
     )
     app.state.http_client = client
 
-    analytics_pool: asyncpg.Pool | None = None
     analytics_repository: AnalyticsRepository | None = None
-    if settings.analytics_database_url:
+    analytics_ready = False
+    analytics_configuration_errors = settings.analytics_configuration_errors()
+    if analytics_configuration_errors:
+        logger.warning(
+            "user analytics configuration is incomplete",
+            extra={
+                "event": "analytics_configuration_not_ready",
+                "errors": sorted(set(analytics_configuration_errors)),
+            },
+        )
+    else:
+        analytics_repository = AnalyticsRepository(
+            settings.analytics_database_url,
+            min_size=settings.analytics_pool_min_size,
+            max_size=settings.analytics_pool_max_size,
+            command_timeout_seconds=settings.analytics_command_timeout_seconds,
+            expected_role=settings.analytics_expected_role,
+        )
         try:
-            analytics_pool = await asyncpg.create_pool(
-                dsn=settings.analytics_database_url,
-                min_size=settings.analytics_pool_min_size,
-                max_size=settings.analytics_pool_max_size,
-                command_timeout=settings.analytics_command_timeout_seconds,
-                max_inactive_connection_lifetime=300,
-                server_settings={
-                    "application_name": "ms-telemetry-dashboard-service",
-                    "default_transaction_read_only": "on",
-                    "search_path": "analytics,pg_catalog",
-                },
-            )
-            analytics_repository = AnalyticsRepository(analytics_pool)
             await analytics_repository.ping()
+            analytics_ready = True
             logger.info(
                 "user analytics database connected",
                 extra={"event": "analytics_connected"},
             )
-        except (AnalyticsUnavailable, asyncpg.PostgresError, OSError, TimeoutError):
-            logger.exception(
-                "user analytics database unavailable",
-                extra={"event": "analytics_connection_failed"},
+        except AnalyticsUnavailable:
+            logger.warning(
+                "user analytics database unavailable; requests will retry lazily",
+                extra={"event": "analytics_connection_deferred"},
             )
-            if analytics_pool is not None:
-                await analytics_pool.close()
-                analytics_pool = None
 
-    app.state.analytics_pool = analytics_pool
-    app.state.analytics_ready = analytics_repository is not None
+    app.state.analytics_repository = analytics_repository
+    app.state.analytics_ready = analytics_ready
     app.state.user_dashboard_service = UserDashboardService(
         AnalyticsDashboardProvider(analytics_repository),
         settings.chart_cache_ttl_seconds,
@@ -119,8 +120,8 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         logger.info("service stopping", extra={"event": "service_stopping"})
-        if analytics_pool is not None:
-            await analytics_pool.close()
+        if analytics_repository is not None:
+            await analytics_repository.close()
         await client.aclose()
 
 
