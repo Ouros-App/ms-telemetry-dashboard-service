@@ -114,6 +114,10 @@ class CapacityBaselineResponse(BaseModel):
     midas_resident_memory_bytes: int | None
     knowledge_mcp_average_cpu_cores: float | None
     knowledge_mcp_resident_memory_bytes: int | None
+    midas_process_uptime_seconds: float | None
+    midas_cpu_seconds_per_chat: float | None
+    knowledge_mcp_process_uptime_seconds: float | None
+    knowledge_mcp_cpu_seconds_per_tool_call: float | None
     current_chat_in_flight: float | None
     current_llm_in_flight: float | None
     current_mcp_in_flight: float | None
