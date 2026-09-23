@@ -42,6 +42,16 @@ class AnalyticsRepository:
         self._pool: asyncpg.Pool | None = None
         self._pool_lock = asyncio.Lock()
 
+    async def _validate_connection(self, connection: asyncpg.Connection) -> None:
+        role = await connection.fetchval("SELECT current_user")
+        readonly = await connection.fetchval(
+            "SELECT current_setting('default_transaction_read_only')"
+        )
+        if role != self.expected_role or readonly != "on":
+            raise PermissionError(
+                "Analytics connection did not satisfy the read-only contract"
+            )
+
     async def _get_pool(self) -> asyncpg.Pool:
         if self._pool is not None:
             return self._pool
@@ -61,6 +71,7 @@ class AnalyticsRepository:
                         "default_transaction_read_only": "on",
                         "search_path": "analytics,pg_catalog",
                     },
+                    init=self._validate_connection,
                 )
             except _CONNECTION_ERRORS as exc:
                 raise AnalyticsUnavailable(
@@ -87,21 +98,12 @@ class AnalyticsRepository:
         try:
             async with pool.acquire() as connection:
                 async with connection.transaction(readonly=True):
-                    role = await connection.fetchval("SELECT current_user")
-                    readonly = await connection.fetchval(
-                        "SELECT current_setting('transaction_read_only')"
-                    )
+                    await connection.fetchval("SELECT 1")
         except _CONNECTION_ERRORS as exc:
             await self._discard_pool(pool)
             raise AnalyticsUnavailable(
                 "Analytics database is unavailable"
             ) from exc
-
-        if role != self.expected_role or readonly != "on":
-            await self._discard_pool(pool)
-            raise AnalyticsUnavailable(
-                "Analytics connection did not satisfy the read-only contract"
-            )
 
     async def fetch(
         self,
