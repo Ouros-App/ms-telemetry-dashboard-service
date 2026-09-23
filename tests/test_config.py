@@ -94,21 +94,24 @@ def test_keycloak_urls_and_role_are_validated() -> None:
 def test_analytics_database_url_is_optional_for_admin_readiness() -> None:
     config = base_settings(analytics_database_url=None)
 
-    assert "ANALYTICS_DATABASE_URL_INVALID" not in config.configuration_errors()
     assert config.ready
+    assert config.analytics_configuration_errors() == ["ANALYTICS_DATABASE_URL"]
 
 
-def test_analytics_database_url_and_pool_are_validated() -> None:
+def test_analytics_database_url_and_pool_are_validated_independently() -> None:
     config = base_settings(
         analytics_database_url="https://not-postgres.example",
+        analytics_expected_role="   ",
         analytics_pool_min_size=0,
         analytics_pool_max_size=25,
         analytics_command_timeout_seconds=0,
     )
 
-    errors = config.configuration_errors()
+    errors = config.analytics_configuration_errors()
 
+    assert config.ready
     assert "ANALYTICS_DATABASE_URL_INVALID" in errors
+    assert "ANALYTICS_EXPECTED_ROLE_INVALID" in errors
     assert "ANALYTICS_POOL_MIN_SIZE_INVALID" in errors
     assert "ANALYTICS_POOL_MAX_SIZE_INVALID" in errors
     assert "ANALYTICS_COMMAND_TIMEOUT_SECONDS_INVALID" in errors
