@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes import router
 from app.api.user_dashboards import router as user_dashboard_router
 from app.clients.databricks import DatabricksAuthClient, DatabricksHttpClient
+from app.clients.prometheus import PrometheusScrapeClient
 from app.core.config import settings
 from app.core.logging import (
     configure_logging,
@@ -22,6 +23,7 @@ from app.providers.databricks import DatabricksDashboardProvider
 from app.repositories.analytics import AnalyticsRepository, AnalyticsUnavailable
 from app.repositories.catalog import CatalogError, DashboardCatalog
 from app.services.dashboard import DashboardService
+from app.services.telemetry import TelemetryService
 from app.services.user_dashboard import UserDashboardService
 
 logger = get_logger(__name__)
@@ -35,8 +37,9 @@ async def lifespan(app: FastAPI):
         extra={
             "event": "service_starting",
             "configured": settings.ready,
-            "databricks_configured": bool(settings.databricks_host),
+            "databricks_configured": settings.databricks_configured,
             "analytics_configured": settings.user_analytics_configured,
+            "telemetry_targets": len(settings.telemetry_targets),
             "catalog_path": str(settings.dashboard_catalog_path),
         },
     )
@@ -72,6 +75,14 @@ async def lifespan(app: FastAPI):
     app.state.dashboard_service = DashboardService(
         admin_provider,
         settings.chart_cache_ttl_seconds,
+    )
+    app.state.telemetry_service = TelemetryService(
+        PrometheusScrapeClient(
+            client,
+            settings.telemetry_scrape_timeout_seconds,
+        ),
+        settings.telemetry_targets,
+        settings.model_pricing_path,
     )
     app.state.http_client = client
 
