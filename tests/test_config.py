@@ -173,3 +173,11 @@ def test_socks_analytics_rejects_invalid_target_port_without_crashing() -> None:
     )
 
     assert "ANALYTICS_DATABASE_URL_INVALID" in config.analytics_configuration_errors()
+
+
+def test_malformed_ipv6_analytics_url_is_reported_without_crashing() -> None:
+    config = base_settings(
+        analytics_database_url="postgresql://[::1/ouros_analytics_database",
+    )
+
+    assert "ANALYTICS_DATABASE_URL_INVALID" in config.analytics_configuration_errors()
