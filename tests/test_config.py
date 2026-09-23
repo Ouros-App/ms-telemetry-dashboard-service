@@ -105,6 +105,8 @@ def test_analytics_database_url_and_pool_are_validated_independently() -> None:
         analytics_pool_min_size=0,
         analytics_pool_max_size=25,
         analytics_command_timeout_seconds=0,
+        analytics_connect_timeout_seconds=0,
+        analytics_retry_backoff_seconds=61,
     )
 
     errors = config.analytics_configuration_errors()
@@ -115,6 +117,8 @@ def test_analytics_database_url_and_pool_are_validated_independently() -> None:
     assert "ANALYTICS_POOL_MIN_SIZE_INVALID" in errors
     assert "ANALYTICS_POOL_MAX_SIZE_INVALID" in errors
     assert "ANALYTICS_COMMAND_TIMEOUT_SECONDS_INVALID" in errors
+    assert "ANALYTICS_CONNECT_TIMEOUT_SECONDS_INVALID" in errors
+    assert "ANALYTICS_RETRY_BACKOFF_SECONDS_INVALID" in errors
 
 
 def test_analytics_socks_settings_are_validated_independently() -> None:
@@ -139,3 +143,24 @@ def test_analytics_socks_settings_accept_discloud_vlan_proxy() -> None:
     )
 
     assert config.analytics_configuration_errors() == []
+
+
+def test_direct_analytics_accepts_asyncpg_dsn_without_userinfo() -> None:
+    config = base_settings(
+        analytics_database_url="postgresql:///ouros_analytics_database?host=/run/postgresql",
+        analytics_socks_host=None,
+    )
+
+    assert "ANALYTICS_DATABASE_URL_INVALID" not in config.analytics_configuration_errors()
+
+
+def test_socks_analytics_requires_target_hostname_in_dsn() -> None:
+    config = base_settings(
+        analytics_database_url="postgresql:///ouros_analytics_database",
+        analytics_socks_host="tailscale-proxy",
+    )
+
+    assert (
+        "ANALYTICS_DATABASE_URL_SOCKS_TARGET_INVALID"
+        in config.analytics_configuration_errors()
+    )
