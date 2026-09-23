@@ -23,6 +23,8 @@ class Principal:
     database_id: int | None
     account_type: str | None
     roles: frozenset[str]
+    farm_id: int | None = None
+    enterprise_id: int | None = None
 
 
 def _unauthorized() -> HTTPException:
@@ -107,17 +109,17 @@ def _parse_roles(claims: dict[str, Any]) -> frozenset[str] | None:
     return frozenset(roles)
 
 
-def _parse_database_id(value: Any) -> int | None:
+def _parse_positive_id(value: Any, claim_name: str) -> int | None:
     if value is None:
         return None
     if isinstance(value, bool):
-        raise TypeError("database_id must be an integer")
+        raise TypeError(f"{claim_name} must be an integer")
     if isinstance(value, str) and value.isascii() and value.isdecimal():
         value = int(value)
     if not isinstance(value, int):
-        raise TypeError("database_id must be an integer")
+        raise TypeError(f"{claim_name} must be an integer")
     if value <= 0:
-        raise ValueError("database_id must be positive")
+        raise ValueError(f"{claim_name} must be positive")
     return value
 
 
@@ -128,7 +130,12 @@ def _principal_from_claims(claims: dict[str, Any]) -> Principal | None:
         return None
 
     try:
-        database_id = _parse_database_id(claims.get("database_id"))
+        database_id = _parse_positive_id(claims.get("database_id"), "database_id")
+        farm_id = _parse_positive_id(claims.get("farm_id"), "farm_id")
+        enterprise_id = _parse_positive_id(
+            claims.get("enterprise_id"),
+            "enterprise_id",
+        )
     except (TypeError, ValueError):
         return None
 
@@ -141,16 +148,49 @@ def _principal_from_claims(claims: dict[str, Any]) -> Principal | None:
         database_id=database_id,
         account_type=account_type,
         roles=roles,
+        farm_id=farm_id,
+        enterprise_id=enterprise_id,
     )
 
 
-def _require_role(principal: Principal) -> None:
-    required_role = settings.keycloak_required_role.strip()
+def _require_role(principal: Principal, required_role: str) -> None:
+    required_role = required_role.strip()
     if not required_role or required_role not in principal.roles:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient role",
         )
+
+
+def _require_user_identity(principal: Principal) -> None:
+    if principal.database_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Missing database identity",
+        )
+
+    if principal.account_type == "farm_owner":
+        _require_role(principal, "farm_owner")
+        if principal.farm_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Missing farm scope",
+            )
+        return
+
+    if principal.account_type == "company_employee":
+        _require_role(principal, "company_employee")
+        if principal.enterprise_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Missing enterprise scope",
+            )
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Account type cannot access user dashboards",
+    )
 
 
 async def _keycloak_principal(token: str) -> Principal:
@@ -168,13 +208,11 @@ async def _keycloak_principal(token: str) -> Principal:
     principal = _principal_from_claims(claims)
     if principal is None:
         raise _unauthorized()
-
-    _require_role(principal)
     return principal
 
 
-async def require_bearer(
-    credentials: Annotated[HTTPAuthorizationCredentials | None, Security(bearer_scheme)],
+async def _authenticated_principal(
+    credentials: HTTPAuthorizationCredentials | None,
 ) -> Principal:
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise _unauthorized()
@@ -186,3 +224,25 @@ async def require_bearer(
         )
 
     return await _keycloak_principal(credentials.credentials)
+
+
+async def require_bearer(
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None,
+        Security(bearer_scheme),
+    ],
+) -> Principal:
+    principal = await _authenticated_principal(credentials)
+    _require_role(principal, settings.keycloak_required_role)
+    return principal
+
+
+async def require_user_bearer(
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None,
+        Security(bearer_scheme),
+    ],
+) -> Principal:
+    principal = await _authenticated_principal(credentials)
+    _require_user_identity(principal)
+    return principal
