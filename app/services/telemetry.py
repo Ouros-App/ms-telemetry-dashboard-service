@@ -152,6 +152,13 @@ class TelemetryService:
                             {**labels, "outcome": "error"},
                         )
                     ),
+                    cancelled_requests=int(
+                        metric_sum(
+                            snapshots,
+                            "ai_server_llm_requests_total",
+                            {**labels, "outcome": "cancelled"},
+                        )
+                    ),
                     input_tokens=input_tokens,
                     cached_input_tokens=cached_tokens,
                     output_tokens=output_tokens,
