@@ -32,6 +32,12 @@ _POOL_BROKEN_ERRORS = (
 )
 
 
+def _pool_is_broken(exc: BaseException, *, during_query: bool) -> bool:
+    if isinstance(exc, TimeoutError):
+        return not during_query
+    return isinstance(exc, _POOL_BROKEN_ERRORS)
+
+
 class AnalyticsRepository:
     def __init__(
         self,
@@ -62,11 +68,16 @@ class AnalyticsRepository:
         self.socks_proxy_port = socks_proxy_port
         self.socks_connect_timeout_seconds = socks_connect_timeout_seconds
 
-        parsed_database_url = urlsplit(database_url)
-        self._target_host = parsed_database_url.hostname
-        self._target_port = parsed_database_url.port or 5432
-        if self.socks_proxy_host and not self._target_host:
-            raise ValueError("Analytics database URL must include a host when SOCKS5 is enabled")
+        self._target_host: str | None = None
+        self._target_port = 5432
+        if self.socks_proxy_host:
+            parsed_database_url = urlsplit(database_url)
+            self._target_host = parsed_database_url.hostname
+            self._target_port = parsed_database_url.port or 5432
+            if not self._target_host:
+                raise ValueError(
+                    "Analytics database URL must include a host when SOCKS5 is enabled"
+                )
 
         self._pool: asyncpg.Pool | None = None
         self._relay: Socks5TcpRelay | None = None
@@ -94,7 +105,7 @@ class AnalyticsRepository:
                 self._target_port,
                 connect_timeout_seconds=self.socks_connect_timeout_seconds,
             )
-            await self._relay.start()
+        await self._relay.start()
         return self._relay
 
     async def _get_pool(self) -> asyncpg.Pool:
@@ -161,14 +172,16 @@ class AnalyticsRepository:
 
     async def ping(self) -> None:
         pool = await self._get_pool()
+        during_query = False
         try:
             async with (
                 pool.acquire() as connection,
                 connection.transaction(readonly=True),
             ):
+                during_query = True
                 await connection.fetchval("SELECT 1")
         except _CONNECTION_ERRORS as exc:
-            if isinstance(exc, _POOL_BROKEN_ERRORS):
+            if _pool_is_broken(exc, during_query=during_query):
                 self._retry_after = (
                     time.monotonic() + self.retry_backoff_seconds
                 )
@@ -185,12 +198,14 @@ class AnalyticsRepository:
     ) -> list[dict[str, Any]]:
         started = time.monotonic()
         pool: asyncpg.Pool | None = None
+        during_query = False
         try:
             pool = await self._get_pool()
             async with (
                 pool.acquire() as connection,
                 connection.transaction(readonly=True),
             ):
+                during_query = True
                 rows = await connection.fetch(query, *args)
             ANALYTICS_QUERIES.labels(operation, "success").inc()
             return [dict(row) for row in rows]
@@ -199,7 +214,10 @@ class AnalyticsRepository:
             ANALYTICS_ERRORS.labels(operation, "unavailable").inc()
             raise
         except _CONNECTION_ERRORS as exc:
-            if pool is not None and isinstance(exc, _POOL_BROKEN_ERRORS):
+            if pool is not None and _pool_is_broken(
+                exc,
+                during_query=during_query,
+            ):
                 self._retry_after = (
                     time.monotonic() + self.retry_backoff_seconds
                 )
