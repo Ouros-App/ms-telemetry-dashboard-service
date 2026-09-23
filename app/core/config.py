@@ -19,7 +19,10 @@ def _https_url_is_valid(value: str) -> bool:
 
 
 def _postgres_url_is_valid(value: str) -> bool:
-    return urlsplit(value).scheme in {"postgres", "postgresql"}
+    try:
+        return urlsplit(value).scheme in {"postgres", "postgresql"}
+    except ValueError:
+        return False
 
 
 class Settings(BaseSettings):
