@@ -11,6 +11,7 @@ from app.core.auth import (
     _decode_keycloak_token,
     _principal_from_claims,
     require_bearer,
+    require_user_bearer,
 )
 from app.core.config import settings
 
@@ -181,3 +182,96 @@ async def test_empty_required_role_fails_closed() -> None:
         await require_bearer(credentials)
 
     assert raised.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_farm_owner_user_token_uses_signed_farm_scope() -> None:
+    claims = {
+        "sub": "farm-owner-subject",
+        "database_id": 42,
+        "account_type": "farm_owner",
+        "farm_id": 7,
+        "realm_access": {"roles": ["farm_owner"]},
+    }
+    with (
+        patch.object(settings, "keycloak_issuer_url", "https://issuer.example"),
+        patch.object(settings, "keycloak_audience", "ms-telemetry-dashboard-service"),
+        patch("app.core.auth._decode_keycloak_token", return_value=claims),
+    ):
+        principal = await require_user_bearer(_credentials())
+
+    assert principal.database_id == 42
+    assert principal.farm_id == 7
+    assert principal.enterprise_id is None
+
+
+@pytest.mark.asyncio
+async def test_company_employee_user_token_uses_signed_enterprise_scope() -> None:
+    claims = {
+        "sub": "employee-subject",
+        "database_id": 8,
+        "account_type": "company_employee",
+        "enterprise_id": 3,
+        "realm_access": {"roles": ["company_employee"]},
+    }
+    with (
+        patch.object(settings, "keycloak_issuer_url", "https://issuer.example"),
+        patch.object(settings, "keycloak_audience", "ms-telemetry-dashboard-service"),
+        patch("app.core.auth._decode_keycloak_token", return_value=claims),
+    ):
+        principal = await require_user_bearer(_credentials())
+
+    assert principal.enterprise_id == 3
+    assert principal.farm_id is None
+
+
+@pytest.mark.asyncio
+async def test_user_token_without_signed_scope_is_forbidden() -> None:
+    claims = {
+        "sub": "farm-owner-subject",
+        "database_id": 42,
+        "account_type": "farm_owner",
+        "realm_access": {"roles": ["farm_owner"]},
+    }
+    with (
+        patch.object(settings, "keycloak_issuer_url", "https://issuer.example"),
+        patch.object(settings, "keycloak_audience", "ms-telemetry-dashboard-service"),
+        patch("app.core.auth._decode_keycloak_token", return_value=claims),
+        pytest.raises(HTTPException) as raised,
+    ):
+        await require_user_bearer(_credentials())
+
+    assert raised.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_admin_token_cannot_use_user_dashboard_routes() -> None:
+    claims = {
+        "sub": "admin-subject",
+        "database_id": 1,
+        "account_type": "admin",
+        "realm_access": {"roles": ["admin"]},
+    }
+    with (
+        patch.object(settings, "keycloak_issuer_url", "https://issuer.example"),
+        patch.object(settings, "keycloak_audience", "ms-telemetry-dashboard-service"),
+        patch("app.core.auth._decode_keycloak_token", return_value=claims),
+        pytest.raises(HTTPException) as raised,
+    ):
+        await require_user_bearer(_credentials())
+
+    assert raised.value.status_code == 403
+
+
+def test_malformed_optional_scope_claim_invalidates_principal() -> None:
+    principal = _principal_from_claims(
+        {
+            "sub": "subject",
+            "database_id": 1,
+            "account_type": "farm_owner",
+            "farm_id": "not-an-id",
+            "realm_access": {"roles": ["farm_owner"]},
+        }
+    )
+
+    assert principal is None
