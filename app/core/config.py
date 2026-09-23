@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     databricks_client_secret: str | None = None
     databricks_token_url: str | None = None
     analytics_database_url: str | None = None
+    analytics_expected_role: str = "analytics_ro"
     analytics_pool_min_size: int = 1
     analytics_pool_max_size: int = 5
     analytics_command_timeout_seconds: float = 8.0
@@ -63,10 +64,6 @@ class Settings(BaseSettings):
         if self.databricks_host:
             return f"{self.databricks_host.rstrip('/')}/oidc/v1/token"
         return None
-
-    @property
-    def user_analytics_configured(self) -> bool:
-        return bool(self.analytics_database_url)
 
     def _required_configuration_errors(self) -> list[str]:
         required = {
@@ -99,16 +96,11 @@ class Settings(BaseSettings):
             ("KEYCLOAK_ISSUER_URL", self.keycloak_issuer_url),
             ("KEYCLOAK_JWKS_URL", self.keycloak_jwks_url),
         )
-        errors = [
+        return [
             f"{name}_INVALID"
             for name, value in url_settings
             if value and not _https_url_is_valid(value)
         ]
-        if self.analytics_database_url and not _postgres_url_is_valid(
-            self.analytics_database_url
-        ):
-            errors.append("ANALYTICS_DATABASE_URL_INVALID")
-        return errors
 
     def _runtime_configuration_errors(self) -> list[str]:
         errors: list[str] = []
@@ -120,6 +112,18 @@ class Settings(BaseSettings):
             errors.append("CHART_CACHE_TTL_SECONDS_INVALID")
         if self.sql_wait_timeout_seconds < 1 or self.sql_wait_timeout_seconds > 50:
             errors.append("SQL_WAIT_TIMEOUT_SECONDS_INVALID")
+        if "*" in self.cors_origins:
+            errors.append("CORS_ORIGINS_INVALID")
+        return errors
+
+    def analytics_configuration_errors(self) -> list[str]:
+        errors: list[str] = []
+        if not self.analytics_database_url:
+            errors.append("ANALYTICS_DATABASE_URL")
+        elif not _postgres_url_is_valid(self.analytics_database_url):
+            errors.append("ANALYTICS_DATABASE_URL_INVALID")
+        if not self.analytics_expected_role.strip():
+            errors.append("ANALYTICS_EXPECTED_ROLE_INVALID")
         if self.analytics_pool_min_size < 1:
             errors.append("ANALYTICS_POOL_MIN_SIZE_INVALID")
         if (
@@ -132,9 +136,11 @@ class Settings(BaseSettings):
             or self.analytics_command_timeout_seconds > 60
         ):
             errors.append("ANALYTICS_COMMAND_TIMEOUT_SECONDS_INVALID")
-        if "*" in self.cors_origins:
-            errors.append("CORS_ORIGINS_INVALID")
         return errors
+
+    @property
+    def user_analytics_configured(self) -> bool:
+        return not self.analytics_configuration_errors()
 
     def configuration_errors(self) -> list[str]:
         return [
