@@ -9,6 +9,7 @@ def base_settings(**overrides) -> Settings:
         "databricks_host": "https://workspace.example.com",
         "databricks_client_id": "client",
         "databricks_client_secret": "secret",
+        "analytics_database_url": "postgresql://analytics_ro:secret@analytics.internal:55432/ouros_analytics_database",
     }
     values.update(overrides)
     return Settings(**values)
@@ -88,3 +89,26 @@ def test_keycloak_urls_and_role_are_validated() -> None:
     assert "KEYCLOAK_JWKS_URL_INVALID" in errors
     assert "KEYCLOAK_REQUIRED_ROLE_INVALID" in errors
     assert not config.ready
+
+
+def test_analytics_database_url_is_optional_for_admin_readiness() -> None:
+    config = base_settings(analytics_database_url=None)
+
+    assert "ANALYTICS_DATABASE_URL_INVALID" not in config.configuration_errors()
+    assert config.ready
+
+
+def test_analytics_database_url_and_pool_are_validated() -> None:
+    config = base_settings(
+        analytics_database_url="https://not-postgres.example",
+        analytics_pool_min_size=0,
+        analytics_pool_max_size=25,
+        analytics_command_timeout_seconds=0,
+    )
+
+    errors = config.configuration_errors()
+
+    assert "ANALYTICS_DATABASE_URL_INVALID" in errors
+    assert "ANALYTICS_POOL_MIN_SIZE_INVALID" in errors
+    assert "ANALYTICS_POOL_MAX_SIZE_INVALID" in errors
+    assert "ANALYTICS_COMMAND_TIMEOUT_SECONDS_INVALID" in errors
