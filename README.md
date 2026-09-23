@@ -102,7 +102,7 @@ Secrets de aplicação esperados no path `/ms-telemetry-dashboard-service`:
 - `DATABRICKS_CLIENT_SECRET`;
 - `ANALYTICS_DATABASE_URL`.
 
-`DATABRICKS_CLIENT_ID` e `DATABRICKS_HOST` são configuração e podem permanecer no ambiente de deploy, embora o client ID também possa ser centralizado no Infisical se desejado. `ANALYTICS_DATABASE_URL` deve apontar para a rota privada/Tailnet do homelab e usar exclusivamente `analytics_ro`; não use o writer do sincronizador. `INFISICAL_TOKEN` é o único bootstrap secreto necessário fora do cofre; project ID, environment, path e host são configuração.
+`DATABRICKS_CLIENT_ID` e `DATABRICKS_HOST` são configuração e podem permanecer no ambiente de deploy, embora o client ID também possa ser centralizado no Infisical se desejado. `ANALYTICS_DATABASE_URL` deve usar exclusivamente `analytics_ro` e apontar para o endereço privado do PostgreSQL no homelab; não use o writer do sincronizador. Em Discloud, configure `ANALYTICS_SOCKS_HOST=tailscale-proxy` e `ANALYTICS_SOCKS_PORT=1055`: o serviço abre um relay apenas em `127.0.0.1`, alcança o proxy pela VLAN da Discloud e deixa o proxy encaminhar o TCP até a subnet do homelab. O telemetry não precisa participar diretamente da Tailnet. `INFISICAL_TOKEN` é o único bootstrap secreto necessário fora do cofre; project ID, environment, path e host são configuração.
 
 ## Execução
 
@@ -181,7 +181,7 @@ curl -H "Authorization: Bearer $KEYCLOAK_ACCESS_TOKEN" \
 
 O último endpoint retorna `text/html` com Plotly.js e pode ser carregado pelo front. O HTML recebe CSP, `nosniff`, cache privado curto e serialização segura dos valores vindos do banco.
 
-O pool PostgreSQL força transações read-only e valida `current_user = analytics_ro`. Se o Analytics estiver indisponível, o fluxo admin continua funcionando e as rotas de usuário que precisam consultar dados retornam `503`. O pool é recriado de forma lazy após falhas, então um reboot do homelab não exige restart do telemetry.
+O pool PostgreSQL força transações read-only e valida `current_user = analytics_ro`. Quando `ANALYTICS_SOCKS_HOST` está configurado, cada conexão do `asyncpg` entra em um listener efêmero em `127.0.0.1`, que executa o handshake SOCKS5 e encaminha bytes ao host/porta definidos no próprio `ANALYTICS_DATABASE_URL`. O listener não é exposto externamente. Se o Analytics ou o proxy estiver indisponível, o fluxo admin continua funcionando e as rotas de usuário que precisam consultar dados retornam `503`. O pool é recriado de forma lazy após falhas, então um reboot do homelab não exige restart do telemetry.
 
 Os logs são emitidos em JSON e incluem evento, request ID, rota, status, duração e tentativas do Databricks, sem registrar tokens, secrets ou payloads de consultas.
 
