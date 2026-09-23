@@ -1,10 +1,19 @@
+from datetime import datetime, timezone
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 from fastapi import HTTPException, Response
+from pydantic import SecretStr
 
 from app.api import routes
 from app.clients.databricks import DatabricksIntegrationError, DatabricksTimeoutError
+from app.core.config import settings
+from app.schemas.telemetry import (
+    CapacityBaselineResponse,
+    CostSummary,
+    TelemetrySummaryResponse,
+)
 from app.services.dashboard import ChartNotFound, DashboardNotFound
 
 
@@ -99,8 +108,73 @@ def test_readiness_reports_configuration_errors() -> None:
     assert response.status_code == 503
 
 
-def test_metrics_returns_prometheus_payload() -> None:
-    response = routes.metrics()
+def test_metrics_require_dedicated_scrape_token() -> None:
+    request = SimpleNamespace(headers={"Authorization": "Bearer scrape-token"})
+    with patch.object(settings, "metrics_token", SecretStr("scrape-token")):
+        response = routes.metrics(request)
 
     assert response.media_type.startswith("text/plain")
     assert b"http_requests_total" in response.body
+
+
+def test_metrics_reject_wrong_scrape_token() -> None:
+    request = SimpleNamespace(headers={"Authorization": "Bearer wrong"})
+    with (
+        patch.object(settings, "metrics_token", SecretStr("scrape-token")),
+        pytest.raises(HTTPException) as error,
+    ):
+        routes.metrics(request)
+
+    assert error.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_telemetry_routes_delegate_to_service() -> None:
+    now = datetime.now(timezone.utc)
+    summary = TelemetrySummaryResponse(
+        generated_at=now,
+        aggregation="process_lifetime_counters",
+        resets_on_process_restart=True,
+        services=[],
+        cost=CostSummary(
+            currency="USD",
+            pricing_as_of="2026-09-23",
+            estimated_token_cost_usd=0,
+            priced_input_tokens=0,
+            priced_output_tokens=0,
+            unpriced_tokens=0,
+            note="estimate",
+        ),
+    )
+    baseline = CapacityBaselineResponse(
+        generated_at=now,
+        sample_basis="process_lifetime_counters",
+        chat_requests=0,
+        average_chat_latency_ms=None,
+        llm_calls_per_chat=None,
+        input_tokens_per_chat=None,
+        output_tokens_per_chat=None,
+        mcp_calls_per_chat=None,
+        average_mcp_latency_ms=None,
+        estimated_token_cost_usd_per_chat=None,
+        unpriced_tokens_per_chat=None,
+        midas_average_cpu_cores=None,
+        midas_resident_memory_bytes=None,
+        knowledge_mcp_average_cpu_cores=None,
+        knowledge_mcp_resident_memory_bytes=None,
+        current_chat_in_flight=None,
+        current_llm_in_flight=None,
+        current_mcp_in_flight=None,
+        assumptions=[],
+    )
+
+    class StubTelemetryService:
+        async def summary(self):
+            return summary
+
+        async def capacity_baseline(self):
+            return baseline
+
+    service = StubTelemetryService()
+    assert await routes.telemetry_summary(service=service) is summary
+    assert await routes.capacity_baseline(service=service) is baseline
