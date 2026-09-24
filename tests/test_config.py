@@ -1,3 +1,6 @@
+import pytest
+from pydantic import ValidationError
+
 from app.core.config import Settings
 
 
@@ -18,12 +21,14 @@ def base_settings(**overrides) -> Settings:
 def test_invalid_runtime_settings_make_configuration_not_ready() -> None:
     config = base_settings(
         token_refresh_margin_seconds=-1,
+        telemetry_scrape_timeout_seconds=0,
         cors_origins=["*"],
     )
 
     errors = config.configuration_errors()
 
     assert "TOKEN_REFRESH_MARGIN_SECONDS_INVALID" in errors
+    assert "TELEMETRY_SCRAPE_TIMEOUT_SECONDS_INVALID" in errors
     assert "CORS_ORIGINS_INVALID" in errors
     assert not config.ready
 
@@ -56,7 +61,18 @@ def test_settings_derive_token_url_only_when_host_is_configured() -> None:
     config = base_settings(databricks_host=None, databricks_token_url=None)
 
     assert config.token_url is None
-    assert "DATABRICKS_HOST" in config.configuration_errors()
+    assert "DATABRICKS_HOST" not in config.configuration_errors()
+
+
+def test_observability_core_does_not_require_databricks() -> None:
+    config = base_settings(
+        databricks_host=None,
+        databricks_client_id=None,
+        databricks_client_secret=None,
+    )
+
+    assert config.ready
+    assert not config.databricks_configured
 
 
 def test_missing_keycloak_contract_makes_configuration_not_ready() -> None:
@@ -123,7 +139,7 @@ def test_analytics_database_url_and_pool_are_validated_independently() -> None:
 
 def test_analytics_socks_settings_are_validated_independently() -> None:
     config = base_settings(
-        analytics_socks_host="tailscale-proxy",
+        analytics_socks_host="proxy.internal",
         analytics_socks_port=0,
         analytics_socks_connect_timeout_seconds=31,
     )
@@ -135,9 +151,9 @@ def test_analytics_socks_settings_are_validated_independently() -> None:
     assert "ANALYTICS_SOCKS_CONNECT_TIMEOUT_SECONDS_INVALID" in errors
 
 
-def test_analytics_socks_settings_accept_discloud_vlan_proxy() -> None:
+def test_analytics_socks_settings_accept_private_network_proxy() -> None:
     config = base_settings(
-        analytics_socks_host="tailscale-proxy",
+        analytics_socks_host="proxy.internal",
         analytics_socks_port=1055,
         analytics_socks_connect_timeout_seconds=5,
     )
@@ -157,7 +173,7 @@ def test_direct_analytics_accepts_asyncpg_dsn_without_userinfo() -> None:
 def test_socks_analytics_requires_target_hostname_in_dsn() -> None:
     config = base_settings(
         analytics_database_url="postgresql:///ouros_analytics_database",
-        analytics_socks_host="tailscale-proxy",
+        analytics_socks_host="proxy.internal",
     )
 
     assert (
@@ -169,7 +185,7 @@ def test_socks_analytics_requires_target_hostname_in_dsn() -> None:
 def test_socks_analytics_rejects_invalid_target_port_without_crashing() -> None:
     config = base_settings(
         analytics_database_url="postgresql://analytics_ro@192.168.15.11:99999/db",
-        analytics_socks_host="tailscale-proxy",
+        analytics_socks_host="proxy.internal",
     )
 
     assert "ANALYTICS_DATABASE_URL_INVALID" in config.analytics_configuration_errors()
@@ -181,3 +197,63 @@ def test_malformed_ipv6_analytics_url_is_reported_without_crashing() -> None:
     )
 
     assert "ANALYTICS_DATABASE_URL_INVALID" in config.analytics_configuration_errors()
+
+
+def test_telemetry_targets_require_safe_urls_and_unique_names() -> None:
+    config = base_settings(
+        telemetry_targets=[
+            {
+                "name": "midas",
+                "kind": "midas",
+                "url": "https://midas.example.com/metrics",
+                "token": "secret",
+            },
+            {
+                "name": "midas",
+                "kind": "knowledge_mcp",
+                "url": "http://localhost:8000/metrics",
+                "token": "secret",
+            },
+        ]
+    )
+
+    assert "TELEMETRY_TARGET_NAMES_DUPLICATED" in config.configuration_errors()
+    assert config.telemetry_targets[0].token is not None
+    assert (
+        config.telemetry_targets[0].token.get_secret_value()
+        == "secret"
+    )
+
+    with pytest.raises(ValidationError):
+        base_settings(
+            telemetry_targets=[
+                {
+                    "name": "unsafe",
+                    "kind": "generic",
+                    "url": "http://remote.example.com/metrics",
+                }
+            ]
+        )
+
+    with pytest.raises(ValidationError):
+        base_settings(
+            telemetry_targets=[
+                {
+                    "name": "bad-port",
+                    "kind": "midas",
+                    "url": "https://midas.example.com:bad/metrics",
+                }
+            ]
+        )
+
+
+
+@pytest.mark.parametrize("timeout", [float("inf"), float("-inf"), float("nan")])
+def test_non_finite_telemetry_timeout_is_not_ready(timeout: float) -> None:
+    config = base_settings(telemetry_scrape_timeout_seconds=timeout)
+
+    assert (
+        "TELEMETRY_SCRAPE_TIMEOUT_SECONDS_INVALID"
+        in config.configuration_errors()
+    )
+    assert not config.ready

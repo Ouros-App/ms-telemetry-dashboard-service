@@ -87,7 +87,7 @@ async def test_repository_rejects_writer_role_even_if_database_is_reachable() ->
 
 
 @pytest.mark.asyncio
-async def test_repository_recreates_pool_after_homelab_outage() -> None:
+async def test_repository_recreates_pool_after_network_outage() -> None:
     unavailable_pool = FakePool(acquire_error=OSError("offline"))
     recovered_pool = FakePool(FakeConnection(rows=[{"value": 10}]))
     repository = AnalyticsRepository(
@@ -178,7 +178,7 @@ async def test_repository_routes_pool_connections_through_socks5_relay() -> None
     relay = FakeRelay()
     repository = AnalyticsRepository(
         "postgresql://analytics_ro:secret@192.168.15.11:55432/ouros_analytics_database",
-        socks_proxy_host="tailscale-proxy",
+        socks_proxy_host="proxy.internal",
         socks_proxy_port=1055,
     )
 
@@ -197,7 +197,7 @@ async def test_repository_routes_pool_connections_through_socks5_relay() -> None
     assert result is pool
     assert relay.started
     relay_class.assert_called_once_with(
-        "tailscale-proxy",
+        "proxy.internal",
         1055,
         "192.168.15.11",
         55432,
@@ -273,7 +273,7 @@ async def test_failed_relay_start_is_retried_on_next_attempt() -> None:
     relay.start = AsyncMock(side_effect=[OSError("too many files"), None])
     repository = AnalyticsRepository(
         "postgresql://analytics_ro:secret@192.168.15.11:55432/ouros_analytics_database",
-        socks_proxy_host="tailscale-proxy",
+        socks_proxy_host="proxy.internal",
     )
 
     with patch(

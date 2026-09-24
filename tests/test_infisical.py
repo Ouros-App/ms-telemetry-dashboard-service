@@ -73,4 +73,8 @@ def test_loads_secrets_before_settings_initialization() -> None:
         client.return_value.secrets.list_secrets.return_value = response
         importlib.reload(config)
 
-    assert config.settings.databricks_client_secret == "loaded-secret"
+    assert config.settings.databricks_client_secret is not None
+    assert (
+        config.settings.databricks_client_secret.get_secret_value()
+        == "loaded-secret"
+    )

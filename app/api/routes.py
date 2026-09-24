@@ -1,5 +1,6 @@
 import json
 from html import escape
+from secrets import compare_digest
 from typing import Annotated
 
 from fastapi import (
@@ -15,6 +16,7 @@ from prometheus_client import CONTENT_TYPE_LATEST
 
 from app.clients.databricks import DatabricksIntegrationError, DatabricksTimeoutError
 from app.core.auth import require_bearer
+from app.core.config import settings
 from app.core.metrics import metrics_payload
 from app.schemas.common import HealthResponse, MessageResponse, ReadinessResponse
 from app.schemas.dashboards import (
@@ -22,7 +24,12 @@ from app.schemas.dashboards import (
     DashboardListResponse,
     DashboardPublic,
 )
+from app.schemas.telemetry import (
+    CapacityBaselineResponse,
+    TelemetrySummaryResponse,
+)
 from app.services.dashboard import ChartNotFound, DashboardNotFound, DashboardService
+from app.services.telemetry import TelemetryService
 
 router = APIRouter()
 
@@ -32,6 +39,10 @@ DATABRICKS_INTEGRATION_DETAIL = "Databricks integration failed"
 
 def get_dashboard_service(request: Request) -> DashboardService:
     return request.app.state.dashboard_service
+
+
+def get_telemetry_service(request: Request) -> TelemetryService:
+    return request.app.state.telemetry_service
 
 
 @router.get("/", include_in_schema=False)
@@ -54,8 +65,52 @@ def readiness(request: Request, response: Response) -> ReadinessResponse:
 
 
 @router.get("/metrics", include_in_schema=False)
-def metrics() -> Response:
+def metrics(request: Request) -> Response:
+    if settings.metrics_token is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Metrics are not configured",
+        )
+    expected = f"Bearer {settings.metrics_token.get_secret_value()}".encode()
+    supplied = request.headers.get("Authorization", "").encode()
+    if not compare_digest(supplied, expected):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Metrics are not authorized",
+        )
     return Response(content=metrics_payload(), media_type=CONTENT_TYPE_LATEST)
+
+
+@router.get(
+    "/v1/telemetry/summary",
+    summary="Get operational telemetry summary",
+    description=(
+        "Aggregates Midas and Knowledge MCP Prometheus metrics, including "
+        "latency, uptime, token usage and list-price cost estimates."
+    ),
+    dependencies=[Depends(require_bearer)],
+    tags=["telemetry"],
+)
+async def telemetry_summary(
+    service: Annotated[TelemetryService, Depends(get_telemetry_service)],
+) -> TelemetrySummaryResponse:
+    return await service.summary()
+
+
+@router.get(
+    "/v1/telemetry/capacity-baseline",
+    summary="Get scalability baseline inputs",
+    description=(
+        "Returns process-lifetime averages suitable as inputs for a later "
+        "capacity/cost simulator. It does not predict hardware by itself."
+    ),
+    dependencies=[Depends(require_bearer)],
+    tags=["telemetry"],
+)
+async def capacity_baseline(
+    service: Annotated[TelemetryService, Depends(get_telemetry_service)],
+) -> CapacityBaselineResponse:
+    return await service.capacity_baseline()
 
 
 @router.get(
