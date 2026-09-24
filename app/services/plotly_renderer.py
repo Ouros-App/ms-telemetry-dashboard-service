@@ -104,62 +104,45 @@ def render_plotly_html(
 
     .chart-shell {{
       position: relative;
-      isolation: isolate;
       width: 100%;
       min-width: 0;
       min-height: 318px;
       height: 100vh;
-      max-height: 720px;
+      max-height: 620px;
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      border: 1px solid rgba(202, 202, 202, 0.82);
+      border: 1px solid var(--ouros-border);
       border-radius: 15px;
-      background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(250, 250, 252, 0.98));
-      box-shadow:
-        0 14px 36px rgba(1, 11, 19, 0.055),
-        0 2px 7px rgba(1, 11, 19, 0.035);
+      background: var(--ouros-surface);
+      box-shadow: none;
     }}
 
     .chart-heading {{
-      position: relative;
-      z-index: 1;
       flex: 0 0 auto;
-      padding: 20px 22px 4px;
-    }}
-
-    .chart-kicker-row {{
-      min-height: 20px;
       display: flex;
-      align-items: center;
+      align-items: baseline;
       justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 5px;
+      gap: 16px;
+      padding: 21px 17px 0;
     }}
 
-    .chart-kicker {{
+    .chart-title {{
       margin: 0;
-      color: var(--ouros-primary);
-      font-size: 10px;
+      color: var(--ouros-text);
+      font-size: 22px;
       font-weight: 600;
       line-height: 1;
-      letter-spacing: 0.115em;
-      text-transform: uppercase;
+      letter-spacing: -0.06em;
     }}
 
     .chart-period {{
-      display: inline-flex;
-      align-items: center;
-      min-height: 22px;
-      padding: 4px 9px;
-      border: 1px solid rgba(23, 20, 56, 0.08);
-      border-radius: 999px;
-      background: rgba(23, 20, 56, 0.045);
+      flex: 0 0 auto;
       color: var(--ouros-muted);
-      font-size: 10px;
-      font-weight: 500;
+      font-size: 11px;
+      font-weight: 400;
       line-height: 1;
+      letter-spacing: -0.02em;
       white-space: nowrap;
     }}
 
@@ -167,37 +150,53 @@ def render_plotly_html(
       display: none;
     }}
 
-    .chart-title {{
-      margin: 0;
-      color: var(--ouros-text);
-      font-size: clamp(18px, 3.4vw, 23px);
-      font-weight: 600;
-      line-height: 1.16;
-      letter-spacing: -0.035em;
-    }}
-
-    .chart-accent {{
-      width: 34px;
-      height: 3px;
-      margin-top: 10px;
-      border-radius: 999px;
-      background: linear-gradient(90deg, var(--ouros-primary), rgba(216, 162, 58, 0.18));
-    }}
-
     #plot {{
       width: 100%;
       min-width: 0;
       flex: 1 1 auto;
-      min-height: 230px;
+      min-height: 232px;
+    }}
+
+    .native-legend {{
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 10px 26px;
+      padding: 0 18px 15px;
+    }}
+
+    .native-legend[hidden] {{
+      display: none;
+    }}
+
+    .legend-item {{
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--ouros-text);
+      font-size: 12px;
+      font-weight: 400;
+      line-height: 1;
+      letter-spacing: -0.04em;
+      white-space: nowrap;
+    }}
+
+    .legend-swatch {{
+      width: 10px;
+      height: 10px;
+      flex: 0 0 auto;
+      background: var(--legend-color);
     }}
 
     .series-grid {{
       display: none;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 12px;
+      gap: 18px;
       flex: 1 1 auto;
       min-height: 0;
-      padding: 12px 16px 16px;
+      padding: 0;
     }}
 
     .series-grid[data-active="true"] {{
@@ -206,65 +205,60 @@ def render_plotly_html(
 
     .series-panel {{
       min-width: 0;
-      min-height: 220px;
+      min-height: 300px;
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      border: 1px solid rgba(202, 202, 202, 0.58);
-      border-radius: 14px;
-      background:
-        radial-gradient(circle at 100% 0%, rgba(216, 162, 58, 0.06), transparent 34%),
-        #FFFFFF;
+      border: 1px solid var(--ouros-border);
+      border-radius: 15px;
+      background: var(--ouros-surface);
+      box-shadow: none;
     }}
 
     .series-panel-heading {{
       display: flex;
-      align-items: flex-start;
+      align-items: baseline;
       justify-content: space-between;
-      gap: 12px;
-      padding: 14px 15px 0;
+      gap: 14px;
+      padding: 21px 17px 0;
     }}
 
     .series-panel-title {{
-      display: flex;
-      align-items: center;
-      gap: 8px;
       min-width: 0;
       color: var(--ouros-text);
-      font-size: 12px;
+      font-size: 22px;
       font-weight: 600;
-      line-height: 1.25;
+      line-height: 1;
+      letter-spacing: -0.06em;
     }}
 
     .series-dot {{
-      width: 8px;
-      height: 8px;
-      flex: 0 0 auto;
-      border-radius: 999px;
-      background: var(--series-color, var(--ouros-chart-blue));
-      box-shadow: 0 0 0 4px var(--series-halo, rgba(17, 11, 149, 0.08));
+      display: none;
     }}
 
     .series-latest {{
       flex: 0 0 auto;
+      display: inline-flex;
+      align-items: baseline;
+      gap: 4px;
       text-align: right;
     }}
 
     .series-value {{
-      display: block;
+      display: inline;
       color: var(--ouros-text);
-      font-size: 18px;
+      font-size: 16px;
       font-weight: 600;
       line-height: 1;
-      letter-spacing: -0.035em;
+      letter-spacing: -0.04em;
     }}
 
     .series-unit {{
-      display: block;
-      margin-top: 4px;
+      display: inline;
+      margin: 0;
       color: var(--ouros-muted);
-      font-size: 9px;
-      font-weight: 500;
+      font-size: 10px;
+      font-weight: 400;
       line-height: 1;
     }}
 
@@ -272,7 +266,7 @@ def render_plotly_html(
       width: 100%;
       min-width: 0;
       flex: 1 1 auto;
-      min-height: 160px;
+      min-height: 230px;
     }}
 
     .empty-state {{
@@ -283,127 +277,171 @@ def render_plotly_html(
       text-align: center;
     }}
 
-    .empty-state[hidden] {{ display: none; }}
+    .empty-state[hidden] {{
+      display: none;
+    }}
 
     .empty-card {{
-      max-width: 330px;
+      max-width: 320px;
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 9px;
+      gap: 8px;
     }}
 
     .empty-mark {{
-      width: 40px;
-      height: 4px;
+      width: 28px;
+      height: 3px;
       border-radius: 999px;
-      background: linear-gradient(90deg, var(--ouros-chart-blue), var(--ouros-primary));
-      box-shadow: 0 5px 18px rgba(17, 11, 149, 0.12);
+      background: var(--ouros-primary);
     }}
 
     .empty-title {{
       margin: 4px 0 0;
       color: var(--ouros-text);
-      font-size: 15px;
+      font-size: 14px;
       font-weight: 600;
     }}
 
     .empty-copy {{
       margin: 0;
       color: var(--ouros-muted);
-      font-size: 12px;
-      line-height: 1.5;
+      font-size: 11px;
+      line-height: 1.45;
+    }}
+
+    body[data-chart-type="indicator"] {{
+      min-height: 150px;
     }}
 
     body[data-chart-type="indicator"] .chart-shell {{
+      min-height: 142px;
+      height: 100vh;
+      max-height: 180px;
       border: 0;
       background:
-        radial-gradient(circle at 88% 10%, rgba(216, 162, 58, 0.24), transparent 31%),
-        radial-gradient(circle at 12% 88%, rgba(107, 99, 217, 0.17), transparent 35%),
-        linear-gradient(118deg, #1D184C 0%, #15151A 47%, #28216F 100%);
-      box-shadow:
-        0 18px 40px rgba(23, 20, 56, 0.18),
-        inset 0 1px 0 rgba(255, 255, 255, 0.06);
+        linear-gradient(105.832deg, #1D184C 9.45%, #161617 35.79%, #2A2378 87.72%);
+      box-shadow: none;
     }}
 
-    body[data-chart-type="indicator"] .chart-kicker {{
-      color: #E3B656;
-    }}
-
-    body[data-chart-type="indicator"] .chart-period {{
-      border-color: rgba(242, 245, 247, 0.11);
-      background: rgba(242, 245, 247, 0.075);
-      color: rgba(242, 245, 247, 0.72);
+    body[data-chart-type="indicator"] .chart-heading {{
+      padding: 18px 21px 0;
     }}
 
     body[data-chart-type="indicator"] .chart-title {{
-      color: #F2F5F7;
+      color: #C7C7C7;
+      font-size: 14px;
+      font-weight: 300;
+      letter-spacing: -0.06em;
     }}
 
-    body[data-chart-type="indicator"] .chart-accent {{
-      background: linear-gradient(90deg, #D8A23A, rgba(216, 162, 58, 0.1));
+    body[data-chart-type="indicator"] .chart-period {{
+      display: none;
+    }}
+
+    body[data-split-series="true"] {{
+      min-height: 300px;
+    }}
+
+    body[data-split-series="true"] .chart-shell {{
+      min-height: 300px;
+      height: auto;
+      max-height: none;
+      overflow: visible;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+    }}
+
+    body[data-split-series="true"] .chart-heading,
+    body[data-split-series="true"] .native-legend {{
+      display: none;
     }}
 
     @media (max-width: 720px) {{
       body {{
-        min-height: 300px;
+        min-height: 286px;
       }}
 
       .chart-shell {{
-        min-height: 298px;
+        min-height: 284px;
         max-height: none;
-        border-radius: 14px;
+        border-radius: 15px;
       }}
 
       .chart-heading {{
-        padding: 16px 16px 2px;
-      }}
-
-      .chart-kicker-row {{
-        margin-bottom: 4px;
+        padding: 18px 16px 0;
       }}
 
       .chart-title {{
         font-size: 19px;
+        letter-spacing: -0.05em;
+      }}
+
+      .chart-period {{
+        font-size: 10px;
       }}
 
       #plot {{
-        min-height: 215px;
+        min-height: 205px;
+      }}
+
+      .native-legend {{
+        gap: 9px 18px;
+        padding: 0 14px 14px;
+      }}
+
+      .legend-item {{
+        font-size: 11px;
       }}
 
       .series-grid {{
         grid-template-columns: 1fr;
-        gap: 10px;
-        padding: 10px 12px 12px;
+        gap: 12px;
       }}
 
       .series-panel {{
-        min-height: 205px;
+        min-height: 260px;
+      }}
+
+      .series-panel-heading {{
+        padding: 18px 16px 0;
+      }}
+
+      .series-panel-title {{
+        font-size: 19px;
+      }}
+
+      .series-plot {{
+        min-height: 198px;
       }}
 
       body[data-split-series="true"] {{
-        min-height: 480px;
+        min-height: 532px;
       }}
 
       body[data-split-series="true"] .chart-shell {{
-        min-height: 478px;
-        height: auto;
-        max-height: none;
+        min-height: 532px;
       }}
-    }}
-  </style>
+
+      body[data-chart-type="indicator"] {{
+        min-height: 142px;
+      }}
+
+      body[data-chart-type="indicator"] .chart-shell {{
+        min-height: 142px;
+        max-height: 160px;
+      }}
+    }}  </style>
 </head>
 <body>
   <main id="chart-shell" class="chart-shell" data-ouros-chart="{escape(chart.id, quote=True)}">
     <header class="chart-heading">
-      <div class="chart-kicker-row">
-        <p class="chart-kicker">Ouros Analytics</p>
-        <span id="chart-period" class="chart-period"></span>
-      </div>
       <h1 class="chart-title">{title}</h1>
-      <div class="chart-accent" aria-hidden="true"></div>
+      <span id="chart-period" class="chart-period"></span>
     </header>
     <div id="plot" role="img" aria-label="{title}"></div>
+    <div id="native-legend" class="native-legend" hidden aria-label="Legenda"></div>
     <div id="series-grid" class="series-grid" aria-label="{title}"></div>
     <section id="empty-state" class="empty-state" hidden aria-live="polite">
       <div class="empty-card">
@@ -422,6 +460,7 @@ def render_plotly_html(
     const shell = document.getElementById("chart-shell");
     const plot = document.getElementById("plot");
     const seriesGrid = document.getElementById("series-grid");
+    const nativeLegend = document.getElementById("native-legend");
     const emptyState = document.getElementById("empty-state");
     const periodBadge = document.getElementById("chart-period");
     const plotTargets = [];
@@ -471,8 +510,30 @@ def render_plotly_html(
 
     const seriesUnit = (series) => UNIT_BY_FIELD[series.field] || "";
 
+
+    const buildNativeLegend = (seriesList) => {{
+      nativeLegend.replaceChildren();
+      if (!seriesList || seriesList.length < 2) {{
+        nativeLegend.hidden = true;
+        return;
+      }}
+      seriesList.forEach((series, index) => {{
+        const item = document.createElement("span");
+        item.className = "legend-item";
+        const swatch = document.createElement("span");
+        swatch.className = "legend-swatch";
+        swatch.style.setProperty("--legend-color", palette[index % palette.length]);
+        swatch.setAttribute("aria-hidden", "true");
+        const label = document.createElement("span");
+        label.textContent = series.label;
+        item.append(swatch, label);
+        nativeLegend.append(item);
+      }});
+      nativeLegend.hidden = false;
+    }};
+
     const parseIsoDate = (value) => {{
-      if (typeof value !== "string" || !/^\d{{4}}-\d{{2}}-\d{{2}}/.test(value)) return null;
+      if (typeof value !== "string" || !/^[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}/.test(value)) return null;
       const date = new Date(value.slice(0, 10) + "T00:00:00Z");
       return Number.isNaN(date.getTime()) ? null : date;
     }};
@@ -519,7 +580,6 @@ def render_plotly_html(
       showgrid: true,
       gridcolor: tokens.grid,
       gridwidth: 1,
-      griddash: "dot",
       zeroline: false,
       showline: false,
       automargin: true,
@@ -553,8 +613,8 @@ def render_plotly_html(
         orientation: "h",
         x: 0,
         xanchor: "left",
-        y: 1.09,
-        yanchor: "bottom",
+        y: 1,
+        yanchor: "top",
         font: {{ color: tokens.text, size: 10 }},
         bgcolor: "rgba(0,0,0,0)",
         itemclick: false,
@@ -612,12 +672,7 @@ def render_plotly_html(
 
       const titleNode = document.createElement("div");
       titleNode.className = "series-panel-title";
-      const dot = document.createElement("span");
-      dot.className = "series-dot";
-      dot.setAttribute("aria-hidden", "true");
-      const label = document.createElement("span");
-      label.textContent = series.label;
-      titleNode.append(dot, label);
+      titleNode.textContent = series.label;
 
       const latest = document.createElement("div");
       latest.className = "series-latest";
@@ -651,14 +706,13 @@ def render_plotly_html(
             x: xValues,
             y: yValues,
             connectgaps: false,
-            line: {{ color, width: 3.2, shape: "spline", smoothing: 0.55 }},
+            line: {{ color, width: 2.6, shape: "spline", smoothing: 0.35 }},
             marker: {{
               color,
-              size: 7,
+              size: 10,
               line: {{ color: tokens.surface, width: 2 }},
             }},
-            fill: "tozeroy",
-            fillcolor: softColor,
+            fill: "none",
             hovertemplate: "%{{x}}<br><b>%{{y}}</b>" + hoverSuffix + "<extra></extra>",
           }}
         : {{
@@ -675,7 +729,7 @@ def render_plotly_html(
           }};
 
       const layout = baseLayout();
-      layout.margin = {{ l: 48, r: 14, t: 12, b: 40 }};
+      layout.margin = {{ l: 50, r: 16, t: 18, b: 42 }};
       layout.showlegend = false;
       layout.hovermode = "closest";
       if (renderType === "bar") {{
@@ -709,6 +763,7 @@ def render_plotly_html(
         document.body.dataset.splitSeries = "true";
         plot.hidden = true;
         seriesGrid.hidden = false;
+        nativeLegend.hidden = true;
         seriesGrid.dataset.active = "true";
 
         Promise.all(
@@ -717,6 +772,11 @@ def render_plotly_html(
       }} else {{
         let traces = [];
         let layout = baseLayout();
+        if (["line", "bar"].includes(renderType)) {{
+          buildNativeLegend(sourceSeries);
+          layout.showlegend = false;
+          layout.margin = {{ ...layout.margin, b: sourceSeries.length > 1 ? 34 : 48 }};
+        }}
 
         if (renderType === "indicator") {{
           const value = chart.value_field ? numberOrZero(rows[0][chart.value_field]) : 0;
@@ -728,7 +788,7 @@ def render_plotly_html(
               suffix: chart.value_suffix || "",
               font: {{
                 color: tokens.canvas,
-                size: 48,
+                size: 35,
                 family: "Poppins, Inter, system-ui, sans-serif",
               }},
             }},
@@ -838,14 +898,13 @@ def render_plotly_html(
             if (renderType === "line") {{
               return {{
                 ...base,
-                line: {{ color, width: 3.2, shape: "spline", smoothing: 0.55 }},
+                line: {{ color, width: 2.6, shape: "spline", smoothing: 0.35 }},
                 marker: {{
                   color,
-                  size: 7,
+                  size: 10,
                   line: {{ color: tokens.surface, width: 2 }},
                 }},
-                fill: sourceSeries.length === 1 ? "tozeroy" : "none",
-                fillcolor: softColor,
+                fill: "none",
               }};
             }}
             return {{
