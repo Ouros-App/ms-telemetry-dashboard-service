@@ -41,6 +41,9 @@ def _metrics_url_is_valid(value: str) -> bool:
     return parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1"}
 
 
+TELEMETRY_KIND_MIDAS = "midas"
+TELEMETRY_KIND_KNOWLEDGE_MCP = "knowledge_mcp"
+TELEMETRY_KIND_GENERIC = "generic"
 TelemetryTargetKind = Literal["midas", "knowledge_mcp", "generic"]
 
 
