@@ -183,6 +183,38 @@ curl -H "Authorization: Bearer $KEYCLOAK_ACCESS_TOKEN" \
 
 O último endpoint retorna `text/html` com Plotly.js e pode ser carregado pelo front. O HTML recebe CSP, `nosniff`, cache privado curto e serialização segura dos valores vindos do banco.
 
+#### Integração visual mobile/web
+
+Os gráficos de usuário seguem os tokens do board **2️⃣ | Segundo** do Figma: Poppins, fundo `#F2F5F7`, texto `#010B13`, ouro `#D8A23A`, azul `#110B95`, bordas suaves e cards de raio 15 px. O renderer é responsivo, remove a modebar do Plotly, possui estado vazio próprio e envia a altura renderizada para hosts embutidos.
+
+Para Android/iOS, carregue a rota `/plotly` em um WebView enviando o mesmo Bearer JWT no request inicial. Quando o gráfico terminar de renderizar, o HTML envia para `ReactNativeWebView.postMessage`:
+
+```json
+{"type":"ouros-chart-resize","chartId":"lot-throughput","height":320}
+```
+
+No React web, prefira buscar o HTML autenticado e colocá-lo em um `iframe srcDoc`. Isso evita expor token na URL e mantém o CSS/Plotly isolados do restante da aplicação:
+
+```tsx
+const response = await fetch(
+  `${API}/v1/user/dashboards/production/charts/lot-throughput/plotly`,
+  { headers: { Authorization: `Bearer ${accessToken}` } },
+);
+
+const html = await response.text();
+
+return (
+  <iframe
+    title="Movimentação dos lotes"
+    srcDoc={html}
+    sandbox="allow-scripts"
+    style={{ width: "100%", height: 360, border: 0 }}
+  />
+);
+```
+
+O HTML também emite `window.parent.postMessage` com o mesmo evento de resize, permitindo que o React ajuste a altura do iframe sem conhecer detalhes internos do Plotly. Configure `CORS_ORIGINS` para a origem real do frontend que fará o `fetch`.
+
 O pool PostgreSQL força transações read-only e valida `current_user = analytics_ro`. Quando `ANALYTICS_SOCKS_HOST` está configurado, cada conexão do `asyncpg` entra em um listener efêmero em `127.0.0.1`, que executa o handshake SOCKS5 e encaminha bytes ao host/porta definidos no próprio `ANALYTICS_DATABASE_URL`. O listener não é exposto externamente. Se o Analytics ou o proxy estiver indisponível, o fluxo admin continua funcionando e as rotas de usuário que precisam consultar dados retornam `503`. O connect usa timeout curto e backoff entre novas tentativas para evitar filas de reconexão durante uma queda. O pool é recriado de forma lazy após falhas, então um reboot do homelab não exige restart do telemetry.
 
 Os logs são emitidos em JSON e incluem evento, request ID, rota, status, duração e tentativas do Databricks, sem registrar tokens, secrets ou payloads de consultas.
