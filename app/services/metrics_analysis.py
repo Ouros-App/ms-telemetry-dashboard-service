@@ -54,24 +54,36 @@ def _has_metric(snapshot: PrometheusSnapshot, name: str) -> bool:
     return any(sample.name == name for sample in snapshot.samples)
 
 
+_HTTP_STATUS_LABELS = ("status", "status_code", "code")
+
+
 def _http_error_count(
     snapshot: PrometheusSnapshot,
     request_metric: str,
-) -> int:
+) -> int | None:
     total = 0.0
+    recognized_label = False
     for sample in snapshot.samples:
         if sample.name != request_metric:
             continue
-        raw_status = sample.labels.get("status")
+        raw_status = next(
+            (
+                sample.labels[label]
+                for label in _HTTP_STATUS_LABELS
+                if label in sample.labels
+            ),
+            None,
+        )
         if raw_status is None:
             continue
+        recognized_label = True
         try:
             status_code = int(raw_status)
         except ValueError:
             continue
         if status_code >= 500:
             total += sample.value
-    return int(total)
+    return int(total) if recognized_label else None
 
 
 def service_http_summary(
@@ -185,31 +197,46 @@ def latency_summary(
     )
 
 
+def _metric_value(
+    snapshot: PrometheusSnapshot,
+    name: str,
+) -> float | None:
+    return snapshot.sum(name) if _has_metric(snapshot, name) else None
+
+
 def resource_usage(snapshot: PrometheusSnapshot) -> ResourceUsage:
-    process_started = snapshot.sum("process_start_time_seconds")
-    uptime = max(time() - process_started, 0.0) if process_started > 0 else None
-    cpu_seconds = snapshot.sum("process_cpu_seconds_total")
-    resident = snapshot.sum("process_resident_memory_bytes")
-    virtual = snapshot.sum("process_virtual_memory_bytes")
-    open_fds = snapshot.sum("process_open_fds")
-    max_fds = snapshot.sum("process_max_fds")
+    process_started = _metric_value(snapshot, "process_start_time_seconds")
+    uptime = (
+        max(time() - process_started, 0.0)
+        if process_started is not None and process_started > 0
+        else None
+    )
+    cpu_seconds = _metric_value(snapshot, "process_cpu_seconds_total")
+    resident = _metric_value(snapshot, "process_resident_memory_bytes")
+    virtual = _metric_value(snapshot, "process_virtual_memory_bytes")
+    open_fds = _metric_value(snapshot, "process_open_fds")
+    max_fds = _metric_value(snapshot, "process_max_fds")
     average_cpu_cores = (
         cpu_seconds / uptime
-        if uptime is not None and uptime > 0
+        if cpu_seconds is not None and uptime is not None and uptime > 0
         else None
     )
     return ResourceUsage(
         process_uptime_seconds=rounded(uptime, 3) if uptime is not None else None,
-        resident_memory_bytes=int(resident) if resident > 0 else None,
-        virtual_memory_bytes=int(virtual) if virtual > 0 else None,
-        cpu_seconds_total=rounded(cpu_seconds) if cpu_seconds >= 0 else None,
+        resident_memory_bytes=int(resident) if resident is not None else None,
+        virtual_memory_bytes=int(virtual) if virtual is not None else None,
+        cpu_seconds_total=(
+            rounded(cpu_seconds)
+            if cpu_seconds is not None
+            else None
+        ),
         average_cpu_cores=(
             rounded(average_cpu_cores, 6)
             if average_cpu_cores is not None
             else None
         ),
-        open_fds=int(open_fds) if open_fds > 0 else None,
-        max_fds=int(max_fds) if max_fds > 0 else None,
+        open_fds=int(open_fds) if open_fds is not None else None,
+        max_fds=int(max_fds) if max_fds is not None else None,
     )
 
 
