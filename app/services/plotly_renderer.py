@@ -3,7 +3,7 @@ import secrets
 from html import escape
 from typing import Any
 
-from app.schemas.user_dashboards import UserChartDefinition
+from app.schemas.user_dashboards import UserChartDefinition, UserChartRenderType
 
 PLOTLY_JS_URL = "https://cdn.plot.ly/plotly-2.35.2.min.js"
 PLOTLY_JS_SRI = (
@@ -40,13 +40,20 @@ def _safe_json(value: Any) -> str:
 def render_plotly_html(
     chart: UserChartDefinition,
     rows: list[dict[str, Any]],
+    render_as: UserChartRenderType = "auto",
 ) -> tuple[str, str]:
     nonce = secrets.token_urlsafe(18)
+    resolved_render_as: UserChartRenderType = (
+        "donut" if render_as == "auto" and chart.type == "pie"
+        else chart.type if render_as == "auto"
+        else render_as
+    )
     payload = _safe_json(
         {
             "chart": chart.model_dump(mode="json"),
             "rows": rows,
             "tokens": OUROS_CHART_TOKENS,
+            "render_as": resolved_render_as,
         }
     )
     title = escape(chart.title, quote=True)
@@ -228,11 +235,12 @@ def render_plotly_html(
     const chart = payload.chart;
     const rows = payload.rows || [];
     const tokens = payload.tokens;
+    const renderType = payload.render_as;
     const shell = document.getElementById("chart-shell");
     const plot = document.getElementById("plot");
     const emptyState = document.getElementById("empty-state");
 
-    document.body.dataset.chartType = chart.type;
+    document.body.dataset.chartType = renderType;
 
     const asNumber = (value) => {{
       const parsed = Number(value);
@@ -314,7 +322,7 @@ def render_plotly_html(
         hovermode: "x unified",
       }};
 
-      if (chart.type === "indicator") {{
+      if (renderType === "indicator") {{
         const value = chart.value_field ? asNumber(rows[0][chart.value_field]) : 0;
         traces = [{{
           type: "indicator",
@@ -333,35 +341,72 @@ def render_plotly_html(
           paper_bgcolor: "rgba(0,0,0,0)",
           plot_bgcolor: "rgba(0,0,0,0)",
         }};
-      }} else if (chart.type === "pie") {{
-        traces = [{{
-          type: "pie",
-          labels: rows.map((row) => text(row[chart.label_field])),
-          values: rows.map((row) => asNumber(row[chart.value_field])),
-          hole: 0.56,
-          sort: false,
-          marker: {{
-            colors: palette,
-            line: {{ color: tokens.surface, width: 2 }},
-          }},
-          textinfo: "label+percent",
-          textfont: {{ color: tokens.text, size: 11 }},
-          hovertemplate: "%{{label}}: %{{value}}<extra></extra>",
-        }}];
+      }} else if (renderType === "donut") {{
+        if (chart.type === "indicator" && chart.value_field) {{
+          const value = asNumber(rows[0][chart.value_field]);
+          const bounded = Math.max(0, Math.min(100, value));
+          traces = [{{
+            type: "pie",
+            values: [bounded, Math.max(0, 100 - bounded)],
+            labels: [chart.title, "Restante"],
+            hole: 0.72,
+            sort: false,
+            direction: "clockwise",
+            marker: {{
+              colors: [tokens.primary, tokens.grid],
+              line: {{ color: tokens.surface, width: 2 }},
+            }},
+            textinfo: "none",
+            hoverinfo: "skip",
+            showlegend: false,
+          }}];
+          layout.annotations = [{{
+            text: "<b>" + text(value) + text(chart.value_suffix || "") + "</b>",
+            showarrow: false,
+            font: {{ color: tokens.text, size: 28, family: "Poppins, Inter, system-ui, sans-serif" }},
+          }}];
+        }} else {{
+          const labels = chart.label_field
+            ? rows.map((row) => text(row[chart.label_field]))
+            : rows.map((row) => text(row[chart.x_field]));
+          const valueField = chart.value_field || chart.series?.[0]?.field;
+          traces = [{{
+            type: "pie",
+            labels,
+            values: rows.map((row) => asNumber(row[valueField])),
+            hole: 0.56,
+            sort: false,
+            marker: {{
+              colors: palette,
+              line: {{ color: tokens.surface, width: 2 }},
+            }},
+            textinfo: "label+percent",
+            textfont: {{ color: tokens.text, size: 11 }},
+            hovertemplate: "%{{label}}: %{{value}}<extra></extra>",
+          }}];
+        }}
         layout.margin = {{ l: 22, r: 22, t: 12, b: 50 }};
         layout.hovermode = "closest";
       }} else {{
-        traces = (chart.series || []).map((series, index) => {{
+        const categoricalValue = (
+          chart.label_field && chart.value_field && !(chart.series || []).length
+        );
+        const sourceSeries = categoricalValue
+          ? [{{ field: chart.value_field, label: chart.title }}]
+          : (chart.series || []);
+        const xField = categoricalValue ? chart.label_field : chart.x_field;
+
+        traces = sourceSeries.map((series, index) => {{
           const color = palette[index % palette.length];
           const base = {{
-            type: chart.type === "line" ? "scatter" : "bar",
-            mode: chart.type === "line" ? "lines+markers" : undefined,
+            type: renderType === "line" ? "scatter" : "bar",
+            mode: renderType === "line" ? "lines+markers" : undefined,
             name: series.label,
-            x: rows.map((row) => text(row[chart.x_field])),
+            x: rows.map((row) => text(row[xField])),
             y: rows.map((row) => asNumber(row[series.field])),
             hovertemplate: "%{{x}}<br>" + series.label + ": %{{y}}<extra></extra>",
           }};
-          if (chart.type === "line") {{
+          if (renderType === "line") {{
             return {{
               ...base,
               line: {{ color, width: 3, shape: "spline", smoothing: 0.7 }},
@@ -382,7 +427,7 @@ def render_plotly_html(
             opacity: 0.96,
           }};
         }});
-        if (chart.type === "bar") {{
+        if (renderType === "bar") {{
           layout.barmode = "group";
           layout.bargap = 0.26;
           layout.bargroupgap = 0.08;
