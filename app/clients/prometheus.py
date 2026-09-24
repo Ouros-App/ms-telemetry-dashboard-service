@@ -1,3 +1,4 @@
+import asyncio
 import math
 from dataclasses import dataclass
 
@@ -49,13 +50,14 @@ class PrometheusScrapeClient:
         if target.token is not None:
             headers["Authorization"] = f"Bearer {target.token.get_secret_value()}"
         try:
-            response = await self.client.get(
-                target.url,
-                headers=headers,
-                timeout=self.timeout_seconds,
-            )
-            response.raise_for_status()
-        except (httpx.HTTPError, httpx.TimeoutException) as exc:
+            async with asyncio.timeout(self.timeout_seconds):
+                response = await self.client.get(
+                    target.url,
+                    headers=headers,
+                    timeout=self.timeout_seconds,
+                )
+                response.raise_for_status()
+        except (httpx.HTTPError, TimeoutError) as exc:
             raise PrometheusScrapeError(type(exc).__name__) from exc
 
         try:
