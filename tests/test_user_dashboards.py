@@ -509,6 +509,11 @@ async def test_plotly_renderer_splits_mixed_unit_consumption_series() -> None:
     assert 'connectgaps: false' in html
     assert 'return null;' in html
     assert 'month: "short"' in html
+    assert "buildYearComparison" in html
+    assert '"Este ano"' in html
+    assert '"Ano passado"' in html
+    assert '"Jan", "Fev", "Mar"' in html
+    assert "comparisonPalette.current" in html
 
 
 @pytest.mark.asyncio
@@ -538,7 +543,13 @@ async def test_plotly_renderer_uses_ouros_visual_language_for_series() -> None:
     assert "nullableNumber" in html
     assert "size: 10" in html
     assert 'fill: "none"' in html
-    assert 'layout.yaxis.ticksuffix = " " + unit' in html
+    assert "layout.yaxis.ticksuffix = unit" in html
     assert "border: 0;" in html
     assert "background: transparent;" in html
     assert "linear-gradient(105.832deg" in html
+    assert "max-width: 419px" in html
+    assert "gap: 41px" in html
+    assert "padding: 0 25px" in html
+    assert "font-size: 14.348px" in html
+    assert "width: 7.652px" in html
+    assert "const barWidth = isMobile() ? 0.23 : 0.22" in html
