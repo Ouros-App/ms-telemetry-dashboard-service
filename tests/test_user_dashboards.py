@@ -10,7 +10,11 @@ from app.schemas.user_dashboards import (
     UserDashboardListResponse,
     UserDashboardPublic,
 )
-from app.services.plotly_renderer import PLOTLY_JS_SRI, render_plotly_html
+from app.services.plotly_renderer import (
+    OUROS_CHART_TOKENS,
+    PLOTLY_JS_SRI,
+    render_plotly_html,
+)
 from app.services.user_dashboard import UserDashboardService, UserScopeError
 
 
@@ -155,6 +159,11 @@ async def test_plotly_renderer_escapes_database_text_from_inline_script() -> Non
     assert f'integrity="{PLOTLY_JS_SRI}"' in html
     assert 'crossorigin="anonymous"' in html
     assert "Plotly.newPlot" in html
+    assert OUROS_CHART_TOKENS["primary"] in html
+    assert OUROS_CHART_TOKENS["chart_blue"] in html
+    assert '"Poppins"' in html
+    assert 'type: "ouros-chart-resize"' in html
+    assert "displayModeBar: false" in html
 
 
 class StubUserDashboardService:
@@ -384,3 +393,38 @@ def test_user_plotly_route_reports_analytics_outage_as_temporary(
 
     assert response.status_code == 503
     assert response.json()["detail"] == "User analytics is temporarily unavailable"
+
+
+@pytest.mark.asyncio
+async def test_plotly_renderer_shows_designed_empty_state() -> None:
+    provider = AnalyticsDashboardProvider(FakeRepository())
+    chart = await provider.get_chart("production", "lot-throughput")
+
+    html, _ = render_plotly_html(chart, [])
+
+    assert "Sem dados neste período" in html
+    assert "empty-state" in html
+    assert "if (!rows.length)" in html
+    assert OUROS_CHART_TOKENS["canvas"] in html
+
+
+@pytest.mark.asyncio
+async def test_plotly_renderer_uses_ouros_visual_language_for_series() -> None:
+    provider = AnalyticsDashboardProvider(FakeRepository())
+    chart = await provider.get_chart("consumption", "monthly-consumption")
+
+    html, _ = render_plotly_html(
+        chart,
+        [
+            {
+                "month_start": "2026-09-01",
+                "water_consumed_m3": 12.5,
+                "energy_consumed_kwh": 33.0,
+            }
+        ],
+    )
+
+    assert "shape: \"spline\"" in html
+    assert "hole: 0.56" in html
+    assert "border-radius: 15px" in html
+    assert "linear-gradient(106deg" in html
