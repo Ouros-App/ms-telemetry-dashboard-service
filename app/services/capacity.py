@@ -58,6 +58,54 @@ def _resources_for_kind(
     )
 
 
+def _safe_ratio(
+    numerator: float,
+    denominator: int,
+    digits: int,
+    *,
+    multiplier: float = 1.0,
+) -> float | None:
+    if denominator <= 0:
+        return None
+    return _rounded(numerator / denominator * multiplier, digits)
+
+
+def _resource_value(
+    resources: ResourceUsage | None,
+    attribute: str,
+):
+    return getattr(resources, attribute) if resources is not None else None
+
+
+def _midas_cpu_seconds_per_chat(
+    resources: ResourceUsage | None,
+    chats: int,
+) -> float | None:
+    if resources is None or resources.cpu_seconds_total is None:
+        return None
+    return _safe_ratio(resources.cpu_seconds_total, chats, 6)
+
+
+def _mcp_cpu_seconds_per_tool(
+    resources: ResourceUsage | None,
+    tool_calls: int,
+) -> float | None:
+    if resources is None or resources.cpu_seconds_total is None:
+        return None
+    return _safe_ratio(resources.cpu_seconds_total, tool_calls, 6)
+
+
+def _knowledge_mcp_call_count(
+    summary: TelemetrySummaryResponse,
+) -> int:
+    if summary.knowledge_mcp is None:
+        return 0
+    return sum(
+        item.requests + item.failed_requests + item.cancelled_requests
+        for item in summary.knowledge_mcp.tools
+    )
+
+
 def _assumptions() -> list[str]:
     return [
         "Os valores sao medias acumuladas desde o ultimo restart dos processos.",
@@ -113,6 +161,7 @@ def build_capacity_baseline(
     )
     mcp_duration = sum(item.latency.total_seconds for item in midas.mcp_calls)
     mcp_duration_count = sum(item.latency.count for item in midas.mcp_calls)
+
     midas_resources = _resources_for_kind(
         summary.services,
         TelemetryTargetKind.MIDAS,
@@ -121,89 +170,64 @@ def build_capacity_baseline(
         summary.services,
         TelemetryTargetKind.KNOWLEDGE_MCP,
     )
-    knowledge_mcp_calls = (
-        sum(
-            item.requests + item.failed_requests + item.cancelled_requests
-            for item in summary.knowledge_mcp.tools
-        )
-        if summary.knowledge_mcp is not None
-        else 0
-    )
+    knowledge_mcp_calls = _knowledge_mcp_call_count(summary)
 
     return CapacityBaselineResponse(
         generated_at=summary.generated_at,
         sample_basis=summary.aggregation,
         chat_requests=chats,
         average_chat_latency_ms=midas.chat_latency.average_ms,
-        llm_calls_per_chat=_rounded(llm_calls / chats, 4) if chats else None,
-        input_tokens_per_chat=_rounded(input_tokens / chats, 4) if chats else None,
-        output_tokens_per_chat=_rounded(output_tokens / chats, 4) if chats else None,
-        mcp_calls_per_chat=_rounded(mcp_calls / chats, 4) if chats else None,
-        average_mcp_latency_ms=(
-            _rounded(mcp_duration / mcp_duration_count * 1000, 3)
-            if mcp_duration_count
-            else None
+        llm_calls_per_chat=_safe_ratio(llm_calls, chats, 4),
+        input_tokens_per_chat=_safe_ratio(input_tokens, chats, 4),
+        output_tokens_per_chat=_safe_ratio(output_tokens, chats, 4),
+        mcp_calls_per_chat=_safe_ratio(mcp_calls, chats, 4),
+        average_mcp_latency_ms=_safe_ratio(
+            mcp_duration,
+            mcp_duration_count,
+            3,
+            multiplier=1000,
         ),
-        estimated_token_cost_usd_per_chat=(
-            _rounded(summary.cost.estimated_token_cost_usd / chats, 8)
-            if chats
-            else None
+        estimated_token_cost_usd_per_chat=_safe_ratio(
+            summary.cost.estimated_token_cost_usd,
+            chats,
+            8,
         ),
-        unpriced_tokens_per_chat=(
-            _rounded(summary.cost.unpriced_tokens / chats, 4)
-            if chats
-            else None
+        unpriced_tokens_per_chat=_safe_ratio(
+            summary.cost.unpriced_tokens,
+            chats,
+            4,
         ),
-        midas_average_cpu_cores=(
-            midas_resources.average_cpu_cores
-            if midas_resources is not None
-            else None
+        midas_average_cpu_cores=_resource_value(
+            midas_resources,
+            "average_cpu_cores",
         ),
-        midas_resident_memory_bytes=(
-            midas_resources.resident_memory_bytes
-            if midas_resources is not None
-            else None
+        midas_resident_memory_bytes=_resource_value(
+            midas_resources,
+            "resident_memory_bytes",
         ),
-        knowledge_mcp_average_cpu_cores=(
-            mcp_resources.average_cpu_cores
-            if mcp_resources is not None
-            else None
+        knowledge_mcp_average_cpu_cores=_resource_value(
+            mcp_resources,
+            "average_cpu_cores",
         ),
-        knowledge_mcp_resident_memory_bytes=(
-            mcp_resources.resident_memory_bytes
-            if mcp_resources is not None
-            else None
+        knowledge_mcp_resident_memory_bytes=_resource_value(
+            mcp_resources,
+            "resident_memory_bytes",
         ),
-        midas_process_uptime_seconds=(
-            midas_resources.process_uptime_seconds
-            if midas_resources is not None
-            else None
+        midas_process_uptime_seconds=_resource_value(
+            midas_resources,
+            "process_uptime_seconds",
         ),
-        midas_cpu_seconds_per_chat=(
-            _rounded(midas_resources.cpu_seconds_total / chats, 6)
-            if (
-                chats
-                and midas_resources is not None
-                and midas_resources.cpu_seconds_total is not None
-            )
-            else None
+        midas_cpu_seconds_per_chat=_midas_cpu_seconds_per_chat(
+            midas_resources,
+            chats,
         ),
-        knowledge_mcp_process_uptime_seconds=(
-            mcp_resources.process_uptime_seconds
-            if mcp_resources is not None
-            else None
+        knowledge_mcp_process_uptime_seconds=_resource_value(
+            mcp_resources,
+            "process_uptime_seconds",
         ),
-        knowledge_mcp_cpu_seconds_per_tool_call=(
-            _rounded(
-                mcp_resources.cpu_seconds_total / knowledge_mcp_calls,
-                6,
-            )
-            if (
-                knowledge_mcp_calls
-                and mcp_resources is not None
-                and mcp_resources.cpu_seconds_total is not None
-            )
-            else None
+        knowledge_mcp_cpu_seconds_per_tool_call=_mcp_cpu_seconds_per_tool(
+            mcp_resources,
+            knowledge_mcp_calls,
         ),
         current_chat_in_flight=midas.current_chat_in_flight,
         current_llm_in_flight=midas.current_llm_in_flight,
