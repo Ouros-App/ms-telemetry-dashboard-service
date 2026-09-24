@@ -1,6 +1,9 @@
 import re
+from typing import get_args
 
 from prometheus_client import Counter, Histogram, generate_latest
+
+from app.core.config import TelemetryTargetKind
 
 HTTP_REQUESTS = Counter("http_requests_total", "HTTP requests", ("method", "path", "status"))
 HTTP_DURATION = Histogram("http_request_duration_seconds", "HTTP request duration", ("method", "path"))
@@ -22,7 +25,7 @@ UPSTREAM_SCRAPE_DURATION = Histogram(
     ("kind",),
 )
 
-_ALLOWED_TARGET_KINDS = {"midas", "knowledge_mcp", "generic"}
+_ALLOWED_TARGET_KINDS = frozenset(get_args(TelemetryTargetKind))
 
 
 def _safe_target_kind(kind: object) -> str:
