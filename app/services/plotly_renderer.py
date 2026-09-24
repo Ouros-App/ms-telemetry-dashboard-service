@@ -63,6 +63,10 @@ def render_plotly_html(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light">
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'none'; script-src 'nonce-{nonce}' https://cdn.plot.ly; style-src 'unsafe-inline'; img-src data:; connect-src 'none';"
+  >
   <title>{title}</title>
   <script nonce="{nonce}" src="{PLOTLY_JS_URL}" integrity="{PLOTLY_JS_SRI}" crossorigin="anonymous"></script>
   <style>
@@ -93,7 +97,7 @@ def render_plotly_html(
 
     body {{
       min-height: 300px;
-      padding: 1px;
+      padding: 0;
       overflow: hidden;
     }}
 
@@ -385,7 +389,8 @@ def render_plotly_html(
               line: {{ color: tokens.surface, width: 2 }},
             }},
             textinfo: "label+percent",
-            textfont: {{ color: tokens.text, size: 11 }},
+            textposition: "outside",
+            outsidetextfont: {{ color: tokens.text, size: 11 }},
             hovertemplate: "%{{label}}: %{{value}}<extra></extra>",
           }}];
         }}
