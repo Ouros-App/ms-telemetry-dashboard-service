@@ -538,4 +538,7 @@ async def test_plotly_renderer_uses_ouros_visual_language_for_series() -> None:
     assert "nullableNumber" in html
     assert "size: 10" in html
     assert 'fill: "none"' in html
+    assert 'layout.yaxis.ticksuffix = " " + unit' in html
+    assert "border: 0;" in html
+    assert "background: transparent;" in html
     assert "linear-gradient(105.832deg" in html
