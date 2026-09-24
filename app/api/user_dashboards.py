@@ -7,11 +7,13 @@ from app.core.auth import Principal, require_user_bearer
 from app.repositories.analytics import AnalyticsQueryError, AnalyticsUnavailable
 from app.schemas.user_dashboards import (
     UserChartListResponse,
+    UserChartRenderType,
     UserDashboardListResponse,
     UserDashboardPublic,
 )
 from app.services.user_dashboard import (
     UserChartNotFound,
+    UserChartRenderUnsupported,
     UserDashboardNotFound,
     UserDashboardService,
     UserScopeError,
@@ -74,6 +76,7 @@ async def list_user_charts(
     "/{dashboard_id}/charts/{chart_id}/plotly",
     response_class=HTMLResponse,
     responses={
+        400: {"description": "Render style is not supported by this chart"},
         503: {"description": "User analytics is temporarily unavailable"},
     },
     summary="Render a scoped user chart as Plotly HTML",
@@ -86,13 +89,28 @@ async def list_user_charts(
 async def user_chart_plotly(
     dashboard_id: str,
     chart_id: str,
-    principal: Annotated[Principal, Depends(require_user_bearer)],
+    render_as: UserChartRenderType = "auto",
+    principal: Annotated[Principal, Depends(require_user_bearer)] = None,
     service: Annotated[UserDashboardService, Depends(get_user_dashboard_service)],
 ) -> HTMLResponse:
     try:
-        html, nonce = await service.plotly_html(principal, dashboard_id, chart_id)
+        html, nonce = await service.plotly_html(
+            principal,
+            dashboard_id,
+            chart_id,
+            render_as=render_as,
+        )
     except UserScopeError as exc:
         raise _scope_forbidden(exc) from exc
+    except UserChartRenderUnsupported as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "render style not supported by this chart",
+                "render_as": exc.render_as,
+                "allowed": exc.allowed,
+            },
+        ) from exc
     except (UserDashboardNotFound, UserChartNotFound) as exc:
         raise HTTPException(
             status_code=404,
