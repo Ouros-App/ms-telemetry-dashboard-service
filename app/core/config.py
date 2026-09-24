@@ -1,3 +1,4 @@
+import math
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
@@ -123,7 +124,7 @@ class Settings(BaseSettings):
     token_refresh_margin_seconds: int = 60
     chart_cache_ttl_seconds: int = 30
     sql_wait_timeout_seconds: int = 10
-    cors_origins: list[str] = []
+    cors_origins: list[str] = Field(default_factory=list)
 
     @field_validator("metrics_token", mode="before")
     @classmethod
@@ -189,7 +190,10 @@ class Settings(BaseSettings):
             errors.append("CHART_CACHE_TTL_SECONDS_INVALID")
         if self.sql_wait_timeout_seconds < 1 or self.sql_wait_timeout_seconds > 50:
             errors.append("SQL_WAIT_TIMEOUT_SECONDS_INVALID")
-        if self.telemetry_scrape_timeout_seconds <= 0:
+        if (
+            not math.isfinite(self.telemetry_scrape_timeout_seconds)
+            or self.telemetry_scrape_timeout_seconds <= 0
+        ):
             errors.append("TELEMETRY_SCRAPE_TIMEOUT_SECONDS_INVALID")
         if "*" in self.cors_origins:
             errors.append("CORS_ORIGINS_INVALID")
