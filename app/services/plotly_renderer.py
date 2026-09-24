@@ -191,7 +191,8 @@ def render_plotly_html(
 
     .series-panel {{
       min-width: 0;
-      min-height: 300px;
+      min-height: 484px;
+      height: 484px;
       display: flex;
       flex-direction: column;
       overflow: hidden;
@@ -216,6 +217,15 @@ def render_plotly_html(
       font-weight: 600;
       line-height: 1;
       letter-spacing: -0.06em;
+    }}
+
+    .series-panel-measure {{
+      flex: 0 0 auto;
+      color: var(--ouros-muted);
+      font-size: 12px;
+      font-weight: 400;
+      line-height: 1;
+      letter-spacing: -0.03em;
     }}
 
     .series-plot {{
@@ -292,11 +302,11 @@ def render_plotly_html(
     }}
 
     body[data-split-series="true"] {{
-      min-height: 300px;
+      min-height: 484px;
     }}
 
     body[data-split-series="true"] .chart-shell {{
-      min-height: 300px;
+      min-height: 484px;
       height: auto;
       max-height: none;
       overflow: visible;
@@ -349,7 +359,8 @@ def render_plotly_html(
       }}
 
       .series-panel {{
-        min-height: 260px;
+        min-height: 300px;
+        height: 300px;
       }}
 
       .series-panel-heading {{
@@ -365,11 +376,11 @@ def render_plotly_html(
       }}
 
       body[data-split-series="true"] {{
-        min-height: 532px;
+        min-height: 612px;
       }}
 
       body[data-split-series="true"] .chart-shell {{
-        min-height: 532px;
+        min-height: 612px;
       }}
 
       body[data-chart-type="indicator"] {{
@@ -438,6 +449,14 @@ def render_plotly_html(
       cost: "R$",
     }};
 
+    const SERIES_TITLE_BY_FIELD = {{
+      water_consumed_m3: "Água",
+      energy_consumed_kwh: "Energia",
+      water_m3_per_chicken: "Água por ave",
+      energy_kwh_per_chicken: "Energia por ave",
+    }};
+
+
     const numberFormatter = new Intl.NumberFormat("pt-BR", {{
       maximumFractionDigits: 2,
     }});
@@ -504,7 +523,7 @@ def render_plotly_html(
       showline: false,
       automargin: true,
       ticks: "",
-      tickfont: {{ color: tokens.muted, size: 10 }},
+      tickfont: {{ color: tokens.muted, size: 12 }},
       fixedrange: true,
     }});
 
@@ -516,7 +535,7 @@ def render_plotly_html(
       showline: false,
       automargin: true,
       ticks: "",
-      tickfont: {{ color: tokens.muted, size: 10 }},
+      tickfont: {{ color: tokens.muted, size: 12 }},
       fixedrange: true,
       rangemode: "tozero",
     }});
@@ -597,9 +616,14 @@ def render_plotly_html(
 
       const titleNode = document.createElement("div");
       titleNode.className = "series-panel-title";
-      titleNode.textContent = series.label;
+      titleNode.textContent = SERIES_TITLE_BY_FIELD[series.field] || series.label;
+
+      const measureNode = document.createElement("span");
+      measureNode.className = "series-panel-measure";
+      measureNode.textContent = seriesUnit(series);
 
       heading.append(titleNode);
+      if (measureNode.textContent) heading.append(measureNode);
 
       const target = document.createElement("div");
       target.className = "series-plot";
