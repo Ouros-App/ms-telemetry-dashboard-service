@@ -1,3 +1,4 @@
+import asyncio
 import json
 from datetime import datetime, timezone
 
@@ -7,6 +8,7 @@ import pytest
 from app.clients.prometheus import (
     MetricSample,
     PrometheusScrapeClient,
+    PrometheusScrapeError,
     PrometheusSnapshot,
 )
 from app.core.config import TelemetryTarget
@@ -17,6 +19,7 @@ from app.schemas.telemetry import (
     TelemetrySummaryResponse,
 )
 from app.services.capacity import build_capacity_baseline
+from app.services.metrics_analysis import resource_usage, service_http_summary
 from app.services.telemetry import TelemetryService
 
 
@@ -59,6 +62,24 @@ async def test_scrape_client_sends_dedicated_token_and_parses_prometheus() -> No
 
 
 @pytest.mark.asyncio
+async def test_scrape_client_enforces_total_deadline() -> None:
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(0.05)
+        return httpx.Response(200, text="demo 1\n")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        scraper = PrometheusScrapeClient(client, timeout_seconds=0.01)
+        with pytest.raises(PrometheusScrapeError):
+            await scraper.scrape(
+                TelemetryTarget(
+                    name="slow",
+                    kind="generic",
+                    url="https://slow.example.com/metrics",
+                )
+            )
+
+
+@pytest.mark.asyncio
 async def test_scrape_client_ignores_non_finite_samples() -> None:
     async def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -86,6 +107,39 @@ async def test_scrape_client_ignores_non_finite_samples() -> None:
     assert result.sum("bad_nan") == 0
     assert result.sum("bad_pos_inf") == 0
     assert result.sum("bad_neg_inf") == 0
+
+
+def test_http_summary_supports_common_status_labels() -> None:
+    requests, errors, latency = service_http_summary(
+        snapshot(
+            ("http_requests_total", {"code": "200"}, 8.0),
+            ("http_requests_total", {"code": "503"}, 2.0),
+        ),
+        "generic",
+    )
+
+    assert requests == 10
+    assert errors == 2
+    assert latency is None
+
+    _requests, unknown_errors, _latency = service_http_summary(
+        snapshot(("http_requests_total", {"method": "GET"}, 3.0)),
+        "generic",
+    )
+    assert unknown_errors is None
+
+
+def test_resource_usage_distinguishes_missing_cpu_from_measured_zero() -> None:
+    missing = resource_usage(
+        snapshot(("process_resident_memory_bytes", {}, 1024.0))
+    )
+    measured_zero = resource_usage(
+        snapshot(("process_cpu_seconds_total", {}, 0.0))
+    )
+
+    assert missing.cpu_seconds_total is None
+    assert missing.average_cpu_cores is None
+    assert measured_zero.cpu_seconds_total == 0
 
 
 @pytest.mark.asyncio
