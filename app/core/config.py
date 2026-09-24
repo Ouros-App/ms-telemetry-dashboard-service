@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, SecretStr, field_validator
@@ -7,6 +8,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from app.core.infisical import load_infisical_secrets
 
 load_infisical_secrets()
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _https_url_is_valid(value: str) -> bool:
@@ -38,9 +41,12 @@ def _metrics_url_is_valid(value: str) -> bool:
     return parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1"}
 
 
+TelemetryTargetKind = Literal["midas", "knowledge_mcp", "generic"]
+
+
 class TelemetryTarget(BaseModel):
     name: str
-    kind: str = "generic"
+    kind: TelemetryTargetKind = "generic"
     url: str
     token: SecretStr | None = None
 
@@ -59,14 +65,6 @@ class TelemetryTarget(BaseModel):
         normalized = value.strip()
         if not normalized or len(normalized) > 48:
             raise ValueError("telemetry target name must have 1..48 characters")
-        return normalized
-
-    @field_validator("kind")
-    @classmethod
-    def validate_kind(cls, value: str) -> str:
-        normalized = value.strip().lower()
-        if normalized not in {"midas", "knowledge_mcp", "generic"}:
-            raise ValueError("telemetry target kind is invalid")
         return normalized
 
     @field_validator("url")
@@ -91,12 +89,12 @@ class Settings(BaseSettings):
     metrics_token: SecretStr | None = None
     telemetry_targets: list[TelemetryTarget] = Field(default_factory=list)
     telemetry_scrape_timeout_seconds: float = 5.0
-    model_pricing_path: Path = Path("data/model_pricing.json")
+    model_pricing_path: Path = PROJECT_ROOT / "data/model_pricing.json"
     keycloak_issuer_url: str | None = "https://ouros-keycloak.discloud.app/realms/ouros"
     keycloak_audience: str | None = "ms-telemetry-dashboard-service"
     keycloak_jwks_url: str | None = None
     keycloak_required_role: str = "admin"
-    dashboard_catalog_path: Path = Path("data/dashboards.json")
+    dashboard_catalog_path: Path = PROJECT_ROOT / "data/dashboards.json"
     databricks_host: str | None = None
     databricks_client_id: str | None = None
     databricks_client_secret: str | None = None
