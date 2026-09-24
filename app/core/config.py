@@ -13,7 +13,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _https_url_is_valid(value: str) -> bool:
-    parsed = urlsplit(value)
+    try:
+        parsed = urlsplit(value)
+        _ = parsed.port
+    except ValueError:
+        return False
     return bool(
         parsed.scheme == "https"
         and parsed.hostname
@@ -32,6 +36,7 @@ def _postgres_url_is_valid(value: str) -> bool:
 def _metrics_url_is_valid(value: str) -> bool:
     try:
         parsed = urlsplit(value)
+        _ = parsed.port
     except ValueError:
         return False
     if parsed.username or parsed.password or not parsed.hostname:
