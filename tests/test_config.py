@@ -245,3 +245,17 @@ def test_telemetry_targets_require_safe_urls_and_unique_names() -> None:
                 }
             ]
         )
+
+
+
+def test_telemetry_target_rejects_invalid_port() -> None:
+    with pytest.raises(ValidationError):
+        base_settings(
+            telemetry_targets=[
+                {
+                    "name": "broken",
+                    "kind": "generic",
+                    "url": "https://metrics.example.com:bad/metrics",
+                }
+            ]
+        )
