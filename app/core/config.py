@@ -106,7 +106,7 @@ class Settings(BaseSettings):
     dashboard_catalog_path: Path = PROJECT_ROOT / "data/dashboards.json"
     databricks_host: str | None = None
     databricks_client_id: str | None = None
-    databricks_client_secret: str | None = None
+    databricks_client_secret: SecretStr | None = None
     databricks_token_url: str | None = None
     analytics_database_url: str | None = None
     analytics_expected_role: str = "analytics_ro"
@@ -126,9 +126,13 @@ class Settings(BaseSettings):
     sql_wait_timeout_seconds: int = 10
     cors_origins: list[str] = Field(default_factory=list)
 
-    @field_validator("metrics_token", mode="before")
+    @field_validator(
+        "metrics_token",
+        "databricks_client_secret",
+        mode="before",
+    )
     @classmethod
-    def empty_metrics_token_to_none(cls, value):
+    def empty_secret_to_none(cls, value):
         if isinstance(value, SecretStr):
             return value if value.get_secret_value().strip() else None
         if isinstance(value, str) and not value.strip():
