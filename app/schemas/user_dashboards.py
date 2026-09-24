@@ -3,6 +3,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 UserChartType = Literal["indicator", "bar", "line", "pie"]
+UserChartRenderType = Literal["auto", "indicator", "bar", "line", "donut"]
 
 
 class UserDashboardRecord(BaseModel):
@@ -45,12 +46,15 @@ class UserChartDefinition(BaseModel):
     value_field: str | None = None
     value_suffix: str = Field(default="", max_length=20)
     series: list[UserChartSeries] = Field(default_factory=list)
+    render_options: list[UserChartRenderType] = Field(default_factory=list)
 
 
 class UserChartPublic(BaseModel):
     id: str
     title: str
     type: UserChartType
+    default_render_as: UserChartRenderType
+    render_options: list[UserChartRenderType]
 
 
 class UserChartListResponse(BaseModel):
