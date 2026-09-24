@@ -234,3 +234,14 @@ def test_telemetry_targets_require_safe_urls_and_unique_names() -> None:
                 }
             ]
         )
+
+    with pytest.raises(ValidationError):
+        base_settings(
+            telemetry_targets=[
+                {
+                    "name": "bad-port",
+                    "kind": "midas",
+                    "url": "https://midas.example.com:bad/metrics",
+                }
+            ]
+        )
