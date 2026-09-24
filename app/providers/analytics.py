@@ -59,6 +59,7 @@ class AnalyticsDashboardProvider:
             type="indicator",
             query_name="current_flock",
             value_field="value",
+            render_options=["indicator"],
         ),
         UserChartDefinition(
             id="capacity-utilization",
@@ -68,6 +69,7 @@ class AnalyticsDashboardProvider:
             query_name="capacity_utilization",
             value_field="value",
             value_suffix="%",
+            render_options=["indicator", "donut"],
         ),
         UserChartDefinition(
             id="mortality-rate",
@@ -77,6 +79,7 @@ class AnalyticsDashboardProvider:
             query_name="mortality_rate",
             value_field="value",
             value_suffix="%",
+            render_options=["indicator", "donut"],
         ),
         UserChartDefinition(
             id="farm-capacity",
@@ -89,6 +92,7 @@ class AnalyticsDashboardProvider:
                 UserChartSeries(field="chickens_now", label="Aves atuais"),
                 UserChartSeries(field="poultry_capacity", label="Capacidade"),
             ],
+            render_options=["bar", "line"],
         ),
         UserChartDefinition(
             id="lot-throughput",
@@ -102,6 +106,7 @@ class AnalyticsDashboardProvider:
                 UserChartSeries(field="delivered_chickens", label="Entregues"),
                 UserChartSeries(field="lost_chickens", label="Perdidas"),
             ],
+            render_options=["bar", "line"],
         ),
         UserChartDefinition(
             id="lot-mortality",
@@ -111,6 +116,7 @@ class AnalyticsDashboardProvider:
             query_name="lot_mortality",
             x_field="delivery_date",
             series=[UserChartSeries(field="mortality_rate_pct", label="Mortalidade (%)")],
+            render_options=["line", "bar"],
         ),
         UserChartDefinition(
             id="lot-cost",
@@ -120,18 +126,20 @@ class AnalyticsDashboardProvider:
             query_name="lot_cost",
             x_field="delivery_date",
             series=[UserChartSeries(field="cost", label="Custo")],
+            render_options=["line", "bar"],
         ),
         UserChartDefinition(
             id="monthly-consumption",
             dashboard_id="consumption",
             title="Consumo mensal",
-            type="line",
+            type="bar",
             query_name="monthly_consumption",
             x_field="month_start",
             series=[
                 UserChartSeries(field="water_consumed_m3", label="Água (m³)"),
                 UserChartSeries(field="energy_consumed_kwh", label="Energia (kWh)"),
             ],
+            render_options=["bar", "line"],
         ),
         UserChartDefinition(
             id="resource-efficiency",
@@ -144,6 +152,7 @@ class AnalyticsDashboardProvider:
                 UserChartSeries(field="water_m3_per_chicken", label="Água m³/ave"),
                 UserChartSeries(field="energy_kwh_per_chicken", label="Energia kWh/ave"),
             ],
+            render_options=["line", "bar"],
         ),
         UserChartDefinition(
             id="goal-status",
@@ -153,6 +162,7 @@ class AnalyticsDashboardProvider:
             query_name="goal_status",
             label_field="label",
             value_field="value",
+            render_options=["donut", "bar"],
         ),
         UserChartDefinition(
             id="goal-type",
@@ -162,6 +172,7 @@ class AnalyticsDashboardProvider:
             query_name="goal_type",
             x_field="label",
             series=[UserChartSeries(field="value", label="Metas")],
+            render_options=["bar", "line"],
         ),
     )
 
