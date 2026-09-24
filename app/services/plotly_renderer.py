@@ -219,15 +219,6 @@ def render_plotly_html(
       letter-spacing: -0.06em;
     }}
 
-    .series-panel-measure {{
-      flex: 0 0 auto;
-      color: var(--ouros-muted);
-      font-size: 12px;
-      font-weight: 400;
-      line-height: 1;
-      letter-spacing: -0.03em;
-    }}
-
     .series-plot {{
       width: 100%;
       min-width: 0;
@@ -326,61 +317,73 @@ def render_plotly_html(
       }}
 
       .chart-shell {{
-        min-height: 284px;
+        min-height: 241px;
         max-height: none;
-        border-radius: 15px;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
       }}
 
       .chart-heading {{
-        padding: 18px 16px 0;
+        padding: 0;
       }}
 
       .chart-title {{
-        font-size: 19px;
-        letter-spacing: -0.05em;
+        font-size: 22px;
+        letter-spacing: -0.06em;
       }}
 
       #plot {{
-        min-height: 205px;
+        min-height: 211px;
       }}
 
       .native-legend {{
         gap: 9px 18px;
-        padding: 0 14px 14px;
+        padding: 0;
       }}
 
       .legend-item {{
-        font-size: 11px;
+        font-size: 14px;
+        letter-spacing: -0.04em;
+      }}
+
+      .legend-swatch {{
+        width: 8px;
+        height: 8px;
       }}
 
       .series-grid {{
         grid-template-columns: 1fr;
-        gap: 12px;
+        gap: 70px;
       }}
 
       .series-panel {{
-        min-height: 300px;
-        height: 300px;
+        min-height: 241px;
+        height: 241px;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
       }}
 
       .series-panel-heading {{
-        padding: 18px 16px 0;
+        padding: 0;
       }}
 
       .series-panel-title {{
-        font-size: 19px;
+        font-size: 22px;
+        letter-spacing: -0.06em;
       }}
 
       .series-plot {{
-        min-height: 198px;
+        min-height: 211px;
       }}
 
       body[data-split-series="true"] {{
-        min-height: 612px;
+        min-height: 552px;
       }}
 
       body[data-split-series="true"] .chart-shell {{
-        min-height: 612px;
+        min-height: 552px;
       }}
 
       body[data-chart-type="indicator"] {{
@@ -618,12 +621,7 @@ def render_plotly_html(
       titleNode.className = "series-panel-title";
       titleNode.textContent = SERIES_TITLE_BY_FIELD[series.field] || series.label;
 
-      const measureNode = document.createElement("span");
-      measureNode.className = "series-panel-measure";
-      measureNode.textContent = seriesUnit(series);
-
       heading.append(titleNode);
-      if (measureNode.textContent) heading.append(measureNode);
 
       const target = document.createElement("div");
       target.className = "series-plot";
@@ -662,7 +660,7 @@ def render_plotly_html(
             marker: {{
               color,
               line: {{ width: 0 }},
-              cornerradius: 7,
+              cornerradius: 2,
             }},
             hovertemplate: "%{{x}}<br><b>%{{y}}</b>" + hoverSuffix + "<extra></extra>",
           }};
@@ -671,8 +669,11 @@ def render_plotly_html(
       layout.margin = {{ l: 50, r: 16, t: 18, b: 42 }};
       layout.showlegend = false;
       layout.hovermode = "closest";
+      if (unit) {{
+        layout.yaxis.ticksuffix = " " + unit;
+      }}
       if (renderType === "bar") {{
-        layout.bargap = 0.42;
+        layout.bargap = 0.7;
       }}
       return registerPlot(target, [trace], layout);
     }};
@@ -848,7 +849,7 @@ def render_plotly_html(
               marker: {{
                 color,
                 line: {{ width: 0 }},
-                cornerradius: 7,
+                cornerradius: 2,
               }},
               opacity: 1,
             }};
