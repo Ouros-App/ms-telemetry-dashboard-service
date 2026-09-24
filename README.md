@@ -216,11 +216,35 @@ Para Android/iOS, carregue a rota `/plotly` em um WebView enviando o mesmo Beare
 {"type":"ouros-chart-resize","chartId":"lot-throughput","height":320}
 ```
 
-No React web, prefira buscar o HTML autenticado e colocá-lo em um `iframe srcDoc`. Isso evita expor token na URL e mantém o CSS/Plotly isolados do restante da aplicação:
+No React web, prefira buscar o HTML autenticado e colocá-lo em um `iframe srcDoc`. Isso evita expor token na URL e mantém o CSS/Plotly isolados do restante da aplicação. O HTML carrega sua própria CSP por meta tag para que a proteção continue ativa dentro de `srcDoc`.
 
 ```tsx
+const iframeRef = useRef<HTMLIFrameElement>(null);
+const [chartHeight, setChartHeight] = useState(360);
+
+useEffect(() => {
+  const onMessage = (event: MessageEvent) => {
+    if (event.source !== iframeRef.current?.contentWindow) return;
+
+    const message = event.data;
+    if (
+      !message ||
+      message.type !== "ouros-chart-resize" ||
+      message.chartId !== "lot-throughput" ||
+      !Number.isFinite(message.height)
+    ) {
+      return;
+    }
+
+    setChartHeight(Math.max(240, Math.min(message.height, 800)));
+  };
+
+  window.addEventListener("message", onMessage);
+  return () => window.removeEventListener("message", onMessage);
+}, []);
+
 const response = await fetch(
-  `${API}/v1/user/dashboards/production/charts/lot-throughput/plotly`,
+  `${API}/v1/user/dashboards/production/charts/lot-throughput/plotly?render_as=bar`,
   { headers: { Authorization: `Bearer ${accessToken}` } },
 );
 
@@ -228,15 +252,16 @@ const html = await response.text();
 
 return (
   <iframe
+    ref={iframeRef}
     title="Movimentação dos lotes"
     srcDoc={html}
     sandbox="allow-scripts"
-    style={{ width: "100%", height: 360, border: 0 }}
+    style={{ width: "100%", height: chartHeight, border: 0 }}
   />
 );
 ```
 
-O HTML também emite `window.parent.postMessage` com o mesmo evento de resize, permitindo que o React ajuste a altura do iframe sem conhecer detalhes internos do Plotly. Configure `CORS_ORIGINS` para a origem real do frontend que fará o `fetch`.
+O listener valida a janela emissora, o tipo do evento, o `chartId` e a altura antes de redimensionar o iframe. Configure `CORS_ORIGINS` para a origem real do frontend que fará o `fetch`.
 
 O pool PostgreSQL força transações read-only e valida `current_user = analytics_ro`. Quando `ANALYTICS_SOCKS_HOST` está configurado, cada conexão do `asyncpg` entra em um listener efêmero em `127.0.0.1`, que executa o handshake SOCKS5 e encaminha bytes ao host/porta definidos no próprio `ANALYTICS_DATABASE_URL`. O listener não é exposto externamente. Se o Analytics ou o proxy estiver indisponível, o fluxo admin continua funcionando e as rotas de usuário que precisam consultar dados retornam `503`. O connect usa timeout curto e backoff entre novas tentativas para evitar filas de reconexão durante uma queda. O pool é recriado de forma lazy após falhas, então um reboot do homelab não exige restart do telemetry.
 
