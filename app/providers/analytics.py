@@ -139,7 +139,7 @@ class AnalyticsDashboardProvider:
                 UserChartSeries(field="water_consumed_m3", label="Água (m³)"),
                 UserChartSeries(field="energy_consumed_kwh", label="Energia (kWh)"),
             ],
-            render_options=["line", "bar"],
+            render_options=["bar", "line"],
         ),
         UserChartDefinition(
             id="resource-efficiency",
