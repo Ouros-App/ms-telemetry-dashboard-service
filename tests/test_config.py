@@ -139,7 +139,7 @@ def test_analytics_database_url_and_pool_are_validated_independently() -> None:
 
 def test_analytics_socks_settings_are_validated_independently() -> None:
     config = base_settings(
-        analytics_socks_host="tailscale-proxy",
+        analytics_socks_host="proxy.internal",
         analytics_socks_port=0,
         analytics_socks_connect_timeout_seconds=31,
     )
@@ -151,9 +151,9 @@ def test_analytics_socks_settings_are_validated_independently() -> None:
     assert "ANALYTICS_SOCKS_CONNECT_TIMEOUT_SECONDS_INVALID" in errors
 
 
-def test_analytics_socks_settings_accept_discloud_vlan_proxy() -> None:
+def test_analytics_socks_settings_accept_private_network_proxy() -> None:
     config = base_settings(
-        analytics_socks_host="tailscale-proxy",
+        analytics_socks_host="proxy.internal",
         analytics_socks_port=1055,
         analytics_socks_connect_timeout_seconds=5,
     )
@@ -173,7 +173,7 @@ def test_direct_analytics_accepts_asyncpg_dsn_without_userinfo() -> None:
 def test_socks_analytics_requires_target_hostname_in_dsn() -> None:
     config = base_settings(
         analytics_database_url="postgresql:///ouros_analytics_database",
-        analytics_socks_host="tailscale-proxy",
+        analytics_socks_host="proxy.internal",
     )
 
     assert (
@@ -185,7 +185,7 @@ def test_socks_analytics_requires_target_hostname_in_dsn() -> None:
 def test_socks_analytics_rejects_invalid_target_port_without_crashing() -> None:
     config = base_settings(
         analytics_database_url="postgresql://analytics_ro@192.168.15.11:99999/db",
-        analytics_socks_host="tailscale-proxy",
+        analytics_socks_host="proxy.internal",
     )
 
     assert "ANALYTICS_DATABASE_URL_INVALID" in config.analytics_configuration_errors()
