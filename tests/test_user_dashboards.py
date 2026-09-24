@@ -481,6 +481,34 @@ async def test_plotly_renderer_shows_designed_empty_state() -> None:
     assert OUROS_CHART_TOKENS["canvas"] in html
 
 
+
+
+@pytest.mark.asyncio
+async def test_plotly_renderer_splits_mixed_unit_consumption_series() -> None:
+    provider = AnalyticsDashboardProvider(FakeRepository())
+    chart = await provider.get_chart("consumption", "monthly-consumption")
+
+    html, _ = render_plotly_html(
+        chart,
+        [
+            {
+                "month_start": "2026-08-01",
+                "water_consumed_m3": 630,
+                "energy_consumed_kwh": None,
+            },
+            {
+                "month_start": "2026-09-01",
+                "water_consumed_m3": 540,
+                "energy_consumed_kwh": 2350,
+            },
+        ],
+    )
+
+    assert '"monthly-consumption", "resource-efficiency"' in html
+    assert 'seriesGrid.dataset.active = "true"' in html
+    assert 'connectgaps: false' in html
+    assert 'return null;' in html
+    assert 'month: "short"' in html
 @pytest.mark.asyncio
 async def test_plotly_renderer_uses_ouros_visual_language_for_series() -> None:
     provider = AnalyticsDashboardProvider(FakeRepository())
@@ -498,6 +526,10 @@ async def test_plotly_renderer_uses_ouros_visual_language_for_series() -> None:
     )
 
     assert "shape: \"spline\"" in html
-    assert "hole: 0.56" in html
+    assert "hole: 0.64" in html
     assert "border-radius: 15px" in html
-    assert "linear-gradient(106deg" in html
+    assert "Ouros Analytics" in html
+    assert "series-grid" in html
+    assert 'type: "category"' in html
+    assert "nullableNumber" in html
+    assert "linear-gradient(118deg" in html
