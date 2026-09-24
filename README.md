@@ -72,8 +72,9 @@ user routes
 ## Pré-requisitos
 
 - Python 3.12 para execução local.
-- Acesso a um workspace Databricks por service principal OAuth.
-- Permissão do service principal para acessar o workspace, os dashboards e o SQL Warehouse usado por eles.
+- Python 3.12 e acesso aos endpoints Prometheus que você quiser agregar.
+- Databricks é opcional e só é necessário para o fluxo administrativo de dashboards.
+- PostgreSQL Analytics é opcional e só é necessário para dashboards de usuário.
 - Docker é opcional; o repositório inclui um `Dockerfile`.
 
 ## Instalação e configuração
@@ -125,7 +126,7 @@ Secrets de aplicação esperados no path `/ms-telemetry-dashboard-service` podem
 - `DATABRICKS_CLIENT_SECRET`, quando o fluxo admin estiver habilitado;
 - `ANALYTICS_DATABASE_URL`, quando o fluxo de usuário estiver habilitado.
 
-`DATABRICKS_CLIENT_ID` e `DATABRICKS_HOST` são configuração e podem permanecer no ambiente de deploy, embora o client ID também possa ser centralizado no Infisical se desejado. `ANALYTICS_DATABASE_URL` deve usar exclusivamente `analytics_ro` e apontar para o endereço privado do PostgreSQL no homelab; não use o writer do sincronizador. Em Discloud, configure `ANALYTICS_SOCKS_HOST=tailscale-proxy` e `ANALYTICS_SOCKS_PORT=1055`: o serviço abre um relay apenas em `127.0.0.1`, alcança o proxy pela VLAN da Discloud e deixa o proxy encaminhar o TCP até a subnet do homelab. O telemetry não precisa participar diretamente da Tailnet. `INFISICAL_TOKEN` é o único bootstrap secreto necessário fora do cofre; project ID, environment, path e host são configuração.
+`DATABRICKS_CLIENT_ID` e `DATABRICKS_HOST` são configuração e podem permanecer no ambiente de deploy, embora o client ID também possa ser centralizado no Infisical se desejado. `ANALYTICS_DATABASE_URL` deve usar exclusivamente `analytics_ro` e apontar para o endereço privado do PostgreSQL no homelab; não use o writer do sincronizador. Quando o banco Analytics só estiver acessível por uma rede privada, configure o proxy SOCKS5 pelas variáveis `ANALYTICS_SOCKS_HOST` e `ANALYTICS_SOCKS_PORT`. O serviço abre um relay apenas em `127.0.0.1` e deixa o proxy encaminhar o TCP até o destino, sem acoplar a aplicação a um provedor de deploy específico. `INFISICAL_TOKEN` é o único bootstrap secreto necessário fora do cofre; project ID, environment, path e host são configuração.
 
 ## Execução
 
@@ -225,7 +226,7 @@ Midas. `input_tokens` inclui tokens de cache; o cálculo separa
 tarifa específica, evitando dupla contagem.
 
 Modelos com preço público por token entram em `estimated_token_cost_usd`. Modelos
-precificados por infraestrutura, como NVIDIA NIM em produção, permanecem em
+sem preço público por token, inclusive ofertas cobradas por infraestrutura, permanecem em
 `unpriced_tokens` em vez de receber um preço artificial. O valor é uma estimativa de
 lista, nunca uma fatura real.
 
