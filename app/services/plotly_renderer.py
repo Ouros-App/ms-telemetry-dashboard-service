@@ -390,6 +390,7 @@ def render_plotly_html(
             }},
             textinfo: "label+percent",
             textposition: "outside",
+            automargin: true,
             outsidetextfont: {{ color: tokens.text, size: 11 }},
             hovertemplate: "%{{label}}: %{{value}}<extra></extra>",
           }}];
