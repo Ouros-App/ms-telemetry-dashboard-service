@@ -187,6 +187,8 @@ O último endpoint retorna `text/html` com Plotly.js e pode ser carregado pelo f
 
 Os gráficos de usuário seguem os tokens do board **2️⃣ | Segundo** do Figma: Poppins, fundo `#F2F5F7`, texto `#010B13`, ouro `#D8A23A`, azul `#110B95`, bordas suaves e cards de raio 15 px. O renderer é responsivo, remove a modebar do Plotly, possui estado vazio próprio e envia a altura renderizada para hosts embutidos.
 
+A camada visual evita a aparência padrão do Plotly e foi tratada como parte do próprio app, não como um mini-dashboard embutido. No desktop, os charts seguem os cards do Figma com borda `#CACACA`, raio de 15 px, fundo branco e sem sombra ou branding adicional do renderer. Em viewport mobile, a moldura desaparece e o gráfico fica transparente/borderless, como as seções Água, Energia e Consumo do layout mobile. Datas mensais são categorias compactas (por exemplo, `ago/26` e `set/26`), linhas usam pontos de 10 px e grid sólido discreto, barras usam cantos de 2 px e largura mais contida, donuts usam conteúdo central e a legenda de linhas/barras é HTML no estilo do app em vez da legenda padrão do Plotly. Gráficos de consumo com unidades incompatíveis, como m³ e kWh, são apresentados como cards irmãos no desktop e seções empilhadas no mobile, dentro do mesmo HTML e sem um contêiner visual extra envolvendo os dois. Valores ausentes permanecem gaps visuais em vez de serem convertidos pelo renderer em zero.
+
 Os presets visuais também foram derivados dos gráficos desenhados pelos designers: **KPI/indicator**, **donut de progresso**, **linha comparativa com pontos** e **barras agrupadas**. A definição do gráfico continua escolhendo um padrão coerente, mas o frontend pode selecionar outra visualização compatível com o mesmo conjunto de dados usando `render_as`:
 
 ```text
@@ -204,9 +206,9 @@ Exemplo de item retornado por `GET /v1/user/dashboards/consumption/charts`:
 {
   "id": "monthly-consumption",
   "title": "Consumo mensal",
-  "type": "line",
-  "default_render_as": "line",
-  "render_options": ["line", "bar"]
+  "type": "bar",
+  "default_render_as": "bar",
+  "render_options": ["bar", "line"]
 }
 ```
 

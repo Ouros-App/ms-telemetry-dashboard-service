@@ -317,8 +317,8 @@ async def test_chart_catalog_exposes_figma_render_options() -> None:
 
     consumption = await service.list_charts(farm_owner(), "consumption")
     monthly = next(item for item in consumption.items if item.id == "monthly-consumption")
-    assert monthly.default_render_as == "line"
-    assert monthly.render_options == ["line", "bar"]
+    assert monthly.default_render_as == "bar"
+    assert monthly.render_options == ["bar", "line"]
 
     goals = await service.list_charts(farm_owner(), "goals")
     status = next(item for item in goals.items if item.id == "goal-status")
@@ -426,6 +426,7 @@ async def test_plotly_renderer_covers_line_and_pie_shapes() -> None:
                 "energy_consumed_kwh": 33.0,
             }
         ],
+        render_as="line",
     )
     assert 'type: renderType === "line" ? "scatter" : "bar"' in line_html
 
@@ -482,6 +483,35 @@ async def test_plotly_renderer_shows_designed_empty_state() -> None:
 
 
 @pytest.mark.asyncio
+async def test_plotly_renderer_splits_mixed_unit_consumption_series() -> None:
+    provider = AnalyticsDashboardProvider(FakeRepository())
+    chart = await provider.get_chart("consumption", "monthly-consumption")
+
+    html, _ = render_plotly_html(
+        chart,
+        [
+            {
+                "month_start": "2026-08-01",
+                "water_consumed_m3": 630,
+                "energy_consumed_kwh": None,
+            },
+            {
+                "month_start": "2026-09-01",
+                "water_consumed_m3": 540,
+                "energy_consumed_kwh": 2350,
+            },
+        ],
+        render_as="line",
+    )
+
+    assert '"monthly-consumption", "resource-efficiency"' in html
+    assert 'seriesGrid.dataset.active = "true"' in html
+    assert 'connectgaps: false' in html
+    assert 'return null;' in html
+    assert 'month: "short"' in html
+
+
+@pytest.mark.asyncio
 async def test_plotly_renderer_uses_ouros_visual_language_for_series() -> None:
     provider = AnalyticsDashboardProvider(FakeRepository())
     chart = await provider.get_chart("consumption", "monthly-consumption")
@@ -495,9 +525,20 @@ async def test_plotly_renderer_uses_ouros_visual_language_for_series() -> None:
                 "energy_consumed_kwh": 33.0,
             }
         ],
+        render_as="line",
     )
 
     assert "shape: \"spline\"" in html
-    assert "hole: 0.56" in html
+    assert "hole: 0.64" in html
     assert "border-radius: 15px" in html
-    assert "linear-gradient(106deg" in html
+    assert "Ouros Analytics" not in html
+    assert "native-legend" in html
+    assert "series-grid" in html
+    assert 'type: "category"' in html
+    assert "nullableNumber" in html
+    assert "size: 10" in html
+    assert 'fill: "none"' in html
+    assert 'layout.yaxis.ticksuffix = " " + unit' in html
+    assert "border: 0;" in html
+    assert "background: transparent;" in html
+    assert "linear-gradient(105.832deg" in html

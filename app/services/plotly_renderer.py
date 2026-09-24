@@ -79,6 +79,7 @@ def render_plotly_html(
       --ouros-primary: {OUROS_CHART_TOKENS["primary"]};
       --ouros-secondary: {OUROS_CHART_TOKENS["secondary"]};
       --ouros-chart-blue: {OUROS_CHART_TOKENS["chart_blue"]};
+      --ouros-grid: {OUROS_CHART_TOKENS["grid"]};
     }}
 
     * {{ box-sizing: border-box; }}
@@ -96,126 +97,304 @@ def render_plotly_html(
     }}
 
     body {{
-      min-height: 300px;
+      min-height: 320px;
       padding: 0;
       overflow: hidden;
     }}
 
     .chart-shell {{
+      position: relative;
       width: 100%;
       min-width: 0;
-      min-height: 298px;
+      min-height: 318px;
       height: 100vh;
-      max-height: 640px;
+      max-height: 484px;
       display: flex;
       flex-direction: column;
       overflow: hidden;
       border: 1px solid var(--ouros-border);
       border-radius: 15px;
       background: var(--ouros-surface);
-      box-shadow: 0 4px 14px rgba(1, 11, 19, 0.06);
+      box-shadow: none;
     }}
 
     .chart-heading {{
       flex: 0 0 auto;
-      padding: 18px 20px 2px;
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 21px 17px 0;
     }}
 
     .chart-title {{
       margin: 0;
       color: var(--ouros-text);
-      font-size: clamp(17px, 3.4vw, 22px);
+      font-size: 22px;
       font-weight: 600;
-      line-height: 1.1;
-      letter-spacing: -0.045em;
+      line-height: 1;
+      letter-spacing: -0.06em;
     }}
 
     #plot {{
       width: 100%;
       min-width: 0;
       flex: 1 1 auto;
-      min-height: 210px;
+      min-height: 232px;
+    }}
+
+    .native-legend {{
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 10px 26px;
+      padding: 0 18px 15px;
+    }}
+
+    .native-legend[hidden] {{
+      display: none;
+    }}
+
+    .legend-item {{
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--ouros-text);
+      font-size: 12px;
+      font-weight: 400;
+      line-height: 1;
+      letter-spacing: -0.04em;
+      white-space: nowrap;
+    }}
+
+    .legend-swatch {{
+      width: 10px;
+      height: 10px;
+      flex: 0 0 auto;
+      background: var(--legend-color);
+    }}
+
+    .series-grid {{
+      display: none;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+      flex: 1 1 auto;
+      min-height: 0;
+      padding: 0;
+    }}
+
+    .series-grid[data-active="true"] {{
+      display: grid;
+    }}
+
+    .series-panel {{
+      min-width: 0;
+      min-height: 484px;
+      height: 484px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border: 1px solid var(--ouros-border);
+      border-radius: 15px;
+      background: var(--ouros-surface);
+      box-shadow: none;
+    }}
+
+    .series-panel-heading {{
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 21px 17px 0;
+    }}
+
+    .series-panel-title {{
+      min-width: 0;
+      color: var(--ouros-text);
+      font-size: 22px;
+      font-weight: 600;
+      line-height: 1;
+      letter-spacing: -0.06em;
+    }}
+
+    .series-plot {{
+      width: 100%;
+      min-width: 0;
+      flex: 1 1 auto;
+      min-height: 230px;
     }}
 
     .empty-state {{
       flex: 1 1 auto;
       display: grid;
       place-items: center;
-      padding: 24px;
+      padding: 28px;
       text-align: center;
     }}
 
-    .empty-state[hidden] {{ display: none; }}
+    .empty-state[hidden] {{
+      display: none;
+    }}
 
     .empty-card {{
       max-width: 320px;
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 9px;
+      gap: 8px;
     }}
 
     .empty-mark {{
-      width: 42px;
-      height: 5px;
+      width: 28px;
+      height: 3px;
       border-radius: 999px;
-      background: linear-gradient(90deg, var(--ouros-chart-blue), var(--ouros-primary));
+      background: var(--ouros-primary);
     }}
 
     .empty-title {{
-      margin: 0;
+      margin: 4px 0 0;
       color: var(--ouros-text);
-      font-size: 15px;
+      font-size: 14px;
       font-weight: 600;
     }}
 
     .empty-copy {{
       margin: 0;
       color: var(--ouros-muted);
-      font-size: 12px;
+      font-size: 11px;
       line-height: 1.45;
     }}
 
-    body[data-chart-type="indicator"] .chart-shell {{
-      border: 0;
-      background:
-        linear-gradient(106deg, #1d184c 9%, #161617 38%, #2a2378 88%);
-      box-shadow: 0 6px 20px rgba(23, 20, 56, 0.18);
+    body[data-chart-type="indicator"] {{
+      min-height: 150px;
     }}
 
-    body[data-chart-type="indicator"] .chart-title {{
-      color: #F2F5F7;
+    body[data-chart-type="indicator"] .chart-shell {{
+      min-height: 142px;
+      height: 100vh;
+      max-height: 180px;
+      border: 0;
+      background:
+        linear-gradient(105.832deg, #1D184C 9.45%, #161617 35.79%, #2A2378 87.72%);
+      box-shadow: none;
     }}
 
     body[data-chart-type="indicator"] .chart-heading {{
-      padding-bottom: 0;
+      padding: 18px 21px 0;
     }}
 
-    @media (max-width: 520px) {{
+    body[data-chart-type="indicator"] .chart-title {{
+      color: #C7C7C7;
+      font-size: 14px;
+      font-weight: 300;
+      letter-spacing: -0.06em;
+    }}
+
+    body[data-split-series="true"] {{
+      min-height: 484px;
+    }}
+
+    body[data-split-series="true"] .chart-shell {{
+      min-height: 484px;
+      height: auto;
+      max-height: none;
+      overflow: visible;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+    }}
+
+    body[data-split-series="true"] .chart-heading,
+    body[data-split-series="true"] .native-legend {{
+      display: none;
+    }}
+
+    @media (max-width: 720px) {{
       body {{
-        min-height: 250px;
-        padding: 0;
+        min-height: 286px;
       }}
 
       .chart-shell {{
-        min-height: 250px;
+        min-height: 241px;
+        height: auto;
+        overflow: visible;
         max-height: none;
         border: 0;
         border-radius: 0;
         background: transparent;
-        box-shadow: none;
       }}
 
       .chart-heading {{
-        padding: 12px 12px 0;
+        padding: 0;
+      }}
+
+      .chart-title {{
+        font-size: 22px;
+        letter-spacing: -0.06em;
       }}
 
       #plot {{
-        min-height: 190px;
+        min-height: 211px;
+      }}
+
+      .native-legend {{
+        gap: 9px 18px;
+        padding: 0;
+      }}
+
+      .legend-item {{
+        font-size: 14px;
+        letter-spacing: -0.04em;
+      }}
+
+      .legend-swatch {{
+        width: 8px;
+        height: 8px;
+      }}
+
+      .series-grid {{
+        grid-template-columns: 1fr;
+        gap: 70px;
+      }}
+
+      .series-panel {{
+        min-height: 241px;
+        height: 241px;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+      }}
+
+      .series-panel-heading {{
+        padding: 0;
+      }}
+
+      .series-panel-title {{
+        font-size: 22px;
+        letter-spacing: -0.06em;
+      }}
+
+      .series-plot {{
+        min-height: 211px;
+      }}
+
+      body[data-split-series="true"] {{
+        min-height: 552px;
+      }}
+
+      body[data-split-series="true"] .chart-shell {{
+        min-height: 552px;
+      }}
+
+      body[data-chart-type="indicator"] {{
+        min-height: 142px;
       }}
 
       body[data-chart-type="indicator"] .chart-shell {{
-        border-radius: 15px;
+        min-height: 142px;
+        max-height: 160px;
       }}
     }}
   </style>
@@ -226,11 +405,13 @@ def render_plotly_html(
       <h1 class="chart-title">{title}</h1>
     </header>
     <div id="plot" role="img" aria-label="{title}"></div>
+    <div id="native-legend" class="native-legend" hidden aria-label="Legenda"></div>
+    <div id="series-grid" class="series-grid" aria-label="{title}"></div>
     <section id="empty-state" class="empty-state" hidden aria-live="polite">
       <div class="empty-card">
         <span class="empty-mark" aria-hidden="true"></span>
         <p class="empty-title">Sem dados neste período</p>
-        <p class="empty-copy">Assim que houver registros para este indicador, o gráfico aparece aqui automaticamente.</p>
+        <p class="empty-copy">Quando novas leituras entrarem no período, este card se atualiza automaticamente.</p>
       </div>
     </section>
   </main>
@@ -242,15 +423,21 @@ def render_plotly_html(
     const renderType = payload.render_as;
     const shell = document.getElementById("chart-shell");
     const plot = document.getElementById("plot");
+    const seriesGrid = document.getElementById("series-grid");
+    const nativeLegend = document.getElementById("native-legend");
     const emptyState = document.getElementById("empty-state");
+    const plotTargets = [];
 
     document.body.dataset.chartType = renderType;
 
-    const asNumber = (value) => {{
-      const parsed = Number(value);
-      return Number.isFinite(parsed) ? parsed : 0;
-    }};
     const text = (value) => value == null ? "" : String(value);
+    const nullableNumber = (value) => {{
+      if (value === null || value === undefined || value === "") return null;
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    }};
+    const numberOrZero = (value) => nullableNumber(value) ?? 0;
+
     const palette = [
       tokens.chart_blue,
       tokens.primary,
@@ -258,6 +445,150 @@ def render_plotly_html(
       tokens.primary_dark,
       tokens.secondary,
     ];
+    const UNIT_BY_FIELD = {{
+      water_consumed_m3: "m³",
+      energy_consumed_kwh: "kWh",
+      water_m3_per_chicken: "m³/ave",
+      energy_kwh_per_chicken: "kWh/ave",
+      mortality_rate_pct: "%",
+      cost: "R$",
+    }};
+
+    const SERIES_TITLE_BY_FIELD = {{
+      water_consumed_m3: "Água",
+      energy_consumed_kwh: "Energia",
+      water_m3_per_chicken: "Água por ave",
+      energy_kwh_per_chicken: "Energia por ave",
+    }};
+
+
+    const numberFormatter = new Intl.NumberFormat("pt-BR", {{
+      maximumFractionDigits: 2,
+    }});
+
+    const formatMetric = (value) => {{
+      if (value === null || value === undefined) return "Sem dado";
+      return numberFormatter.format(value);
+    }};
+
+    const seriesUnit = (series) => UNIT_BY_FIELD[series.field] || "";
+
+
+    const buildNativeLegend = (seriesList) => {{
+      nativeLegend.replaceChildren();
+      if (!seriesList || seriesList.length < 2) {{
+        nativeLegend.hidden = true;
+        return;
+      }}
+      seriesList.forEach((series, index) => {{
+        const item = document.createElement("span");
+        item.className = "legend-item";
+        const swatch = document.createElement("span");
+        swatch.className = "legend-swatch";
+        swatch.style.setProperty("--legend-color", palette[index % palette.length]);
+        swatch.setAttribute("aria-hidden", "true");
+        const label = document.createElement("span");
+        label.textContent = series.label;
+        item.append(swatch, label);
+        nativeLegend.append(item);
+      }});
+      nativeLegend.hidden = false;
+    }};
+
+    const parseIsoDate = (value) => {{
+      if (typeof value !== "string" || !/^[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}/.test(value)) return null;
+      const date = new Date(value.slice(0, 10) + "T00:00:00Z");
+      return Number.isNaN(date.getTime()) ? null : date;
+    }};
+
+    const formatCategory = (value, field) => {{
+      const date = parseIsoDate(value);
+      if (!date) return text(value);
+      const parts = new Intl.DateTimeFormat("pt-BR", {{
+        day: "2-digit",
+        month: "short",
+        year: "2-digit",
+        timeZone: "UTC",
+      }}).formatToParts(date);
+      const day = parts.find((part) => part.type === "day")?.value || "";
+      const month = (
+        parts.find((part) => part.type === "month")?.value || ""
+      ).replace(".", "");
+      const year = parts.find((part) => part.type === "year")?.value || "";
+      if (field === "month_start") {{
+        return month + "/" + year;
+      }}
+      return day + " " + month + "/" + year;
+    }};
+
+
+    const commonAxis = () => ({{
+      showgrid: false,
+      zeroline: false,
+      showline: false,
+      automargin: true,
+      ticks: "",
+      tickfont: {{ color: tokens.muted, size: 12 }},
+      fixedrange: true,
+    }});
+
+    const valueAxis = () => ({{
+      showgrid: true,
+      gridcolor: tokens.grid,
+      gridwidth: 1,
+      zeroline: false,
+      showline: false,
+      automargin: true,
+      ticks: "",
+      tickfont: {{ color: tokens.muted, size: 12 }},
+      fixedrange: true,
+      rangemode: "tozero",
+    }});
+
+    const baseLayout = () => ({{
+      autosize: true,
+      margin: {{ l: 54, r: 20, t: 28, b: 48 }},
+      paper_bgcolor: "rgba(0,0,0,0)",
+      plot_bgcolor: "rgba(0,0,0,0)",
+      font: {{
+        family: "Poppins, Inter, system-ui, sans-serif",
+        color: tokens.text,
+        size: 11,
+      }},
+      colorway: palette,
+      hoverlabel: {{
+        bgcolor: tokens.secondary,
+        bordercolor: "rgba(255,255,255,0.08)",
+        font: {{
+          color: tokens.canvas,
+          family: "Poppins, Inter, system-ui, sans-serif",
+          size: 11,
+        }},
+      }},
+      legend: {{
+        orientation: "h",
+        x: 0,
+        xanchor: "left",
+        y: 1,
+        yanchor: "top",
+        font: {{ color: tokens.text, size: 10 }},
+        bgcolor: "rgba(0,0,0,0)",
+        itemclick: false,
+        itemdoubleclick: false,
+      }},
+      xaxis: {{ ...commonAxis(), type: "category" }},
+      yaxis: valueAxis(),
+      hovermode: "x unified",
+    }});
+
+    const config = {{
+      responsive: true,
+      displaylogo: false,
+      displayModeBar: false,
+      scrollZoom: false,
+      doubleClick: false,
+      showTips: false,
+    }};
 
     const postHeight = () => {{
       const height = Math.ceil(shell.getBoundingClientRect().height);
@@ -274,190 +605,270 @@ def render_plotly_html(
       }}
     }};
 
-    if (!rows.length) {{
-      plot.hidden = true;
-      emptyState.hidden = false;
-      postHeight();
-    }} else {{
-      let traces = [];
-      let layout = {{
-        autosize: true,
-        margin: {{ l: 58, r: 24, t: 16, b: 62 }},
-        paper_bgcolor: "rgba(0,0,0,0)",
-        plot_bgcolor: "rgba(0,0,0,0)",
-        font: {{
-          family: "Poppins, Inter, system-ui, sans-serif",
-          color: tokens.text,
-          size: 12,
-        }},
-        colorway: palette,
-        hoverlabel: {{
-          bgcolor: tokens.secondary,
-          bordercolor: tokens.secondary,
-          font: {{ color: tokens.canvas, family: "Poppins, Inter, system-ui, sans-serif", size: 12 }},
-        }},
-        legend: {{
-          orientation: "h",
-          x: 0.5,
-          xanchor: "center",
-          y: -0.2,
-          yanchor: "top",
-          font: {{ color: tokens.text, size: 11 }},
-          bgcolor: "rgba(0,0,0,0)",
-        }},
-        xaxis: {{
-          showgrid: false,
-          zeroline: false,
-          showline: false,
-          automargin: true,
-          tickfont: {{ color: tokens.muted, size: 11 }},
-          fixedrange: true,
-        }},
-        yaxis: {{
-          showgrid: true,
-          gridcolor: tokens.grid,
-          gridwidth: 1,
-          zeroline: false,
-          showline: false,
-          automargin: true,
-          tickfont: {{ color: tokens.muted, size: 11 }},
-          fixedrange: true,
-        }},
-        hovermode: "x unified",
-      }};
+    const registerPlot = (target, traces, layout) => {{
+      plotTargets.push(target);
+      return Plotly.newPlot(target, traces, layout, config);
+    }};
 
-      if (renderType === "indicator") {{
-        const value = chart.value_field ? asNumber(rows[0][chart.value_field]) : 0;
-        traces = [{{
-          type: "indicator",
-          mode: "number",
-          value,
-          number: {{
-            suffix: chart.value_suffix || "",
-            font: {{ color: tokens.canvas, size: 46, family: "Poppins, Inter, system-ui, sans-serif" }},
-          }},
-          domain: {{ x: [0, 1], y: [0, 1] }},
-        }}];
-        layout = {{
-          ...layout,
-          margin: {{ l: 18, r: 18, t: 0, b: 12 }},
-          font: {{ ...layout.font, color: tokens.canvas }},
-          paper_bgcolor: "rgba(0,0,0,0)",
-          plot_bgcolor: "rgba(0,0,0,0)",
-        }};
-      }} else if (renderType === "donut") {{
-        if (chart.type === "indicator" && chart.value_field) {{
-          const value = asNumber(rows[0][chart.value_field]);
-          const bounded = Math.max(0, Math.min(100, value));
-          traces = [{{
-            type: "pie",
-            values: [bounded, Math.max(0, 100 - bounded)],
-            labels: [chart.title, "Restante"],
-            hole: 0.72,
-            sort: false,
-            direction: "clockwise",
-            marker: {{
-              colors: [tokens.primary, tokens.grid],
-              line: {{ color: tokens.surface, width: 2 }},
-            }},
-            textinfo: "none",
-            hoverinfo: "skip",
-            showlegend: false,
-          }}];
-          layout.annotations = [{{
-            x: 0.5,
-            y: 0.5,
-            xref: "paper",
-            yref: "paper",
-            text: "<b>" + text(value) + text(chart.value_suffix || "") + "</b>",
-            showarrow: false,
-            font: {{ color: tokens.text, size: 28, family: "Poppins, Inter, system-ui, sans-serif" }},
-          }}];
-        }} else {{
-          const labels = chart.label_field
-            ? rows.map((row) => text(row[chart.label_field]))
-            : rows.map((row) => text(row[chart.x_field]));
-          const valueField = chart.value_field || chart.series?.[0]?.field;
-          traces = [{{
-            type: "pie",
-            labels,
-            values: rows.map((row) => asNumber(row[valueField])),
-            hole: 0.56,
-            sort: false,
-            marker: {{
-              colors: palette,
-              line: {{ color: tokens.surface, width: 2 }},
-            }},
-            textinfo: "label+percent",
-            textposition: "outside",
-            automargin: true,
-            outsidetextfont: {{ color: tokens.text, size: 11 }},
-            hovertemplate: "%{{label}}: %{{value}}<extra></extra>",
-          }}];
-        }}
-        layout.margin = {{ l: 22, r: 22, t: 12, b: 50 }};
-        layout.hovermode = "closest";
-      }} else {{
-        const categoricalValue = (
-          chart.label_field && chart.value_field && !(chart.series || []).length
-        );
-        const sourceSeries = categoricalValue
-          ? [{{ field: chart.value_field, label: chart.title }}]
-          : (chart.series || []);
-        const xField = categoricalValue ? chart.label_field : chart.x_field;
 
-        traces = sourceSeries.map((series, index) => {{
-          const color = palette[index % palette.length];
-          const base = {{
-            type: renderType === "line" ? "scatter" : "bar",
-            mode: renderType === "line" ? "lines+markers" : undefined,
+    const makeSeriesPanel = (series, index, xField) => {{
+      const color = palette[index % palette.length];
+      const panel = document.createElement("section");
+      panel.className = "series-panel";
+
+      const heading = document.createElement("div");
+      heading.className = "series-panel-heading";
+
+      const titleNode = document.createElement("div");
+      titleNode.className = "series-panel-title";
+      titleNode.textContent = SERIES_TITLE_BY_FIELD[series.field] || series.label;
+
+      heading.append(titleNode);
+
+      const target = document.createElement("div");
+      target.className = "series-plot";
+      target.setAttribute("role", "img");
+      target.setAttribute("aria-label", series.label);
+      panel.append(heading, target);
+      seriesGrid.append(panel);
+
+      const xValues = rows.map((row) => formatCategory(row[xField], xField));
+      const yValues = rows.map((row) => nullableNumber(row[series.field]));
+      const unit = seriesUnit(series);
+      const hoverSuffix = unit ? " " + unit : "";
+
+      const trace = renderType === "line"
+        ? {{
+            type: "scatter",
+            mode: "lines+markers",
             name: series.label,
-            x: rows.map((row) => text(row[xField])),
-            y: rows.map((row) => asNumber(row[series.field])),
-            hovertemplate: "%{{x}}<br>" + series.label + ": %{{y}}<extra></extra>",
-          }};
-          if (renderType === "line") {{
-            return {{
-              ...base,
-              line: {{ color, width: 3, shape: "spline", smoothing: 0.7 }},
-              marker: {{
-                color,
-                size: 7,
-                line: {{ color: tokens.surface, width: 1.5 }},
-              }},
-            }};
+            x: xValues,
+            y: yValues,
+            connectgaps: false,
+            line: {{ color, width: 2.6, shape: "spline", smoothing: 0.35 }},
+            marker: {{
+              color,
+              size: 10,
+              line: {{ color: tokens.surface, width: 2 }},
+            }},
+            fill: "none",
+            hovertemplate: "%{{x}}<br><b>%{{y}}</b>" + hoverSuffix + "<extra></extra>",
           }}
-          return {{
-            ...base,
+        : {{
+            type: "bar",
+            name: series.label,
+            x: xValues,
+            y: yValues,
             marker: {{
               color,
               line: {{ width: 0 }},
-              cornerradius: 3,
+              cornerradius: 2,
             }},
-            opacity: 0.96,
+            hovertemplate: "%{{x}}<br><b>%{{y}}</b>" + hoverSuffix + "<extra></extra>",
           }};
-        }});
-        if (renderType === "bar") {{
-          layout.barmode = "group";
-          layout.bargap = 0.26;
-          layout.bargroupgap = 0.08;
+
+      const layout = baseLayout();
+      layout.margin = {{ l: 50, r: 16, t: 18, b: 42 }};
+      layout.showlegend = false;
+      layout.hovermode = "closest";
+      if (unit) {{
+        layout.yaxis.ticksuffix = " " + unit;
+      }}
+      if (renderType === "bar") {{
+        layout.bargap = 0.7;
+      }}
+      return registerPlot(target, [trace], layout);
+    }};
+
+    if (!rows.length) {{
+      plot.hidden = true;
+      seriesGrid.hidden = true;
+      emptyState.hidden = false;
+      postHeight();
+    }} else {{
+      const categoricalValue = (
+        chart.label_field && chart.value_field && !(chart.series || []).length
+      );
+      const sourceSeries = categoricalValue
+        ? [{{ field: chart.value_field, label: chart.title }}]
+        : (chart.series || []);
+      const xField = categoricalValue ? chart.label_field : chart.x_field;
+      const shouldSplitSeries = (
+        ["monthly-consumption", "resource-efficiency"].includes(chart.id)
+        && ["line", "bar"].includes(renderType)
+        && sourceSeries.length === 2
+      );
+
+      if (shouldSplitSeries) {{
+        document.body.dataset.splitSeries = "true";
+        plot.hidden = true;
+        seriesGrid.hidden = false;
+        nativeLegend.hidden = true;
+        seriesGrid.dataset.active = "true";
+
+        Promise.all(
+          sourceSeries.map((series, index) => makeSeriesPanel(series, index, xField))
+        ).then(() => requestAnimationFrame(postHeight));
+      }} else {{
+        let traces = [];
+        let layout = baseLayout();
+        if (["line", "bar"].includes(renderType)) {{
+          buildNativeLegend(sourceSeries);
+          layout.showlegend = false;
+          layout.margin = {{ ...layout.margin, b: sourceSeries.length > 1 ? 34 : 48 }};
         }}
+
+        if (renderType === "indicator") {{
+          const value = chart.value_field ? numberOrZero(rows[0][chart.value_field]) : 0;
+          traces = [{{
+            type: "indicator",
+            mode: "number",
+            value,
+            number: {{
+              suffix: chart.value_suffix || "",
+              font: {{
+                color: tokens.canvas,
+                size: 35,
+                family: "Poppins, Inter, system-ui, sans-serif",
+              }},
+            }},
+            domain: {{ x: [0.03, 0.97], y: [0.08, 0.92] }},
+          }}];
+          layout = {{
+            ...layout,
+            margin: {{ l: 18, r: 18, t: 4, b: 16 }},
+            font: {{ ...layout.font, color: tokens.canvas }},
+            paper_bgcolor: "rgba(0,0,0,0)",
+            plot_bgcolor: "rgba(0,0,0,0)",
+          }};
+        }} else if (renderType === "donut") {{
+          if (chart.type === "indicator" && chart.value_field) {{
+            const value = numberOrZero(rows[0][chart.value_field]);
+            const bounded = Math.max(0, Math.min(100, value));
+            traces = [{{
+              type: "pie",
+              values: [bounded, Math.max(0, 100 - bounded)],
+              labels: [chart.title, "Restante"],
+              hole: 0.76,
+              sort: false,
+              direction: "clockwise",
+              marker: {{
+                colors: [tokens.primary, "#ECEDEF"],
+                line: {{ color: tokens.surface, width: 0 }},
+              }},
+              textinfo: "none",
+              hoverinfo: "skip",
+              showlegend: false,
+            }}];
+            layout.annotations = [{{
+              x: 0.5,
+              y: 0.5,
+              xref: "paper",
+              yref: "paper",
+              text: "<b>" + formatMetric(value) + text(chart.value_suffix || "") + "</b>",
+              showarrow: false,
+              font: {{
+                color: tokens.text,
+                size: 30,
+                family: "Poppins, Inter, system-ui, sans-serif",
+              }},
+            }}];
+          }} else {{
+            const labels = chart.label_field
+              ? rows.map((row) => text(row[chart.label_field]))
+              : rows.map((row) => formatCategory(row[chart.x_field], chart.x_field));
+            const valueField = chart.value_field || chart.series?.[0]?.field;
+            const values = rows.map((row) => numberOrZero(row[valueField]));
+            const total = values.reduce((sum, value) => sum + value, 0);
+            traces = [{{
+              type: "pie",
+              labels,
+              values,
+              hole: 0.64,
+              sort: false,
+              marker: {{
+                colors: palette,
+                line: {{ color: tokens.surface, width: 3 }},
+              }},
+              textinfo: "none",
+              automargin: true,
+              hovertemplate: "<b>%{{label}}</b><br>%{{value}} · %{{percent}}<extra></extra>",
+            }}];
+            layout.annotations = [{{
+              x: 0.5,
+              y: 0.5,
+              xref: "paper",
+              yref: "paper",
+              text: "<b>" + numberFormatter.format(total) + "</b><br><span style='font-size:10px;color:" + tokens.muted + "'>total</span>",
+              showarrow: false,
+              font: {{
+                color: tokens.text,
+                size: 25,
+                family: "Poppins, Inter, system-ui, sans-serif",
+              }},
+            }}];
+            layout.legend = {{
+              ...layout.legend,
+              x: 0.5,
+              xanchor: "center",
+              y: -0.02,
+              yanchor: "top",
+            }};
+          }}
+          layout.margin = {{ l: 20, r: 20, t: 8, b: 52 }};
+          layout.hovermode = "closest";
+        }} else {{
+          traces = sourceSeries.map((series, index) => {{
+            const color = palette[index % palette.length];
+            const unit = seriesUnit(series);
+            const hoverSuffix = unit ? " " + unit : "";
+            const xValues = rows.map((row) => formatCategory(row[xField], xField));
+            const yValues = rows.map((row) => nullableNumber(row[series.field]));
+
+            const base = {{
+              type: renderType === "line" ? "scatter" : "bar",
+              mode: renderType === "line" ? "lines+markers" : undefined,
+              name: series.label,
+              x: xValues,
+              y: yValues,
+              connectgaps: false,
+              hovertemplate: "<b>%{{x}}</b><br>" + series.label + ": %{{y}}" + hoverSuffix + "<extra></extra>",
+            }};
+            if (renderType === "line") {{
+              return {{
+                ...base,
+                line: {{ color, width: 2.6, shape: "spline", smoothing: 0.35 }},
+                marker: {{
+                  color,
+                  size: 10,
+                  line: {{ color: tokens.surface, width: 2 }},
+                }},
+                fill: "none",
+              }};
+            }}
+            return {{
+              ...base,
+              marker: {{
+                color,
+                line: {{ width: 0 }},
+                cornerradius: 2,
+              }},
+              opacity: 1,
+            }};
+          }});
+
+          if (renderType === "bar") {{
+            layout.barmode = "group";
+            layout.bargap = 0.34;
+            layout.bargroupgap = 0.1;
+          }}
+        }}
+
+        registerPlot(plot, traces, layout).then(() => requestAnimationFrame(postHeight));
       }}
 
-      const config = {{
-        responsive: true,
-        displaylogo: false,
-        displayModeBar: false,
-        scrollZoom: false,
-        doubleClick: false,
-      }};
-
-      Plotly.newPlot("plot", traces, layout, config).then(() => {{
-        requestAnimationFrame(postHeight);
-      }});
-
       window.addEventListener("resize", () => {{
-        Plotly.Plots.resize(plot);
+        plotTargets.forEach((target) => Plotly.Plots.resize(target));
         postHeight();
       }});
     }}
