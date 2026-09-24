@@ -8,11 +8,7 @@ from app.clients.prometheus import (
     PrometheusScrapeError,
     PrometheusSnapshot,
 )
-from app.core.config import (
-    TELEMETRY_KIND_KNOWLEDGE_MCP,
-    TELEMETRY_KIND_MIDAS,
-    TelemetryTarget,
-)
+from app.core.config import TelemetryTarget, TelemetryTargetKind
 from app.core.metrics import observe_upstream_scrape
 from app.schemas.telemetry import (
     CapacityBaselineResponse,
@@ -273,8 +269,8 @@ class TelemetryService:
 
     async def summary(self) -> TelemetrySummaryResponse:
         statuses, by_kind = await self._scrape_all()
-        midas_snapshots = by_kind.get(TELEMETRY_KIND_MIDAS, [])
-        mcp_snapshots = by_kind.get(TELEMETRY_KIND_KNOWLEDGE_MCP, [])
+        midas_snapshots = by_kind.get(TelemetryTargetKind.MIDAS, [])
+        mcp_snapshots = by_kind.get(TelemetryTargetKind.KNOWLEDGE_MCP, [])
         midas = self._midas(midas_snapshots) if midas_snapshots else None
         knowledge_mcp = (
             self._knowledge_mcp(mcp_snapshots) if mcp_snapshots else None
