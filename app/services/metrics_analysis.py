@@ -1,11 +1,7 @@
 from time import time
 
 from app.clients.prometheus import PrometheusSnapshot
-from app.core.config import (
-    TELEMETRY_KIND_GENERIC,
-    TELEMETRY_KIND_KNOWLEDGE_MCP,
-    TELEMETRY_KIND_MIDAS,
-)
+from app.core.config import TelemetryTargetKind
 from app.schemas.telemetry import LatencySummary, ResourceUsage, ToolUsage
 
 
@@ -33,13 +29,13 @@ def label_values(
 
 
 _HTTP_METRIC_CANDIDATES = {
-    TELEMETRY_KIND_MIDAS: (
+    TelemetryTargetKind.MIDAS: (
         ("ai_server_http_requests_total", "ai_server_http_request_duration_seconds"),
     ),
-    TELEMETRY_KIND_KNOWLEDGE_MCP: (
+    TelemetryTargetKind.KNOWLEDGE_MCP: (
         ("ouros_mcp_http_requests_total", "ouros_mcp_http_request_duration_seconds"),
     ),
-    TELEMETRY_KIND_GENERIC: (
+    TelemetryTargetKind.GENERIC: (
         ("http_requests_total", "http_request_duration_seconds"),
         ("http_server_requests_seconds_count", "http_server_requests_seconds"),
         (
@@ -93,7 +89,7 @@ def service_http_summary(
     """Normalize common HTTP metric families for current and future services."""
     candidates = _HTTP_METRIC_CANDIDATES.get(
         kind,
-        _HTTP_METRIC_CANDIDATES[TELEMETRY_KIND_GENERIC],
+        _HTTP_METRIC_CANDIDATES[TelemetryTargetKind.GENERIC],
     )
     for request_metric, duration_metric in candidates:
         if not _has_metric(snapshot, request_metric):
