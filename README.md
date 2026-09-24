@@ -71,8 +71,7 @@ user routes
 
 ## Pré-requisitos
 
-- Python 3.12 para execução local.
-- Python 3.12 e acesso aos endpoints Prometheus que você quiser agregar.
+- Python 3.12 para execução local e acesso aos endpoints Prometheus que você quiser agregar.
 - Databricks é opcional e só é necessário para o fluxo administrativo de dashboards.
 - PostgreSQL Analytics é opcional e só é necessário para dashboards de usuário.
 - Docker é opcional; o repositório inclui um `Dockerfile`.
