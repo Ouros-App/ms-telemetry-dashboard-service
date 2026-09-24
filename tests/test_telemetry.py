@@ -447,3 +447,61 @@ def test_capacity_baseline_keeps_missing_cpu_unknown() -> None:
     baseline = build_capacity_baseline(summary)
 
     assert baseline.midas_average_cpu_cores is None
+
+
+
+def test_generic_http_summary_supports_common_status_labels() -> None:
+    generic = snapshot(
+        (
+            "http_requests_total",
+            {"method": "GET", "code": "200"},
+            4.0,
+        ),
+        (
+            "http_requests_total",
+            {"method": "GET", "code": "503"},
+            2.0,
+        ),
+        ("http_request_duration_seconds_count", {}, 6.0),
+        ("http_request_duration_seconds_sum", {}, 1.2),
+    )
+
+    requests, errors, latency = service_http_summary(generic, "generic")
+
+    assert requests == 6
+    assert errors == 2
+    assert latency is not None
+    assert latency.average_ms == 200
+
+
+def test_generic_http_summary_keeps_unknown_error_count_as_none() -> None:
+    generic = snapshot(
+        (
+            "http_requests_total",
+            {"method": "GET", "outcome": "ok"},
+            4.0,
+        ),
+    )
+
+    requests, errors, latency = service_http_summary(generic, "generic")
+
+    assert requests == 4
+    assert errors is None
+    assert latency is None
+
+
+def test_resource_usage_keeps_absent_cpu_metric_unknown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("app.services.metrics_analysis.time", lambda: 1_000.0)
+    usage = resource_usage(
+        snapshot(
+            ("process_start_time_seconds", {}, 900.0),
+            ("process_resident_memory_bytes", {}, 256.0),
+        )
+    )
+
+    assert usage.process_uptime_seconds == 100
+    assert usage.cpu_seconds_total is None
+    assert usage.average_cpu_cores is None
+    assert usage.resident_memory_bytes == 256
