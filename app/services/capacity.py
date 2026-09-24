@@ -1,3 +1,7 @@
+from app.core.config import (
+    TELEMETRY_KIND_KNOWLEDGE_MCP,
+    TELEMETRY_KIND_MIDAS,
+)
 from app.schemas.telemetry import (
     CapacityBaselineResponse,
     ResourceUsage,
@@ -112,8 +116,14 @@ def build_capacity_baseline(
     )
     mcp_duration = sum(item.latency.total_seconds for item in midas.mcp_calls)
     mcp_duration_count = sum(item.latency.count for item in midas.mcp_calls)
-    midas_resources = _resources_for_kind(summary.services, "midas")
-    mcp_resources = _resources_for_kind(summary.services, "knowledge_mcp")
+    midas_resources = _resources_for_kind(
+        summary.services,
+        TELEMETRY_KIND_MIDAS,
+    )
+    mcp_resources = _resources_for_kind(
+        summary.services,
+        TELEMETRY_KIND_KNOWLEDGE_MCP,
+    )
     knowledge_mcp_calls = (
         sum(
             item.requests + item.failed_requests + item.cancelled_requests
