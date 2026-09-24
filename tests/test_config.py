@@ -259,3 +259,15 @@ def test_telemetry_target_rejects_invalid_port() -> None:
                 }
             ]
         )
+
+
+
+@pytest.mark.parametrize("timeout", [float("inf"), float("-inf"), float("nan")])
+def test_non_finite_telemetry_timeout_is_not_ready(timeout: float) -> None:
+    config = base_settings(telemetry_scrape_timeout_seconds=timeout)
+
+    assert (
+        "TELEMETRY_SCRAPE_TIMEOUT_SECONDS_INVALID"
+        in config.configuration_errors()
+    )
+    assert not config.ready
