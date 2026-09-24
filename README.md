@@ -187,6 +187,29 @@ O último endpoint retorna `text/html` com Plotly.js e pode ser carregado pelo f
 
 Os gráficos de usuário seguem os tokens do board **2️⃣ | Segundo** do Figma: Poppins, fundo `#F2F5F7`, texto `#010B13`, ouro `#D8A23A`, azul `#110B95`, bordas suaves e cards de raio 15 px. O renderer é responsivo, remove a modebar do Plotly, possui estado vazio próprio e envia a altura renderizada para hosts embutidos.
 
+Os presets visuais também foram derivados dos gráficos desenhados pelos designers: **KPI/indicator**, **donut de progresso**, **linha comparativa com pontos** e **barras agrupadas**. A definição do gráfico continua escolhendo um padrão coerente, mas o frontend pode selecionar outra visualização compatível com o mesmo conjunto de dados usando `render_as`:
+
+```text
+GET /v1/user/dashboards/consumption/charts/monthly-consumption/plotly?render_as=line
+GET /v1/user/dashboards/consumption/charts/monthly-consumption/plotly?render_as=bar
+GET /v1/user/dashboards/overview/charts/capacity-utilization/plotly?render_as=donut
+GET /v1/user/dashboards/overview/charts/capacity-utilization/plotly?render_as=indicator
+```
+
+Valores disponíveis no contrato: `auto`, `indicator`, `donut`, `line` e `bar`. `auto` usa o preset padrão do gráfico. Nem toda combinação é semanticamente válida; por exemplo, `current-flock` só aceita `indicator`. O endpoint de listagem de charts informa `default_render_as` e `render_options`, então mobile e web não precisam manter uma tabela própria de compatibilidade.
+
+Exemplo de item retornado por `GET /v1/user/dashboards/consumption/charts`:
+
+```json
+{
+  "id": "monthly-consumption",
+  "title": "Consumo mensal",
+  "type": "line",
+  "default_render_as": "line",
+  "render_options": ["line", "bar"]
+}
+```
+
 Para Android/iOS, carregue a rota `/plotly` em um WebView enviando o mesmo Bearer JWT no request inicial. Quando o gráfico terminar de renderizar, o HTML envia para `ReactNativeWebView.postMessage`:
 
 ```json
