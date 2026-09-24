@@ -317,8 +317,8 @@ async def test_chart_catalog_exposes_figma_render_options() -> None:
 
     consumption = await service.list_charts(farm_owner(), "consumption")
     monthly = next(item for item in consumption.items if item.id == "monthly-consumption")
-    assert monthly.default_render_as == "line"
-    assert monthly.render_options == ["line", "bar"]
+    assert monthly.default_render_as == "bar"
+    assert monthly.render_options == ["bar", "line"]
 
     goals = await service.list_charts(farm_owner(), "goals")
     status = next(item for item in goals.items if item.id == "goal-status")
@@ -426,6 +426,7 @@ async def test_plotly_renderer_covers_line_and_pie_shapes() -> None:
                 "energy_consumed_kwh": 33.0,
             }
         ],
+        render_as="line",
     )
     assert 'type: renderType === "line" ? "scatter" : "bar"' in line_html
 
@@ -481,8 +482,6 @@ async def test_plotly_renderer_shows_designed_empty_state() -> None:
     assert OUROS_CHART_TOKENS["canvas"] in html
 
 
-
-
 @pytest.mark.asyncio
 async def test_plotly_renderer_splits_mixed_unit_consumption_series() -> None:
     provider = AnalyticsDashboardProvider(FakeRepository())
@@ -502,6 +501,7 @@ async def test_plotly_renderer_splits_mixed_unit_consumption_series() -> None:
                 "energy_consumed_kwh": 2350,
             },
         ],
+        render_as="line",
     )
 
     assert '"monthly-consumption", "resource-efficiency"' in html
@@ -525,6 +525,7 @@ async def test_plotly_renderer_uses_ouros_visual_language_for_series() -> None:
                 "energy_consumed_kwh": 33.0,
             }
         ],
+        render_as="line",
     )
 
     assert "shape: \"spline\"" in html
