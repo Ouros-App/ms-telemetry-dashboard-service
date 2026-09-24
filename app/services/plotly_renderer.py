@@ -108,7 +108,7 @@ def render_plotly_html(
       min-width: 0;
       min-height: 318px;
       height: 100vh;
-      max-height: 620px;
+      max-height: 484px;
       display: flex;
       flex-direction: column;
       overflow: hidden;
@@ -134,20 +134,6 @@ def render_plotly_html(
       font-weight: 600;
       line-height: 1;
       letter-spacing: -0.06em;
-    }}
-
-    .chart-period {{
-      flex: 0 0 auto;
-      color: var(--ouros-muted);
-      font-size: 11px;
-      font-weight: 400;
-      line-height: 1;
-      letter-spacing: -0.02em;
-      white-space: nowrap;
-    }}
-
-    .chart-period:empty {{
-      display: none;
     }}
 
     #plot {{
@@ -230,10 +216,6 @@ def render_plotly_html(
       font-weight: 600;
       line-height: 1;
       letter-spacing: -0.06em;
-    }}
-
-    .series-dot {{
-      display: none;
     }}
 
     .series-latest {{
@@ -335,10 +317,6 @@ def render_plotly_html(
       letter-spacing: -0.06em;
     }}
 
-    body[data-chart-type="indicator"] .chart-period {{
-      display: none;
-    }}
-
     body[data-split-series="true"] {{
       min-height: 300px;
     }}
@@ -376,10 +354,6 @@ def render_plotly_html(
       .chart-title {{
         font-size: 19px;
         letter-spacing: -0.05em;
-      }}
-
-      .chart-period {{
-        font-size: 10px;
       }}
 
       #plot {{
@@ -438,7 +412,6 @@ def render_plotly_html(
   <main id="chart-shell" class="chart-shell" data-ouros-chart="{escape(chart.id, quote=True)}">
     <header class="chart-heading">
       <h1 class="chart-title">{title}</h1>
-      <span id="chart-period" class="chart-period"></span>
     </header>
     <div id="plot" role="img" aria-label="{title}"></div>
     <div id="native-legend" class="native-legend" hidden aria-label="Legenda"></div>
@@ -462,7 +435,6 @@ def render_plotly_html(
     const seriesGrid = document.getElementById("series-grid");
     const nativeLegend = document.getElementById("native-legend");
     const emptyState = document.getElementById("empty-state");
-    const periodBadge = document.getElementById("chart-period");
     const plotTargets = [];
 
     document.body.dataset.chartType = renderType;
@@ -482,14 +454,6 @@ def render_plotly_html(
       tokens.primary_dark,
       tokens.secondary,
     ];
-    const paletteSoft = [
-      "rgba(17, 11, 149, 0.08)",
-      "rgba(216, 162, 58, 0.11)",
-      "rgba(107, 99, 217, 0.09)",
-      "rgba(165, 124, 44, 0.09)",
-      "rgba(23, 20, 56, 0.07)",
-    ];
-
     const UNIT_BY_FIELD = {{
       water_consumed_m3: "m³",
       energy_consumed_kwh: "kWh",
@@ -558,16 +522,6 @@ def render_plotly_html(
       return day + " " + month + "/" + year;
     }};
 
-    const setPeriodBadge = () => {{
-      const xField = chart.x_field;
-      if (!xField || !rows.length) return;
-      const values = rows.map((row) => row[xField]).filter((value) => value != null);
-      if (!values.length) return;
-      if (!parseIsoDate(values[0]) || !parseIsoDate(values[values.length - 1])) return;
-      const first = formatCategory(values[0], xField);
-      const last = formatCategory(values[values.length - 1], xField);
-      periodBadge.textContent = first === last ? first : first + " · " + last;
-    }};
 
     const commonAxis = () => ({{
       showgrid: false,
@@ -664,11 +618,9 @@ def render_plotly_html(
 
     const makeSeriesPanel = (series, index, xField) => {{
       const color = palette[index % palette.length];
-      const softColor = paletteSoft[index % paletteSoft.length];
       const panel = document.createElement("section");
       panel.className = "series-panel";
       panel.style.setProperty("--series-color", color);
-      panel.style.setProperty("--series-halo", softColor);
 
       const heading = document.createElement("div");
       heading.className = "series-panel-heading";
@@ -747,8 +699,6 @@ def render_plotly_html(
       emptyState.hidden = false;
       postHeight();
     }} else {{
-      setPeriodBadge();
-
       const categoricalValue = (
         chart.label_field && chart.value_field && !(chart.series || []).length
       );
@@ -883,7 +833,6 @@ def render_plotly_html(
         }} else {{
           traces = sourceSeries.map((series, index) => {{
             const color = palette[index % palette.length];
-            const softColor = paletteSoft[index % paletteSoft.length];
             const unit = seriesUnit(series);
             const hoverSuffix = unit ? " " + unit : "";
             const xValues = rows.map((row) => formatCategory(row[xField], xField));
