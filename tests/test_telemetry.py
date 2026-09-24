@@ -67,16 +67,16 @@ async def test_scrape_client_enforces_total_deadline() -> None:
         await asyncio.sleep(0.05)
         return httpx.Response(200, text="demo 1\n")
 
+    target = TelemetryTarget(
+        name="slow",
+        kind="generic",
+        url="https://slow.example.com/metrics",
+    )
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         scraper = PrometheusScrapeClient(client, timeout_seconds=0.01)
+
         with pytest.raises(PrometheusScrapeError):
-            await scraper.scrape(
-                TelemetryTarget(
-                    name="slow",
-                    kind="generic",
-                    url="https://slow.example.com/metrics",
-                )
-            )
+            await scraper.scrape(target)
 
 
 @pytest.mark.asyncio
