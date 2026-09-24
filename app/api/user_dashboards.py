@@ -89,9 +89,9 @@ async def list_user_charts(
 async def user_chart_plotly(
     dashboard_id: str,
     chart_id: str,
-    render_as: UserChartRenderType = "auto",
-    principal: Annotated[Principal, Depends(require_user_bearer)] = None,
+    principal: Annotated[Principal, Depends(require_user_bearer)],
     service: Annotated[UserDashboardService, Depends(get_user_dashboard_service)],
+    render_as: UserChartRenderType = "auto",
 ) -> HTMLResponse:
     try:
         html, nonce = await service.plotly_html(
