@@ -1,5 +1,4 @@
 import re
-from typing import get_args
 
 from prometheus_client import Counter, Histogram, generate_latest
 
@@ -25,7 +24,7 @@ UPSTREAM_SCRAPE_DURATION = Histogram(
     ("kind",),
 )
 
-_ALLOWED_TARGET_KINDS = frozenset(get_args(TelemetryTargetKind))
+_ALLOWED_TARGET_KINDS = frozenset(TelemetryTargetKind)
 
 
 def _safe_target_kind(kind: object) -> str:
