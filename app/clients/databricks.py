@@ -207,7 +207,12 @@ class DatabricksAuthClient:
     async def _request_token(self, data: dict[str, str]) -> CachedToken:
         if not self.settings.token_url or not self.settings.databricks_client_id or not self.settings.databricks_client_secret:
             raise DatabricksIntegrationError("Databricks OAuth is not configured")
-        credentials = b64encode(f"{self.settings.databricks_client_id}:{self.settings.databricks_client_secret}".encode()).decode()
+        credentials = b64encode(
+            (
+                f"{self.settings.databricks_client_id}:"
+                f"{self.settings.databricks_client_secret.get_secret_value()}"
+            ).encode()
+        ).decode()
         payload = await self.http.request_json(
             "oauth_token",
             "POST",
