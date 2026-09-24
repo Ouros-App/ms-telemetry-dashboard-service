@@ -499,6 +499,7 @@ def render_plotly_html(
       if (!xField || !rows.length) return;
       const values = rows.map((row) => row[xField]).filter((value) => value != null);
       if (!values.length) return;
+      if (!parseIsoDate(values[0]) || !parseIsoDate(values[values.length - 1])) return;
       const first = formatCategory(values[0], xField);
       const last = formatCategory(values[values.length - 1], xField);
       periodBadge.textContent = first === last ? first : first + " · " + last;
@@ -594,11 +595,8 @@ def render_plotly_html(
     }};
 
     const latestValue = (series) => {{
-      for (let index = rows.length - 1; index >= 0; index -= 1) {{
-        const value = nullableNumber(rows[index][series.field]);
-        if (value !== null) return value;
-      }}
-      return null;
+      if (!rows.length) return null;
+      return nullableNumber(rows[rows.length - 1][series.field]);
     }};
 
     const makeSeriesPanel = (series, index, xField) => {{
