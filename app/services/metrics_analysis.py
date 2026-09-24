@@ -105,13 +105,11 @@ def service_http_summary(
     return None, None, None
 
 
-def _histogram_quantile(
+def _matching_histogram_buckets(
     snapshots: list[PrometheusSnapshot],
     metric_prefix: str,
-    quantile: float,
-    labels: dict[str, str] | None = None,
-) -> float | None:
-    required = labels or {}
+    labels: dict[str, str],
+) -> dict[float, float]:
     cumulative_by_bound: dict[float, float] = {}
     for snapshot in snapshots:
         for sample in snapshot.samples:
@@ -119,7 +117,7 @@ def _histogram_quantile(
                 continue
             if not all(
                 sample.labels.get(key) == value
-                for key, value in required.items()
+                for key, value in labels.items()
             ):
                 continue
             raw_bound = sample.labels.get("le")
@@ -132,9 +130,16 @@ def _histogram_quantile(
             cumulative_by_bound[bound] = (
                 cumulative_by_bound.get(bound, 0.0) + sample.value
             )
+    return cumulative_by_bound
 
+
+def _interpolate_bucket_quantile(
+    cumulative_by_bound: dict[float, float],
+    quantile: float,
+) -> float | None:
     if not cumulative_by_bound:
         return None
+
     bounds = sorted(cumulative_by_bound)
     total = cumulative_by_bound[bounds[-1]]
     if total <= 0:
@@ -158,6 +163,20 @@ def _histogram_quantile(
         estimate = previous_bound + (bound - previous_bound) * fraction
         return max(estimate, 0.0) * 1000
     return None
+
+
+def _histogram_quantile(
+    snapshots: list[PrometheusSnapshot],
+    metric_prefix: str,
+    quantile: float,
+    labels: dict[str, str] | None = None,
+) -> float | None:
+    buckets = _matching_histogram_buckets(
+        snapshots,
+        metric_prefix,
+        labels or {},
+    )
+    return _interpolate_bucket_quantile(buckets, quantile)
 
 
 def latency_summary(
