@@ -206,9 +206,9 @@ Exemplo de item retornado por `GET /v1/user/dashboards/consumption/charts`:
 {
   "id": "monthly-consumption",
   "title": "Consumo mensal",
-  "type": "line",
-  "default_render_as": "line",
-  "render_options": ["line", "bar"]
+  "type": "bar",
+  "default_render_as": "bar",
+  "render_options": ["bar", "line"]
 }
 ```
 
