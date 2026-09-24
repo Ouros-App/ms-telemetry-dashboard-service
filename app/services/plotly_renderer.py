@@ -218,32 +218,6 @@ def render_plotly_html(
       letter-spacing: -0.06em;
     }}
 
-    .series-latest {{
-      flex: 0 0 auto;
-      display: inline-flex;
-      align-items: baseline;
-      gap: 4px;
-      text-align: right;
-    }}
-
-    .series-value {{
-      display: inline;
-      color: var(--ouros-text);
-      font-size: 16px;
-      font-weight: 600;
-      line-height: 1;
-      letter-spacing: -0.04em;
-    }}
-
-    .series-unit {{
-      display: inline;
-      margin: 0;
-      color: var(--ouros-muted);
-      font-size: 10px;
-      font-weight: 400;
-      line-height: 1;
-    }}
-
     .series-plot {{
       width: 100%;
       min-width: 0;
@@ -406,7 +380,8 @@ def render_plotly_html(
         min-height: 142px;
         max-height: 160px;
       }}
-    }}  </style>
+    }}
+  </style>
 </head>
 <body>
   <main id="chart-shell" class="chart-shell" data-ouros-chart="{escape(chart.id, quote=True)}">
@@ -611,16 +586,11 @@ def render_plotly_html(
       return Plotly.newPlot(target, traces, layout, config);
     }};
 
-    const latestValue = (series) => {{
-      if (!rows.length) return null;
-      return nullableNumber(rows[rows.length - 1][series.field]);
-    }};
 
     const makeSeriesPanel = (series, index, xField) => {{
       const color = palette[index % palette.length];
       const panel = document.createElement("section");
       panel.className = "series-panel";
-      panel.style.setProperty("--series-color", color);
 
       const heading = document.createElement("div");
       heading.className = "series-panel-heading";
@@ -629,17 +599,7 @@ def render_plotly_html(
       titleNode.className = "series-panel-title";
       titleNode.textContent = series.label;
 
-      const latest = document.createElement("div");
-      latest.className = "series-latest";
-      const valueNode = document.createElement("span");
-      valueNode.className = "series-value";
-      valueNode.textContent = formatMetric(latestValue(series));
-      const unitNode = document.createElement("span");
-      unitNode.className = "series-unit";
-      unitNode.textContent = seriesUnit(series) || "valor atual";
-      latest.append(valueNode, unitNode);
-
-      heading.append(titleNode, latest);
+      heading.append(titleNode);
 
       const target = document.createElement("div");
       target.className = "series-plot";
