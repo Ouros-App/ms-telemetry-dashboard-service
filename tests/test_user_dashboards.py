@@ -193,11 +193,13 @@ class StubUserDashboardService:
                     id="current-flock",
                     title="Aves atuais",
                     type="indicator",
+                    default_render_as="indicator",
+                    render_options=["indicator"],
                 )
             ]
         )
 
-    async def plotly_html(self, principal, dashboard_id, chart_id):
+    async def plotly_html(self, principal, dashboard_id, chart_id, render_as="auto"):
         return (
             '<!doctype html><script nonce="fixed">Plotly.newPlot("plot", [], {})</script>',
             "fixed",
@@ -310,6 +312,71 @@ async def test_user_service_maps_missing_catalog_items() -> None:
 
 
 @pytest.mark.asyncio
+async def test_chart_catalog_exposes_figma_render_options() -> None:
+    service = UserDashboardService(AnalyticsDashboardProvider(FakeRepository()))
+
+    consumption = await service.list_charts(farm_owner(), "consumption")
+    monthly = next(item for item in consumption.items if item.id == "monthly-consumption")
+    assert monthly.default_render_as == "line"
+    assert monthly.render_options == ["line", "bar"]
+
+    goals = await service.list_charts(farm_owner(), "goals")
+    status = next(item for item in goals.items if item.id == "goal-status")
+    assert status.default_render_as == "donut"
+    assert status.render_options == ["donut", "bar"]
+
+
+@pytest.mark.asyncio
+async def test_plotly_render_style_can_be_selected_per_request() -> None:
+    repository = FakeRepository(
+        {
+            "monthly_consumption": [
+                {
+                    "month_start": "2026-09-01",
+                    "water_consumed_m3": 12.5,
+                    "energy_consumed_kwh": 33.0,
+                }
+            ]
+        }
+    )
+    service = UserDashboardService(AnalyticsDashboardProvider(repository))
+
+    line_html, _ = await service.plotly_html(
+        farm_owner(),
+        "consumption",
+        "monthly-consumption",
+        render_as="line",
+    )
+    bar_html, _ = await service.plotly_html(
+        farm_owner(),
+        "consumption",
+        "monthly-consumption",
+        render_as="bar",
+    )
+
+    assert '"render_as":"line"' in line_html
+    assert '"render_as":"bar"' in bar_html
+    assert len(repository.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_plotly_rejects_incompatible_render_style() -> None:
+    from app.services.user_dashboard import UserChartRenderUnsupported
+
+    service = UserDashboardService(AnalyticsDashboardProvider(FakeRepository()))
+
+    with pytest.raises(UserChartRenderUnsupported) as exc_info:
+        await service.plotly_html(
+            farm_owner(),
+            "overview",
+            "current-flock",
+            render_as="bar",
+        )
+
+    assert exc_info.value.allowed == ["indicator"]
+
+
+@pytest.mark.asyncio
 async def test_provider_rejects_unknown_query_definition() -> None:
     from app.repositories.analytics import AnalyticsQueryError
     from app.schemas.user_dashboards import UserChartDefinition
@@ -360,7 +427,7 @@ async def test_plotly_renderer_covers_line_and_pie_shapes() -> None:
             }
         ],
     )
-    assert 'type: chart.type === "line" ? "scatter" : "bar"' in line_html
+    assert 'type: renderType === "line" ? "scatter" : "bar"' in line_html
 
     pie_chart = await provider.get_chart("goals", "goal-status")
     pie_html, _ = render_plotly_html(
