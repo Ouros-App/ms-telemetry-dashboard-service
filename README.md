@@ -103,7 +103,7 @@ Copie `.env.example` para `.env`. As variáveis disponíveis são:
 | `ANALYTICS_COMMAND_TIMEOUT_SECONDS` | Timeout das queries do Analytics. |
 | `ANALYTICS_CONNECT_TIMEOUT_SECONDS` | Timeout curto para abrir uma conexão PostgreSQL; padrão `5`. |
 | `ANALYTICS_RETRY_BACKOFF_SECONDS` | Janela de backoff após falha de conexão para evitar tempestade de reconexões; padrão `5`. |
-| `ANALYTICS_SOCKS_HOST` / `ANALYTICS_SOCKS_PORT` | Proxy SOCKS5 opcional para alcançar o PostgreSQL do homelab. |
+| `ANALYTICS_SOCKS_HOST` / `ANALYTICS_SOCKS_PORT` | Proxy SOCKS5 opcional para alcançar um PostgreSQL em rede privada. |
 | `ANALYTICS_SOCKS_CONNECT_TIMEOUT_SECONDS` | Timeout do handshake/conexão SOCKS5. |
 | `HTTP_TIMEOUT_SECONDS` / `HTTP_MAX_RETRIES` | Timeout e tentativas adicionais das chamadas externas. |
 | `CHART_CACHE_TTL_SECONDS` | Tempo de vida do cache de gráficos. |
@@ -125,7 +125,7 @@ Secrets de aplicação esperados no path `/ms-telemetry-dashboard-service` podem
 - `DATABRICKS_CLIENT_SECRET`, quando o fluxo admin estiver habilitado;
 - `ANALYTICS_DATABASE_URL`, quando o fluxo de usuário estiver habilitado.
 
-`DATABRICKS_CLIENT_ID` e `DATABRICKS_HOST` são configuração e podem permanecer no ambiente de deploy, embora o client ID também possa ser centralizado no Infisical se desejado. `ANALYTICS_DATABASE_URL` deve usar exclusivamente `analytics_ro` e apontar para o endereço privado do PostgreSQL no homelab; não use o writer do sincronizador. Quando o banco Analytics só estiver acessível por uma rede privada, configure o proxy SOCKS5 pelas variáveis `ANALYTICS_SOCKS_HOST` e `ANALYTICS_SOCKS_PORT`. O serviço abre um relay apenas em `127.0.0.1` e deixa o proxy encaminhar o TCP até o destino, sem acoplar a aplicação a um provedor de deploy específico. `INFISICAL_TOKEN` é o único bootstrap secreto necessário fora do cofre; project ID, environment, path e host são configuração.
+`DATABRICKS_CLIENT_ID` e `DATABRICKS_HOST` são configuração e podem permanecer no ambiente de deploy, embora o client ID também possa ser centralizado no Infisical se desejado. `ANALYTICS_DATABASE_URL` deve usar exclusivamente `analytics_ro` e apontar para o endereço privado do PostgreSQL em rede privada; não use o writer do sincronizador. Quando o banco Analytics só estiver acessível por uma rede privada, configure o proxy SOCKS5 pelas variáveis `ANALYTICS_SOCKS_HOST` e `ANALYTICS_SOCKS_PORT`. O serviço abre um relay apenas em `127.0.0.1` e deixa o proxy encaminhar o TCP até o destino, sem acoplar a aplicação a um provedor de deploy específico. `INFISICAL_TOKEN` é o único bootstrap secreto necessário fora do cofre; project ID, environment, path e host são configuração.
 
 ## Execução
 
@@ -212,7 +212,7 @@ curl -H "Authorization: Bearer $KEYCLOAK_ACCESS_TOKEN" \
 
 O último endpoint retorna `text/html` com Plotly.js e pode ser carregado pelo front. O HTML recebe CSP, `nosniff`, cache privado curto e serialização segura dos valores vindos do banco.
 
-O pool PostgreSQL força transações read-only e valida `current_user = analytics_ro`. Quando `ANALYTICS_SOCKS_HOST` está configurado, cada conexão do `asyncpg` entra em um listener efêmero em `127.0.0.1`, que executa o handshake SOCKS5 e encaminha bytes ao host/porta definidos no próprio `ANALYTICS_DATABASE_URL`. O listener não é exposto externamente. Se o Analytics ou o proxy estiver indisponível, o fluxo admin continua funcionando e as rotas de usuário que precisam consultar dados retornam `503`. O connect usa timeout curto e backoff entre novas tentativas para evitar filas de reconexão durante uma queda. O pool é recriado de forma lazy após falhas, então um reboot do homelab não exige restart do telemetry.
+O pool PostgreSQL força transações read-only e valida `current_user = analytics_ro`. Quando `ANALYTICS_SOCKS_HOST` está configurado, cada conexão do `asyncpg` entra em um listener efêmero em `127.0.0.1`, que executa o handshake SOCKS5 e encaminha bytes ao host/porta definidos no próprio `ANALYTICS_DATABASE_URL`. O listener não é exposto externamente. Se o Analytics ou o proxy estiver indisponível, o fluxo admin continua funcionando e as rotas de usuário que precisam consultar dados retornam `503`. O connect usa timeout curto e backoff entre novas tentativas para evitar filas de reconexão durante uma queda. O pool é recriado de forma lazy após falhas, então uma indisponibilidade temporária da rede privada não exige restart do telemetry.
 
 Os logs são emitidos em JSON e incluem evento, request ID, rota, status, duração e tentativas do Databricks, sem registrar tokens, secrets ou payloads de consultas.
 
