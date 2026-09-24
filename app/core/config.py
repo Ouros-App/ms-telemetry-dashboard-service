@@ -1,6 +1,6 @@
 import math
+from enum import StrEnum
 from pathlib import Path
-from typing import Literal
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, SecretStr, field_validator
@@ -47,15 +47,15 @@ def _metrics_url_is_valid(value: str) -> bool:
     return parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1"}
 
 
-TELEMETRY_KIND_MIDAS = "midas"
-TELEMETRY_KIND_KNOWLEDGE_MCP = "knowledge_mcp"
-TELEMETRY_KIND_GENERIC = "generic"
-TelemetryTargetKind = Literal["midas", "knowledge_mcp", "generic"]
+class TelemetryTargetKind(StrEnum):
+    MIDAS = "midas"
+    KNOWLEDGE_MCP = "knowledge_mcp"
+    GENERIC = "generic"
 
 
 class TelemetryTarget(BaseModel):
     name: str
-    kind: TelemetryTargetKind = "generic"
+    kind: TelemetryTargetKind = TelemetryTargetKind.GENERIC
     url: str
     token: SecretStr | None = None
 
