@@ -318,6 +318,8 @@ def render_plotly_html(
 
       .chart-shell {{
         min-height: 241px;
+        height: auto;
+        overflow: visible;
         max-height: none;
         border: 0;
         border-radius: 0;
