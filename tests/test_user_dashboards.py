@@ -444,7 +444,13 @@ def test_user_plotly_route_reports_analytics_outage_as_temporary(
     from app.repositories.analytics import AnalyticsUnavailable
 
     class UnavailableService(StubUserDashboardService):
-        async def plotly_html(self, principal, dashboard_id, chart_id):
+        async def plotly_html(
+            self,
+            principal,
+            dashboard_id,
+            chart_id,
+            render_as="auto",
+        ):
             raise AnalyticsUnavailable("offline")
 
     with TestClient(app) as client:
