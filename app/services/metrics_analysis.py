@@ -76,11 +76,11 @@ def _http_error_count(
         )
         if raw_status is None:
             continue
-        recognized_label = True
         try:
             status_code = int(raw_status)
         except ValueError:
             continue
+        recognized_label = True
         if status_code >= 500:
             total += sample.value
     return int(total) if recognized_label else None
