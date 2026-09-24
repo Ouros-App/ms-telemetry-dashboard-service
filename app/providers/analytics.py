@@ -132,7 +132,7 @@ class AnalyticsDashboardProvider:
             id="monthly-consumption",
             dashboard_id="consumption",
             title="Consumo mensal",
-            type="line",
+            type="bar",
             query_name="monthly_consumption",
             x_field="month_start",
             series=[
