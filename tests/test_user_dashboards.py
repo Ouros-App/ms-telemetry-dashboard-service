@@ -509,6 +509,8 @@ async def test_plotly_renderer_splits_mixed_unit_consumption_series() -> None:
     assert 'connectgaps: false' in html
     assert 'return null;' in html
     assert 'month: "short"' in html
+
+
 @pytest.mark.asyncio
 async def test_plotly_renderer_uses_ouros_visual_language_for_series() -> None:
     provider = AnalyticsDashboardProvider(FakeRepository())
@@ -528,8 +530,11 @@ async def test_plotly_renderer_uses_ouros_visual_language_for_series() -> None:
     assert "shape: \"spline\"" in html
     assert "hole: 0.64" in html
     assert "border-radius: 15px" in html
-    assert "Ouros Analytics" in html
+    assert "Ouros Analytics" not in html
+    assert "native-legend" in html
     assert "series-grid" in html
     assert 'type: "category"' in html
     assert "nullableNumber" in html
-    assert "linear-gradient(118deg" in html
+    assert "size: 10" in html
+    assert 'fill: "none"' in html
+    assert "linear-gradient(105.832deg" in html
