@@ -10,7 +10,11 @@ from app.schemas.user_dashboards import (
     UserDashboardListResponse,
     UserDashboardPublic,
 )
-from app.services.plotly_renderer import PLOTLY_JS_SRI, render_plotly_html
+from app.services.plotly_renderer import (
+    OUROS_CHART_TOKENS,
+    PLOTLY_JS_SRI,
+    render_plotly_html,
+)
 from app.services.user_dashboard import UserDashboardService, UserScopeError
 
 
@@ -155,6 +159,11 @@ async def test_plotly_renderer_escapes_database_text_from_inline_script() -> Non
     assert f'integrity="{PLOTLY_JS_SRI}"' in html
     assert 'crossorigin="anonymous"' in html
     assert "Plotly.newPlot" in html
+    assert OUROS_CHART_TOKENS["primary"] in html
+    assert OUROS_CHART_TOKENS["chart_blue"] in html
+    assert '"Poppins"' in html
+    assert 'type: "ouros-chart-resize"' in html
+    assert "displayModeBar: false" in html
 
 
 class StubUserDashboardService:
@@ -184,11 +193,13 @@ class StubUserDashboardService:
                     id="current-flock",
                     title="Aves atuais",
                     type="indicator",
+                    default_render_as="indicator",
+                    render_options=["indicator"],
                 )
             ]
         )
 
-    async def plotly_html(self, principal, dashboard_id, chart_id):
+    async def plotly_html(self, principal, dashboard_id, chart_id, render_as="auto"):
         return (
             '<!doctype html><script nonce="fixed">Plotly.newPlot("plot", [], {})</script>',
             "fixed",
@@ -301,6 +312,71 @@ async def test_user_service_maps_missing_catalog_items() -> None:
 
 
 @pytest.mark.asyncio
+async def test_chart_catalog_exposes_figma_render_options() -> None:
+    service = UserDashboardService(AnalyticsDashboardProvider(FakeRepository()))
+
+    consumption = await service.list_charts(farm_owner(), "consumption")
+    monthly = next(item for item in consumption.items if item.id == "monthly-consumption")
+    assert monthly.default_render_as == "line"
+    assert monthly.render_options == ["line", "bar"]
+
+    goals = await service.list_charts(farm_owner(), "goals")
+    status = next(item for item in goals.items if item.id == "goal-status")
+    assert status.default_render_as == "donut"
+    assert status.render_options == ["donut", "bar"]
+
+
+@pytest.mark.asyncio
+async def test_plotly_render_style_can_be_selected_per_request() -> None:
+    repository = FakeRepository(
+        {
+            "monthly_consumption": [
+                {
+                    "month_start": "2026-09-01",
+                    "water_consumed_m3": 12.5,
+                    "energy_consumed_kwh": 33.0,
+                }
+            ]
+        }
+    )
+    service = UserDashboardService(AnalyticsDashboardProvider(repository))
+
+    line_html, _ = await service.plotly_html(
+        farm_owner(),
+        "consumption",
+        "monthly-consumption",
+        render_as="line",
+    )
+    bar_html, _ = await service.plotly_html(
+        farm_owner(),
+        "consumption",
+        "monthly-consumption",
+        render_as="bar",
+    )
+
+    assert '"render_as":"line"' in line_html
+    assert '"render_as":"bar"' in bar_html
+    assert len(repository.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_plotly_rejects_incompatible_render_style() -> None:
+    from app.services.user_dashboard import UserChartRenderUnsupported
+
+    service = UserDashboardService(AnalyticsDashboardProvider(FakeRepository()))
+
+    with pytest.raises(UserChartRenderUnsupported) as exc_info:
+        await service.plotly_html(
+            farm_owner(),
+            "overview",
+            "current-flock",
+            render_as="bar",
+        )
+
+    assert exc_info.value.allowed == ["indicator"]
+
+
+@pytest.mark.asyncio
 async def test_provider_rejects_unknown_query_definition() -> None:
     from app.repositories.analytics import AnalyticsQueryError
     from app.schemas.user_dashboards import UserChartDefinition
@@ -351,7 +427,7 @@ async def test_plotly_renderer_covers_line_and_pie_shapes() -> None:
             }
         ],
     )
-    assert 'type: chart.type === "line" ? "scatter" : "bar"' in line_html
+    assert 'type: renderType === "line" ? "scatter" : "bar"' in line_html
 
     pie_chart = await provider.get_chart("goals", "goal-status")
     pie_html, _ = render_plotly_html(
@@ -368,7 +444,13 @@ def test_user_plotly_route_reports_analytics_outage_as_temporary(
     from app.repositories.analytics import AnalyticsUnavailable
 
     class UnavailableService(StubUserDashboardService):
-        async def plotly_html(self, principal, dashboard_id, chart_id):
+        async def plotly_html(
+            self,
+            principal,
+            dashboard_id,
+            chart_id,
+            render_as="auto",
+        ):
             raise AnalyticsUnavailable("offline")
 
     with TestClient(app) as client:
@@ -384,3 +466,38 @@ def test_user_plotly_route_reports_analytics_outage_as_temporary(
 
     assert response.status_code == 503
     assert response.json()["detail"] == "User analytics is temporarily unavailable"
+
+
+@pytest.mark.asyncio
+async def test_plotly_renderer_shows_designed_empty_state() -> None:
+    provider = AnalyticsDashboardProvider(FakeRepository())
+    chart = await provider.get_chart("production", "lot-throughput")
+
+    html, _ = render_plotly_html(chart, [])
+
+    assert "Sem dados neste período" in html
+    assert "empty-state" in html
+    assert "if (!rows.length)" in html
+    assert OUROS_CHART_TOKENS["canvas"] in html
+
+
+@pytest.mark.asyncio
+async def test_plotly_renderer_uses_ouros_visual_language_for_series() -> None:
+    provider = AnalyticsDashboardProvider(FakeRepository())
+    chart = await provider.get_chart("consumption", "monthly-consumption")
+
+    html, _ = render_plotly_html(
+        chart,
+        [
+            {
+                "month_start": "2026-09-01",
+                "water_consumed_m3": 12.5,
+                "energy_consumed_kwh": 33.0,
+            }
+        ],
+    )
+
+    assert "shape: \"spline\"" in html
+    assert "hole: 0.56" in html
+    assert "border-radius: 15px" in html
+    assert "linear-gradient(106deg" in html

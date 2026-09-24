@@ -183,6 +183,86 @@ curl -H "Authorization: Bearer $KEYCLOAK_ACCESS_TOKEN" \
 
 O último endpoint retorna `text/html` com Plotly.js e pode ser carregado pelo front. O HTML recebe CSP, `nosniff`, cache privado curto e serialização segura dos valores vindos do banco.
 
+#### Integração visual mobile/web
+
+Os gráficos de usuário seguem os tokens do board **2️⃣ | Segundo** do Figma: Poppins, fundo `#F2F5F7`, texto `#010B13`, ouro `#D8A23A`, azul `#110B95`, bordas suaves e cards de raio 15 px. O renderer é responsivo, remove a modebar do Plotly, possui estado vazio próprio e envia a altura renderizada para hosts embutidos.
+
+Os presets visuais também foram derivados dos gráficos desenhados pelos designers: **KPI/indicator**, **donut de progresso**, **linha comparativa com pontos** e **barras agrupadas**. A definição do gráfico continua escolhendo um padrão coerente, mas o frontend pode selecionar outra visualização compatível com o mesmo conjunto de dados usando `render_as`:
+
+```text
+GET /v1/user/dashboards/consumption/charts/monthly-consumption/plotly?render_as=line
+GET /v1/user/dashboards/consumption/charts/monthly-consumption/plotly?render_as=bar
+GET /v1/user/dashboards/overview/charts/capacity-utilization/plotly?render_as=donut
+GET /v1/user/dashboards/overview/charts/capacity-utilization/plotly?render_as=indicator
+```
+
+Valores disponíveis no contrato: `auto`, `indicator`, `donut`, `line` e `bar`. `auto` usa o preset padrão do gráfico. Nem toda combinação é semanticamente válida; por exemplo, `current-flock` só aceita `indicator`. O endpoint de listagem de charts informa `default_render_as` e `render_options`, então mobile e web não precisam manter uma tabela própria de compatibilidade.
+
+Exemplo de item retornado por `GET /v1/user/dashboards/consumption/charts`:
+
+```json
+{
+  "id": "monthly-consumption",
+  "title": "Consumo mensal",
+  "type": "line",
+  "default_render_as": "line",
+  "render_options": ["line", "bar"]
+}
+```
+
+Para Android/iOS, carregue a rota `/plotly` em um WebView enviando o mesmo Bearer JWT no request inicial. Quando o gráfico terminar de renderizar, o HTML envia para `ReactNativeWebView.postMessage`:
+
+```json
+{"type":"ouros-chart-resize","chartId":"lot-throughput","height":320}
+```
+
+No React web, prefira buscar o HTML autenticado e colocá-lo em um `iframe srcDoc`. Isso evita expor token na URL e mantém o CSS/Plotly isolados do restante da aplicação. O HTML carrega sua própria CSP por meta tag para que a proteção continue ativa dentro de `srcDoc`.
+
+```tsx
+const iframeRef = useRef<HTMLIFrameElement>(null);
+const [chartHeight, setChartHeight] = useState(360);
+
+useEffect(() => {
+  const onMessage = (event: MessageEvent) => {
+    if (event.source !== iframeRef.current?.contentWindow) return;
+
+    const message = event.data;
+    if (
+      !message ||
+      message.type !== "ouros-chart-resize" ||
+      message.chartId !== "lot-throughput" ||
+      !Number.isFinite(message.height)
+    ) {
+      return;
+    }
+
+    setChartHeight(Math.max(240, Math.min(message.height, 800)));
+  };
+
+  window.addEventListener("message", onMessage);
+  return () => window.removeEventListener("message", onMessage);
+}, []);
+
+const response = await fetch(
+  `${API}/v1/user/dashboards/production/charts/lot-throughput/plotly?render_as=bar`,
+  { headers: { Authorization: `Bearer ${accessToken}` } },
+);
+
+const html = await response.text();
+
+return (
+  <iframe
+    ref={iframeRef}
+    title="Movimentação dos lotes"
+    srcDoc={html}
+    sandbox="allow-scripts"
+    style={{ width: "100%", height: chartHeight, border: 0 }}
+  />
+);
+```
+
+O listener valida a janela emissora, o tipo do evento, o `chartId` e a altura antes de redimensionar o iframe. Configure `CORS_ORIGINS` para a origem real do frontend que fará o `fetch`.
+
 O pool PostgreSQL força transações read-only e valida `current_user = analytics_ro`. Quando `ANALYTICS_SOCKS_HOST` está configurado, cada conexão do `asyncpg` entra em um listener efêmero em `127.0.0.1`, que executa o handshake SOCKS5 e encaminha bytes ao host/porta definidos no próprio `ANALYTICS_DATABASE_URL`. O listener não é exposto externamente. Se o Analytics ou o proxy estiver indisponível, o fluxo admin continua funcionando e as rotas de usuário que precisam consultar dados retornam `503`. O connect usa timeout curto e backoff entre novas tentativas para evitar filas de reconexão durante uma queda. O pool é recriado de forma lazy após falhas, então um reboot do homelab não exige restart do telemetry.
 
 Os logs são emitidos em JSON e incluem evento, request ID, rota, status, duração e tentativas do Databricks, sem registrar tokens, secrets ou payloads de consultas.
