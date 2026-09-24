@@ -61,7 +61,7 @@ def _assumptions() -> list[str]:
     return [
         "Os valores sao medias acumuladas desde o ultimo restart dos processos.",
         "O custo por token usa preco de lista versionado, nao o valor efetivamente pago.",
-        "NVIDIA NIM e outros modelos sem preco por token ficam fora da estimativa monetaria.",
+        "Modelos sem preco publico por token ficam fora da estimativa monetaria.",
         "CPU media usa process_cpu_seconds_total dividido pelo uptime e e uma aproximacao de cores ocupados no periodo.",
         "RAM e concorrencia sao snapshots/medias operacionais, nao limites de capacidade.",
         "O baseline nao escolhe hardware, replicas ou margem de seguranca; ele fornece entradas para um simulador posterior.",
