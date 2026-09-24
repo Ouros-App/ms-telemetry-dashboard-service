@@ -7,6 +7,7 @@ from app.repositories.analytics import AnalyticsQueryError, AnalyticsUnavailable
 from app.schemas.user_dashboards import (
     UserChartListResponse,
     UserChartPublic,
+    UserChartRenderType,
     UserDashboardListResponse,
     UserDashboardPublic,
 )
@@ -25,6 +26,13 @@ class UserScopeError(Exception):
     pass
 
 
+class UserChartRenderUnsupported(Exception):
+    def __init__(self, render_as: str, allowed: list[str]) -> None:
+        self.render_as = render_as
+        self.allowed = allowed
+        super().__init__(f"unsupported chart render type: {render_as}")
+
+
 @dataclass(frozen=True)
 class CachedHtml:
     created_at: float
@@ -41,7 +49,7 @@ class UserDashboardService:
         self.provider = provider
         self.chart_cache_ttl_seconds = chart_cache_ttl_seconds
         self._html_cache: dict[
-            tuple[str, int, str, str],
+            tuple[str, int, str, str, str],
             CachedHtml,
         ] = {}
 
@@ -105,25 +113,33 @@ class UserDashboardService:
             raise UserDashboardNotFound(dashboard_id) from exc
         return UserChartListResponse(
             items=[
-                UserChartPublic(id=item.id, title=item.title, type=item.type)
+                UserChartPublic(
+                    id=item.id,
+                    title=item.title,
+                    type=item.type,
+                    default_render_as=self._default_render_as(item),
+                    render_options=self._render_options(item),
+                )
                 for item in charts
             ]
         )
+
+    @staticmethod
+    def _default_render_as(chart) -> UserChartRenderType:
+        return "donut" if chart.type == "pie" else chart.type
+
+    @classmethod
+    def _render_options(cls, chart) -> list[UserChartRenderType]:
+        return chart.render_options or [cls._default_render_as(chart)]
 
     async def plotly_html(
         self,
         principal: Principal,
         dashboard_id: str,
         chart_id: str,
+        render_as: UserChartRenderType = "auto",
     ) -> tuple[str, str]:
         scope = self.scope_for(principal)
-        cache_key = (*scope.cache_key, dashboard_id, chart_id)
-        cached = self._html_cache.get(cache_key)
-        if (
-            cached is not None
-            and time.monotonic() - cached.created_at < self.chart_cache_ttl_seconds
-        ):
-            return cached.html, cached.nonce
 
         try:
             chart = await self.provider.get_chart(dashboard_id, chart_id)
@@ -133,8 +149,23 @@ class UserDashboardService:
                 raise UserDashboardNotFound(dashboard_id) from exc
             raise UserChartNotFound(chart_id) from exc
 
+        resolved_render_as = (
+            self._default_render_as(chart) if render_as == "auto" else render_as
+        )
+        allowed = self._render_options(chart)
+        if resolved_render_as not in allowed:
+            raise UserChartRenderUnsupported(resolved_render_as, list(allowed))
+
+        cache_key = (*scope.cache_key, dashboard_id, chart_id, resolved_render_as)
+        cached = self._html_cache.get(cache_key)
+        if (
+            cached is not None
+            and time.monotonic() - cached.created_at < self.chart_cache_ttl_seconds
+        ):
+            return cached.html, cached.nonce
+
         rows = await self.provider.execute_chart_query(scope, chart)
-        html, nonce = render_plotly_html(chart, rows)
+        html, nonce = render_plotly_html(chart, rows, render_as=resolved_render_as)
         self._html_cache[cache_key] = CachedHtml(
             created_at=time.monotonic(),
             html=html,
@@ -147,6 +178,7 @@ __all__ = [
     "AnalyticsQueryError",
     "AnalyticsUnavailable",
     "UserChartNotFound",
+    "UserChartRenderUnsupported",
     "UserDashboardNotFound",
     "UserDashboardService",
     "UserScopeError",
