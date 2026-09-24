@@ -361,6 +361,10 @@ def render_plotly_html(
             showlegend: false,
           }}];
           layout.annotations = [{{
+            x: 0.5,
+            y: 0.5,
+            xref: "paper",
+            yref: "paper",
             text: "<b>" + text(value) + text(chart.value_suffix || "") + "</b>",
             showarrow: false,
             font: {{ color: tokens.text, size: 28, family: "Poppins, Inter, system-ui, sans-serif" }},
