@@ -541,18 +541,21 @@ def render_plotly_html(
     const formatCategory = (value, field) => {{
       const date = parseIsoDate(value);
       if (!date) return text(value);
-      if (field === "month_start") {{
-        return new Intl.DateTimeFormat("pt-BR", {{
-          month: "short",
-          year: "2-digit",
-          timeZone: "UTC",
-        }}).format(date).replace(".", "");
-      }}
-      return new Intl.DateTimeFormat("pt-BR", {{
+      const parts = new Intl.DateTimeFormat("pt-BR", {{
         day: "2-digit",
         month: "short",
+        year: "2-digit",
         timeZone: "UTC",
-      }}).format(date).replace(".", "");
+      }}).formatToParts(date);
+      const day = parts.find((part) => part.type === "day")?.value || "";
+      const month = (
+        parts.find((part) => part.type === "month")?.value || ""
+      ).replace(".", "");
+      const year = parts.find((part) => part.type === "year")?.value || "";
+      if (field === "month_start") {{
+        return month + "/" + year;
+      }}
+      return day + " " + month + "/" + year;
     }};
 
     const setPeriodBadge = () => {{
