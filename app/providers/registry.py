@@ -1,6 +1,24 @@
+import logging
 from typing import Protocol
 
+from app.clients.databricks import (
+    DatabricksIntegrationError,
+    DatabricksTimeoutError,
+)
+from app.clients.prometheus import (
+    PrometheusIntegrationError,
+    PrometheusTimeoutError,
+)
 from app.schemas.dashboards import DashboardChartDefinition, DashboardRecord
+
+logger = logging.getLogger(__name__)
+
+_PROVIDER_ERRORS = (
+    DatabricksIntegrationError,
+    DatabricksTimeoutError,
+    PrometheusIntegrationError,
+    PrometheusTimeoutError,
+)
 
 
 class AdminDashboardProvider(Protocol):
@@ -37,8 +55,28 @@ class DashboardProviderRegistry:
 
     async def list_dashboards(self) -> list[DashboardRecord]:
         dashboards: list[DashboardRecord] = []
+        failures: list[Exception] = []
+        successful_providers = 0
+
         for provider in self._providers.values():
-            dashboards.extend(await provider.list_dashboards())
+            try:
+                provider_dashboards = await provider.list_dashboards()
+            except _PROVIDER_ERRORS as exc:
+                failures.append(exc)
+                logger.warning(
+                    "dashboard provider listing failed",
+                    extra={
+                        "event": "dashboard_provider_list_failed",
+                        "provider": provider.provider_name,
+                    },
+                )
+                continue
+
+            successful_providers += 1
+            dashboards.extend(provider_dashboards)
+
+        if successful_providers == 0 and failures:
+            raise failures[0]
         return dashboards
 
     def provider_for(self, dashboard: DashboardRecord) -> AdminDashboardProvider:
