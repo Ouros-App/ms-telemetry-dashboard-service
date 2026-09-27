@@ -77,10 +77,19 @@ async def lifespan(app: FastAPI):
     prometheus_http: PrometheusHttpClient | None = None
     if settings.prometheus_configured:
         prometheus_http = PrometheusHttpClient(client, settings)
-        await prometheus_http.start()
-        admin_providers.append(
-            PrometheusDashboardProvider(prometheus_http, settings)
-        )
+        try:
+            await prometheus_http.start()
+        except OSError:
+            logger.exception(
+                "Prometheus SOCKS relay could not start",
+                extra={"event": "prometheus_relay_start_failed"},
+            )
+            await prometheus_http.close()
+            prometheus_http = None
+        else:
+            admin_providers.append(
+                PrometheusDashboardProvider(prometheus_http, settings)
+            )
 
     app.state.settings = settings
     app.state.dashboard_service = DashboardService(
