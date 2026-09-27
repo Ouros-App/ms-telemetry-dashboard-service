@@ -64,8 +64,8 @@ def metrics() -> Response:
     summary="List admin dashboards",
     description="Returns dashboards exposed by the configured admin providers.",
     responses={
-        502: {"description": DATABRICKS_INTEGRATION_DETAIL},
-        504: {"description": DATABRICKS_TIMEOUT_DETAIL},
+        502: {"description": DASHBOARD_PROVIDER_INTEGRATION_DETAIL},
+        504: {"description": DASHBOARD_PROVIDER_TIMEOUT_DETAIL},
     },
     dependencies=[Depends(require_bearer)],
     tags=["dashboards"],
@@ -92,8 +92,8 @@ async def list_dashboards(
     summary="Get a dashboard",
     responses={
         404: {"description": "Dashboard not found"},
-        502: {"description": DATABRICKS_INTEGRATION_DETAIL},
-        504: {"description": DATABRICKS_TIMEOUT_DETAIL},
+        502: {"description": DASHBOARD_PROVIDER_INTEGRATION_DETAIL},
+        504: {"description": DASHBOARD_PROVIDER_TIMEOUT_DETAIL},
     },
     dependencies=[Depends(require_bearer)],
     tags=["dashboards"],
@@ -123,8 +123,8 @@ async def get_dashboard(
     summary="List charts in a dashboard",
     responses={
         404: {"description": "Dashboard not found"},
-        502: {"description": DATABRICKS_INTEGRATION_DETAIL},
-        504: {"description": DATABRICKS_TIMEOUT_DETAIL},
+        502: {"description": DASHBOARD_PROVIDER_INTEGRATION_DETAIL},
+        504: {"description": DASHBOARD_PROVIDER_TIMEOUT_DETAIL},
     },
     dependencies=[Depends(require_bearer)],
     tags=["dashboards"],
@@ -157,8 +157,8 @@ async def list_charts(
     dependencies=[Depends(require_bearer)],
     responses={
         404: {"description": "Dashboard or chart not found"},
-        502: {"description": DATABRICKS_INTEGRATION_DETAIL},
-        504: {"description": DATABRICKS_TIMEOUT_DETAIL},
+        502: {"description": DASHBOARD_PROVIDER_INTEGRATION_DETAIL},
+        504: {"description": DASHBOARD_PROVIDER_TIMEOUT_DETAIL},
     },
     tags=["dashboards"],
 )
@@ -196,8 +196,8 @@ async def chart_png(
     dependencies=[Depends(require_bearer)],
     responses={
         404: {"description": "Dashboard or chart not found"},
-        502: {"description": DATABRICKS_INTEGRATION_DETAIL},
-        504: {"description": DATABRICKS_TIMEOUT_DETAIL},
+        502: {"description": DASHBOARD_PROVIDER_INTEGRATION_DETAIL},
+        504: {"description": DASHBOARD_PROVIDER_TIMEOUT_DETAIL},
     },
     tags=["dashboards"],
 )
