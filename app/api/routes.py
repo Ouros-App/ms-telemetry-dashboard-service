@@ -14,6 +14,7 @@ from fastapi.responses import HTMLResponse
 from prometheus_client import CONTENT_TYPE_LATEST
 
 from app.clients.databricks import DatabricksIntegrationError, DatabricksTimeoutError
+from app.clients.prometheus import PrometheusIntegrationError, PrometheusTimeoutError
 from app.core.auth import require_bearer
 from app.core.metrics import metrics_payload
 from app.schemas.common import HealthResponse, MessageResponse, ReadinessResponse
@@ -26,8 +27,8 @@ from app.services.dashboard import ChartNotFound, DashboardNotFound, DashboardSe
 
 router = APIRouter()
 
-DATABRICKS_TIMEOUT_DETAIL = "Databricks request timed out"
-DATABRICKS_INTEGRATION_DETAIL = "Databricks integration failed"
+DASHBOARD_PROVIDER_TIMEOUT_DETAIL = "Dashboard provider request timed out"
+DASHBOARD_PROVIDER_INTEGRATION_DETAIL = "Dashboard provider integration failed"
 
 
 def get_dashboard_service(request: Request) -> DashboardService:
@@ -60,8 +61,8 @@ def metrics() -> Response:
 
 @router.get(
     "/v1/dashboards",
-    summary="List Databricks dashboards",
-    description="Returns every active dashboard visible to the configured Databricks credentials.",
+    summary="List admin dashboards",
+    description="Returns dashboards exposed by the configured admin providers.",
     responses={
         502: {"description": DATABRICKS_INTEGRATION_DETAIL},
         504: {"description": DATABRICKS_TIMEOUT_DETAIL},
@@ -74,10 +75,16 @@ async def list_dashboards(
 ) -> DashboardListResponse:
     try:
         return await service.list_dashboards()
-    except DatabricksTimeoutError as exc:
-        raise HTTPException(status_code=504, detail=DATABRICKS_TIMEOUT_DETAIL) from exc
-    except DatabricksIntegrationError as exc:
-        raise HTTPException(status_code=502, detail=DATABRICKS_INTEGRATION_DETAIL) from exc
+    except (DatabricksTimeoutError, PrometheusTimeoutError) as exc:
+        raise HTTPException(
+            status_code=504,
+            detail=DASHBOARD_PROVIDER_TIMEOUT_DETAIL,
+        ) from exc
+    except (DatabricksIntegrationError, PrometheusIntegrationError) as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=DASHBOARD_PROVIDER_INTEGRATION_DETAIL,
+        ) from exc
 
 
 @router.get(
@@ -99,10 +106,16 @@ async def get_dashboard(
         return await service.get_dashboard(dashboard_id)
     except DashboardNotFound as exc:
         raise HTTPException(status_code=404, detail="dashboard not found") from exc
-    except DatabricksTimeoutError as exc:
-        raise HTTPException(status_code=504, detail=DATABRICKS_TIMEOUT_DETAIL) from exc
-    except DatabricksIntegrationError as exc:
-        raise HTTPException(status_code=502, detail=DATABRICKS_INTEGRATION_DETAIL) from exc
+    except (DatabricksTimeoutError, PrometheusTimeoutError) as exc:
+        raise HTTPException(
+            status_code=504,
+            detail=DASHBOARD_PROVIDER_TIMEOUT_DETAIL,
+        ) from exc
+    except (DatabricksIntegrationError, PrometheusIntegrationError) as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=DASHBOARD_PROVIDER_INTEGRATION_DETAIL,
+        ) from exc
 
 
 @router.get(
@@ -124,10 +137,16 @@ async def list_charts(
         return await service.list_charts(dashboard_id)
     except DashboardNotFound as exc:
         raise HTTPException(status_code=404, detail="dashboard not found") from exc
-    except DatabricksTimeoutError as exc:
-        raise HTTPException(status_code=504, detail=DATABRICKS_TIMEOUT_DETAIL) from exc
-    except DatabricksIntegrationError as exc:
-        raise HTTPException(status_code=502, detail=DATABRICKS_INTEGRATION_DETAIL) from exc
+    except (DatabricksTimeoutError, PrometheusTimeoutError) as exc:
+        raise HTTPException(
+            status_code=504,
+            detail=DASHBOARD_PROVIDER_TIMEOUT_DETAIL,
+        ) from exc
+    except (DatabricksIntegrationError, PrometheusIntegrationError) as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=DASHBOARD_PROVIDER_INTEGRATION_DETAIL,
+        ) from exc
 
 
 @router.get(
@@ -157,10 +176,16 @@ async def chart_png(
         )
     except (DashboardNotFound, ChartNotFound) as exc:
         raise HTTPException(status_code=404, detail="dashboard or chart not found") from exc
-    except DatabricksTimeoutError as exc:
-        raise HTTPException(status_code=504, detail=DATABRICKS_TIMEOUT_DETAIL) from exc
-    except DatabricksIntegrationError as exc:
-        raise HTTPException(status_code=502, detail=DATABRICKS_INTEGRATION_DETAIL) from exc
+    except (DatabricksTimeoutError, PrometheusTimeoutError) as exc:
+        raise HTTPException(
+            status_code=504,
+            detail=DASHBOARD_PROVIDER_TIMEOUT_DETAIL,
+        ) from exc
+    except (DatabricksIntegrationError, PrometheusIntegrationError) as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=DASHBOARD_PROVIDER_INTEGRATION_DETAIL,
+        ) from exc
 
 
 @router.get(
@@ -257,7 +282,13 @@ async def chartjs_chart(
         return HTMLResponse(content=content, headers={"Cache-Control": "no-store"})
     except (DashboardNotFound, ChartNotFound) as exc:
         raise HTTPException(status_code=404, detail="dashboard or chart not found") from exc
-    except DatabricksTimeoutError as exc:
-        raise HTTPException(status_code=504, detail=DATABRICKS_TIMEOUT_DETAIL) from exc
-    except DatabricksIntegrationError as exc:
-        raise HTTPException(status_code=502, detail=DATABRICKS_INTEGRATION_DETAIL) from exc
+    except (DatabricksTimeoutError, PrometheusTimeoutError) as exc:
+        raise HTTPException(
+            status_code=504,
+            detail=DASHBOARD_PROVIDER_TIMEOUT_DETAIL,
+        ) from exc
+    except (DatabricksIntegrationError, PrometheusIntegrationError) as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=DASHBOARD_PROVIDER_INTEGRATION_DETAIL,
+        ) from exc
