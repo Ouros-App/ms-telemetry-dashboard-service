@@ -7,7 +7,7 @@ class DashboardRecord(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,63}$")
-    provider: Literal["databricks"]
+    provider: Literal["databricks", "prometheus"]
     title: str = Field(min_length=1, max_length=200)
     description: str = Field(default="", max_length=1000)
     dashboard_id: str = Field(min_length=1, max_length=200)
