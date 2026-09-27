@@ -53,6 +53,27 @@ class PrometheusDashboardProvider:
             ),
             dashboard_id="prometheus-telemetry",
         ),
+        DashboardRecord(
+            id="prometheus-auth",
+            provider="prometheus",
+            title="Observabilidade · Auth",
+            description="Login, tokens, rate limiting e dependências do auth service.",
+            dashboard_id="prometheus-auth",
+        ),
+        DashboardRecord(
+            id="prometheus-mcp",
+            provider="prometheus",
+            title="Observabilidade · MCP",
+            description="Transporte, tools e dependências do servidor MCP.",
+            dashboard_id="prometheus-mcp",
+        ),
+        DashboardRecord(
+            id="prometheus-spring",
+            provider="prometheus",
+            title="Observabilidade · Spring API",
+            description="HTTP, JVM, processo e pool de conexões da API Spring.",
+            dashboard_id="prometheus-spring",
+        ),
     )
 
     chart_specs: ClassVar[tuple[PrometheusChartSpec, ...]] = (
@@ -180,6 +201,143 @@ class PrometheusDashboardProvider:
                 "(rate(databricks_errors_total[5m]))"
             ),
             label_name="operation",
+        ),
+        PrometheusChartSpec(
+            id="auth-request-rate",
+            dashboard_id="prometheus-auth",
+            title="Requests por segundo",
+            type="line",
+            query=(
+                'sum(rate(auth_service_http_requests_total'
+                '{job="ouros-auth"}[5m]))'
+            ),
+            mode="range",
+        ),
+        PrometheusChartSpec(
+            id="auth-p95-latency",
+            dashboard_id="prometheus-auth",
+            title="Latência p95 por rota",
+            type="bar",
+            query=(
+                "histogram_quantile(0.95, "
+                "sum by (le, route) "
+                "(rate(auth_service_http_request_duration_seconds_bucket"
+                '{job="ouros-auth"}[5m])))'
+            ),
+            label_name="route",
+        ),
+        PrometheusChartSpec(
+            id="auth-operations",
+            dashboard_id="prometheus-auth",
+            title="Operações de autenticação",
+            type="bar",
+            query=(
+                "sum by (operation) "
+                "(rate(auth_service_operations_total[5m]))"
+            ),
+            label_name="operation",
+        ),
+        PrometheusChartSpec(
+            id="auth-dependencies",
+            dashboard_id="prometheus-auth",
+            title="Dependências",
+            type="bar",
+            query=(
+                'max by (dependency) '
+                '(auth_service_dependency_ready{job="ouros-auth"})'
+            ),
+            label_name="dependency",
+        ),
+        PrometheusChartSpec(
+            id="mcp-request-rate",
+            dashboard_id="prometheus-mcp",
+            title="Requests por segundo",
+            type="line",
+            query=(
+                'sum(rate(mcp_server_http_requests_total'
+                '{job="ouros-mcp"}[5m]))'
+            ),
+            mode="range",
+        ),
+        PrometheusChartSpec(
+            id="mcp-p95-latency",
+            dashboard_id="prometheus-mcp",
+            title="Latência HTTP p95",
+            type="bar",
+            query=(
+                "histogram_quantile(0.95, "
+                "sum by (le, route) "
+                "(rate(mcp_server_http_request_duration_seconds_bucket"
+                '{job="ouros-mcp"}[5m])))'
+            ),
+            label_name="route",
+        ),
+        PrometheusChartSpec(
+            id="mcp-tool-rate",
+            dashboard_id="prometheus-mcp",
+            title="Uso de tools",
+            type="bar",
+            query=(
+                "sum by (tool) "
+                "(rate(mcp_server_tool_calls_total[5m]))"
+            ),
+            label_name="tool",
+        ),
+        PrometheusChartSpec(
+            id="mcp-tool-p95",
+            dashboard_id="prometheus-mcp",
+            title="Latência p95 por tool",
+            type="bar",
+            query=(
+                "histogram_quantile(0.95, "
+                "sum by (le, tool) "
+                "(rate(mcp_server_tool_duration_seconds_bucket[5m])))"
+            ),
+            label_name="tool",
+        ),
+        PrometheusChartSpec(
+            id="spring-request-rate",
+            dashboard_id="prometheus-spring",
+            title="Requests por segundo",
+            type="line",
+            query=(
+                'sum(rate(http_server_requests_seconds_count'
+                '{job="ouros-spring"}[5m]))'
+            ),
+            mode="range",
+        ),
+        PrometheusChartSpec(
+            id="spring-p95-latency",
+            dashboard_id="prometheus-spring",
+            title="Latência p95 por rota",
+            type="bar",
+            query=(
+                "histogram_quantile(0.95, "
+                "sum by (le, uri) "
+                "(rate(http_server_requests_seconds_bucket"
+                '{job="ouros-spring"}[5m])))'
+            ),
+            label_name="uri",
+        ),
+        PrometheusChartSpec(
+            id="spring-heap-used",
+            dashboard_id="prometheus-spring",
+            title="Heap JVM em uso",
+            type="counter",
+            query=(
+                'sum(jvm_memory_used_bytes'
+                '{job="ouros-spring",area="heap"})'
+            ),
+        ),
+        PrometheusChartSpec(
+            id="spring-db-connections",
+            dashboard_id="prometheus-spring",
+            title="Conexões Hikari ativas",
+            type="counter",
+            query=(
+                'sum(hikaricp_connections_active'
+                '{job="ouros-spring"})'
+            ),
         ),
     )
 
