@@ -20,12 +20,14 @@ class Socks5TcpRelay:
         target_port: int,
         *,
         connect_timeout_seconds: float = 5.0,
+        event_name: str = "analytics_socks_relay_failed",
     ) -> None:
         self.proxy_host = proxy_host
         self.proxy_port = proxy_port
         self.target_host = target_host
         self.target_port = target_port
         self.connect_timeout_seconds = connect_timeout_seconds
+        self.event_name = event_name
         self._server: asyncio.AbstractServer | None = None
 
     @property
@@ -168,7 +170,7 @@ class Socks5TcpRelay:
             logger.warning(
                 "SOCKS5 relay connection failed",
                 extra={
-                    "event": "analytics_socks_relay_failed",
+                    "event": self.event_name,
                     "error_type": type(exc).__name__,
                 },
             )
