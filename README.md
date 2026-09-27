@@ -12,13 +12,14 @@
 </div>
 <!-- REPO-METADATA:END -->
 
-Microserviço FastAPI com dois fluxos independentes de dashboards: administração via Databricks e dashboards do app via PostgreSQL Analytics. O fluxo admin mantém dados/HTML Chart.js/PNG; o fluxo de usuário retorna HTML Plotly.js já filtrado pelo escopo assinado no JWT.
+Microserviço FastAPI com dois fluxos independentes de dashboards: administração via providers Databricks e Prometheus, e dashboards do app via PostgreSQL Analytics. O fluxo admin mantém dados/HTML Chart.js/PNG; o fluxo de usuário retorna HTML Plotly.js já filtrado pelo escopo assinado no JWT.
 
 ## Status e escopo
 
 O serviço possui:
 
-- consulta de dashboards administrativos ativos visíveis para as credenciais Databricks configuradas;
+- consulta de dashboards administrativos via registry de providers, com Databricks e Prometheus;
+- dashboards de observabilidade do Prometheus para saúde dos targets, tráfego, latência, Midas AI e dependências do telemetry;
 - dashboards de usuário derivados do PostgreSQL Analytics com isolamento por `farm_id` ou `enterprise_id` do JWT;
 - listagem de dashboards e gráficos;
 - renderização de gráficos administrativos em PNG;
@@ -34,9 +35,15 @@ O arquivo `data/dashboards.json` existe no repositório e atualmente contém uma
 ```text
 admin routes
   -> DashboardService
-      -> DatabricksDashboardProvider
-          -> DatabricksHttpClient
-          -> DatabricksAuthClient
+      -> DashboardProviderRegistry
+          -> DatabricksDashboardProvider
+              -> DatabricksHttpClient
+              -> DatabricksAuthClient
+          -> PrometheusDashboardProvider
+              -> PrometheusHttpClient
+              -> SOCKS5 relay
+                  -> tailscale-proxy:1055
+                      -> Prometheus no homelab
 
 user routes
   -> UserDashboardService
@@ -80,6 +87,10 @@ Copie `.env.example` para `.env`. As variáveis disponíveis são:
 | `DATABRICKS_HOST` | URL HTTPS do workspace Databricks. |
 | `DATABRICKS_CLIENT_ID` / `DATABRICKS_CLIENT_SECRET` | Credenciais OAuth do service principal. |
 | `DATABRICKS_TOKEN_URL` | URL OAuth opcional; por padrão é derivada do host. |
+| `PROMETHEUS_URL` | URL privada do Prometheus; no homelab atual, `http://192.168.15.11:9090`. |
+| `PROMETHEUS_SOCKS_HOST` / `PROMETHEUS_SOCKS_PORT` | Proxy SOCKS5 usado pela Discloud para alcançar a rede do homelab; normalmente `tailscale-proxy:1055`. |
+| `PROMETHEUS_SOCKS_CONNECT_TIMEOUT_SECONDS` | Timeout da conexão TCP até o proxy SOCKS5. |
+| `PROMETHEUS_RANGE_SECONDS` / `PROMETHEUS_STEP_SECONDS` | Janela e resolução dos gráficos temporais Prometheus. |
 | `ANALYTICS_DATABASE_URL` | DSN PostgreSQL do banco Analytics, usando o role read-only `analytics_ro`. |
 | `ANALYTICS_EXPECTED_ROLE` | Role PostgreSQL exigido pelo serviço; padrão `analytics_ro`. A conexão é recusada se `current_user` for diferente. |
 | `ANALYTICS_POOL_MIN_SIZE` / `ANALYTICS_POOL_MAX_SIZE` | Limites do pool de conexões do fluxo de usuário. |
@@ -129,6 +140,8 @@ Rotas públicas:
 - `GET /docs`: documentação gerada pelo FastAPI.
 
 ### Fluxo administrativo
+
+O fluxo administrativo agrega dashboards de todos os providers registrados. Os dashboards retornados incluem o campo `provider`, hoje `databricks` ou `prometheus`. O provider Prometheus consulta a HTTP API privada do homelab; na Discloud, a conexão TCP passa pelo `tailscale-proxy:1055` usando o mesmo relay local já empregado pelo PostgreSQL Analytics.
 
 As rotas administrativas continuam protegidas por access token do Keycloak com audience `ms-telemetry-dashboard-service` e realm role `admin`:
 
