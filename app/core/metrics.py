@@ -11,6 +11,21 @@ TOKEN_REFRESHES = Counter("token_refresh_total", "Databricks token refreshes")
 ANALYTICS_QUERIES = Counter("analytics_queries_total", "Analytics PostgreSQL queries", ("operation", "status"))
 ANALYTICS_DURATION = Histogram("analytics_query_duration_seconds", "Analytics PostgreSQL query duration", ("operation",))
 ANALYTICS_ERRORS = Counter("analytics_query_errors_total", "Analytics PostgreSQL query errors", ("operation", "kind"))
+PROMETHEUS_REQUESTS = Counter(
+    "prometheus_client_requests_total",
+    "Prometheus client requests",
+    ("operation", "status"),
+)
+PROMETHEUS_DURATION = Histogram(
+    "prometheus_client_request_duration_seconds",
+    "Prometheus client request duration",
+    ("operation",),
+)
+PROMETHEUS_ERRORS = Counter(
+    "prometheus_client_errors_total",
+    "Prometheus client errors",
+    ("operation", "kind"),
+)
 
 
 def metric_path(path: str) -> str:
