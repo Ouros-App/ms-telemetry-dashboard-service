@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from app.core.auth import Principal, require_bearer
 from app.main import app
 from app.providers.databricks import DatabricksDashboardProvider
+from app.providers.registry import DashboardProviderRegistry
 from app.schemas.dashboards import (
     DashboardChartDefinition,
     DashboardRecord,
@@ -60,6 +61,7 @@ async def test_chart_service_reuses_png_for_cache_ttl() -> None:
     )
 
     class Provider:
+        provider_name = "databricks"
         query_calls = 0
 
         async def list_dashboards(self):
@@ -73,7 +75,10 @@ async def test_chart_service_reuses_png_for_cache_ttl() -> None:
             return [{"value": 1}]
 
     provider = Provider()
-    service = DashboardService(provider, chart_cache_ttl_seconds=30)
+    service = DashboardService(
+        DashboardProviderRegistry([provider]),
+        chart_cache_ttl_seconds=30,
+    )
     first = await service.chart_png("dashboard-a", "counter")
     second = await service.chart_png("dashboard-a", "counter")
 
