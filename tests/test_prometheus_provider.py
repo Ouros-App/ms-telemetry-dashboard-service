@@ -89,11 +89,17 @@ async def test_prometheus_provider_lists_admin_dashboards() -> None:
         "prometheus",
         "prometheus",
         "prometheus",
+        "prometheus",
+        "prometheus",
+        "prometheus",
     ]
     assert [item.id for item in dashboards] == [
         "prometheus-overview",
         "prometheus-ai",
         "prometheus-telemetry",
+        "prometheus-auth",
+        "prometheus-mcp",
+        "prometheus-spring",
     ]
 
 
