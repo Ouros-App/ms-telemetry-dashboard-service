@@ -52,6 +52,14 @@ class Settings(BaseSettings):
     analytics_socks_host: str | None = None
     analytics_socks_port: int = 1055
     analytics_socks_connect_timeout_seconds: float = 5.0
+    prometheus_url: str | None = None
+    prometheus_socks_host: str | None = None
+    prometheus_socks_port: int = 1055
+    prometheus_socks_connect_timeout_seconds: float = 5.0
+    prometheus_query_timeout_seconds: float = 8.0
+    prometheus_max_range_seconds: int = 604800
+    prometheus_min_step_seconds: float = 15.0
+    prometheus_max_points: int = 12000
     http_timeout_seconds: float = 10.0
     http_max_retries: int = 2
     http_retry_backoff_seconds: float = 0.1
@@ -161,6 +169,58 @@ class Settings(BaseSettings):
         ):
             errors.append("ANALYTICS_SOCKS_CONNECT_TIMEOUT_SECONDS_INVALID")
         return errors
+
+    def prometheus_configuration_errors(self) -> list[str]:
+        errors: list[str] = []
+        if not self.prometheus_url:
+            errors.append("PROMETHEUS_URL")
+        else:
+            try:
+                parsed = urlsplit(self.prometheus_url)
+                port = parsed.port
+            except ValueError:
+                errors.append("PROMETHEUS_URL_INVALID")
+            else:
+                if (
+                    parsed.scheme not in {"http", "https"}
+                    or not parsed.hostname
+                    or parsed.username
+                    or parsed.password
+                ):
+                    errors.append("PROMETHEUS_URL_INVALID")
+                if port is not None and not (1 <= port <= 65535):
+                    errors.append("PROMETHEUS_URL_INVALID")
+                if self.prometheus_proxy_host and parsed.scheme != "http":
+                    errors.append("PROMETHEUS_SOCKS_HTTPS_UNSUPPORTED")
+
+        if self.prometheus_proxy_host and not (
+            1 <= self.prometheus_socks_port <= 65535
+        ):
+            errors.append("PROMETHEUS_SOCKS_PORT_INVALID")
+        if self.prometheus_proxy_host and not (
+            0 < self.prometheus_socks_connect_timeout_seconds <= 30
+        ):
+            errors.append("PROMETHEUS_SOCKS_CONNECT_TIMEOUT_SECONDS_INVALID")
+        if not (0 < self.prometheus_query_timeout_seconds <= 60):
+            errors.append("PROMETHEUS_QUERY_TIMEOUT_SECONDS_INVALID")
+        if not (60 <= self.prometheus_max_range_seconds <= 2678400):
+            errors.append("PROMETHEUS_MAX_RANGE_SECONDS_INVALID")
+        if not (1 <= self.prometheus_min_step_seconds <= 3600):
+            errors.append("PROMETHEUS_MIN_STEP_SECONDS_INVALID")
+        if not (100 <= self.prometheus_max_points <= 50000):
+            errors.append("PROMETHEUS_MAX_POINTS_INVALID")
+        return errors
+
+    @property
+    def prometheus_proxy_host(self) -> str | None:
+        value = self.prometheus_socks_host or self.analytics_socks_host
+        if value and value.strip():
+            return value.strip()
+        return None
+
+    @property
+    def prometheus_configured(self) -> bool:
+        return not self.prometheus_configuration_errors()
 
     @property
     def user_analytics_configured(self) -> bool:
