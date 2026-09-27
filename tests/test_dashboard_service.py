@@ -1,5 +1,6 @@
 import pytest
 
+from app.providers.registry import DashboardProviderRegistry
 from app.schemas.dashboards import DashboardChartDefinition, DashboardRecord
 from app.services.dashboard import ChartNotFound, DashboardNotFound, DashboardService
 
@@ -26,6 +27,8 @@ def make_chart() -> DashboardChartDefinition:
 
 
 class Provider:
+    provider_name = "databricks"
+
     def __init__(self) -> None:
         self.dashboard = make_dashboard()
         self.chart = make_chart()
@@ -47,7 +50,7 @@ class Provider:
 
 @pytest.mark.asyncio
 async def test_dashboard_service_lists_and_gets_dashboard_data() -> None:
-    service = DashboardService(Provider())
+    service = DashboardService(DashboardProviderRegistry([Provider()]))
 
     assert (await service.list_dashboards()).items[0].id == "dashboard-a"
     assert (await service.get_dashboard("dashboard-a")).title == "Dashboard A"
@@ -60,7 +63,7 @@ async def test_dashboard_service_lists_and_gets_dashboard_data() -> None:
 
 @pytest.mark.asyncio
 async def test_dashboard_service_reports_missing_dashboard_and_chart() -> None:
-    service = DashboardService(Provider())
+    service = DashboardService(DashboardProviderRegistry([Provider()]))
 
     with pytest.raises(DashboardNotFound):
         await service.get_dashboard("missing")
