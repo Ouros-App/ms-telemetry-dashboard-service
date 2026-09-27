@@ -18,6 +18,16 @@ def _https_url_is_valid(value: str) -> bool:
     )
 
 
+def _http_url_is_valid(value: str) -> bool:
+    parsed = urlsplit(value)
+    return bool(
+        parsed.scheme in {"http", "https"}
+        and parsed.hostname
+        and not parsed.username
+        and not parsed.password
+    )
+
+
 def _postgres_url_is_valid(value: str) -> bool:
     try:
         return urlsplit(value).scheme in {"postgres", "postgresql"}
@@ -42,6 +52,12 @@ class Settings(BaseSettings):
     databricks_client_id: str | None = None
     databricks_client_secret: str | None = None
     databricks_token_url: str | None = None
+    prometheus_url: str | None = None
+    prometheus_socks_host: str | None = None
+    prometheus_socks_port: int = 1055
+    prometheus_socks_connect_timeout_seconds: float = 5.0
+    prometheus_range_seconds: int = 3600
+    prometheus_step_seconds: int = 60
     analytics_database_url: str | None = None
     analytics_expected_role: str = "analytics_ro"
     analytics_pool_min_size: int = 1
@@ -119,6 +135,51 @@ class Settings(BaseSettings):
             errors.append("CORS_ORIGINS_INVALID")
         return errors
 
+    def prometheus_configuration_errors(self) -> list[str]:
+        errors: list[str] = []
+        if not self.prometheus_url:
+            if self.prometheus_socks_host:
+                errors.append("PROMETHEUS_URL")
+            return errors
+
+        if not _http_url_is_valid(self.prometheus_url):
+            errors.append("PROMETHEUS_URL_INVALID")
+            return errors
+
+        parsed = urlsplit(self.prometheus_url)
+        if self.prometheus_socks_host and parsed.scheme != "http":
+            errors.append("PROMETHEUS_URL_SOCKS_TLS_UNSUPPORTED")
+        try:
+            _ = parsed.port
+        except ValueError:
+            errors.append("PROMETHEUS_URL_INVALID")
+
+        if self.prometheus_socks_host and not (
+            1 <= self.prometheus_socks_port <= 65535
+        ):
+            errors.append("PROMETHEUS_SOCKS_PORT_INVALID")
+        if self.prometheus_socks_host and not (
+            0 < self.prometheus_socks_connect_timeout_seconds <= 30
+        ):
+            errors.append(
+                "PROMETHEUS_SOCKS_CONNECT_TIMEOUT_SECONDS_INVALID"
+            )
+        if not (300 <= self.prometheus_range_seconds <= 86400):
+            errors.append("PROMETHEUS_RANGE_SECONDS_INVALID")
+        if not (
+            5 <= self.prometheus_step_seconds
+            <= self.prometheus_range_seconds
+        ):
+            errors.append("PROMETHEUS_STEP_SECONDS_INVALID")
+        return errors
+
+    @property
+    def prometheus_configured(self) -> bool:
+        return bool(
+            self.prometheus_url
+            and not self.prometheus_configuration_errors()
+        )
+
     def analytics_configuration_errors(self) -> list[str]:
         errors: list[str] = []
         if not self.analytics_database_url:
@@ -172,6 +233,7 @@ class Settings(BaseSettings):
             *self._authentication_configuration_errors(),
             *self._url_configuration_errors(),
             *self._runtime_configuration_errors(),
+            *self.prometheus_configuration_errors(),
         ]
 
     @property
