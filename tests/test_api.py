@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.auth import Principal, require_bearer
+from app.core.config import settings
 from app.main import app
 from app.schemas.dashboards import DashboardListResponse
 from app.services.dashboard import DashboardNotFound
@@ -93,3 +94,31 @@ def test_openapi_declares_bearer_security() -> None:
 
     assert response.status_code == 200
     assert "HTTPBearer" in response.json()["components"]["securitySchemes"]
+
+
+def test_prometheus_relay_failure_does_not_break_service_startup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fail_start(_self) -> None:
+        raise OSError("relay bind failed")
+
+    monkeypatch.setattr(
+        settings,
+        "prometheus_url",
+        "http://192.168.15.11:9090",
+    )
+    monkeypatch.setattr(
+        settings,
+        "prometheus_socks_host",
+        "tailscale-proxy",
+    )
+    monkeypatch.setattr(
+        "app.main.PrometheusHttpClient.start",
+        fail_start,
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/health")
+        assert app.state.prometheus_http is None
+
+    assert response.status_code == 200
