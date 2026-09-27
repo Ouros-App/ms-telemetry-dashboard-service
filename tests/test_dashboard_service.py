@@ -1,5 +1,6 @@
 import pytest
 
+from app.clients.databricks import DatabricksIntegrationError
 from app.providers.registry import DashboardProviderRegistry
 from app.schemas.dashboards import DashboardChartDefinition, DashboardRecord
 from app.services.dashboard import ChartNotFound, DashboardNotFound, DashboardService
@@ -71,3 +72,50 @@ async def test_dashboard_service_reports_missing_dashboard_and_chart() -> None:
         await service.chart_data("dashboard-a", "missing")
     with pytest.raises(ChartNotFound):
         await service.chart_png("dashboard-a", "missing")
+
+
+@pytest.mark.asyncio
+async def test_provider_registry_keeps_healthy_provider_available() -> None:
+    class FailingProvider:
+        provider_name = "databricks"
+
+        async def list_dashboards(self):
+            raise DatabricksIntegrationError("databricks unavailable")
+
+    class HealthyProvider:
+        provider_name = "prometheus"
+
+        async def list_dashboards(self):
+            return [
+                DashboardRecord(
+                    id="prometheus-overview",
+                    provider="prometheus",
+                    title="Prometheus",
+                    dashboard_id="prometheus-overview",
+                )
+            ]
+
+    registry = DashboardProviderRegistry(
+        [FailingProvider(), HealthyProvider()]
+    )
+
+    dashboards = await registry.list_dashboards()
+
+    assert [item.id for item in dashboards] == ["prometheus-overview"]
+
+
+@pytest.mark.asyncio
+async def test_provider_registry_reraises_when_every_provider_fails() -> None:
+    class FailingProvider:
+        provider_name = "databricks"
+
+        async def list_dashboards(self):
+            raise DatabricksIntegrationError("databricks unavailable")
+
+    registry = DashboardProviderRegistry([FailingProvider()])
+
+    with pytest.raises(
+        DatabricksIntegrationError,
+        match="databricks unavailable",
+    ):
+        await registry.list_dashboards()
