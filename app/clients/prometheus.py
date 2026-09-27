@@ -48,8 +48,10 @@ class PrometheusHttpClient:
             event_name="prometheus_socks_relay_failed",
         )
         await self._relay.start()
+        base_path = parsed.path.rstrip("/")
         self._base_url = (
             f"http://{self._relay.local_host}:{self._relay.local_port}"
+            f"{base_path}"
         )
 
     async def close(self) -> None:
