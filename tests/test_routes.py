@@ -39,13 +39,13 @@ class FailingService:
         (routes.chartjs_chart, ("dashboard-a", "chart-a")),
     ],
 )
-async def test_routes_map_databricks_timeout_to_504(handler, args) -> None:
+async def test_routes_map_provider_timeout_to_504(handler, args) -> None:
     service = FailingService(DatabricksTimeoutError("timeout"))
     with pytest.raises(HTTPException) as error:
         await handler(*args, service=service)
 
     assert error.value.status_code == 504
-    assert error.value.detail == routes.DATABRICKS_TIMEOUT_DETAIL
+    assert error.value.detail == routes.DASHBOARD_PROVIDER_TIMEOUT_DETAIL
 
 
 @pytest.mark.asyncio
@@ -59,13 +59,13 @@ async def test_routes_map_databricks_timeout_to_504(handler, args) -> None:
         (routes.chartjs_chart, ("dashboard-a", "chart-a")),
     ],
 )
-async def test_routes_map_databricks_failure_to_502(handler, args) -> None:
+async def test_routes_map_provider_failure_to_502(handler, args) -> None:
     service = FailingService(DatabricksIntegrationError("failure"))
     with pytest.raises(HTTPException) as error:
         await handler(*args, service=service)
 
     assert error.value.status_code == 502
-    assert error.value.detail == routes.DATABRICKS_INTEGRATION_DETAIL
+    assert error.value.detail == routes.DASHBOARD_PROVIDER_INTEGRATION_DETAIL
 
 
 @pytest.mark.asyncio
