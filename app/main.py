@@ -6,9 +6,11 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.observability import router as observability_router
 from app.api.routes import router
 from app.api.user_dashboards import router as user_dashboard_router
 from app.clients.databricks import DatabricksAuthClient, DatabricksHttpClient
+from app.clients.prometheus import PrometheusClient
 from app.core.config import settings
 from app.core.logging import (
     configure_logging,
@@ -37,6 +39,7 @@ async def lifespan(app: FastAPI):
             "configured": settings.ready,
             "databricks_configured": bool(settings.databricks_host),
             "analytics_configured": settings.user_analytics_configured,
+            "prometheus_configured": settings.prometheus_configured,
             "catalog_path": str(settings.dashboard_catalog_path),
         },
     )
@@ -54,6 +57,19 @@ async def lifespan(app: FastAPI):
     http = DatabricksHttpClient(client, settings)
     auth = DatabricksAuthClient(http, settings)
 
+    prometheus_client: PrometheusClient | None = None
+    prometheus_configuration_errors = settings.prometheus_configuration_errors()
+    if prometheus_configuration_errors:
+        logger.warning(
+            "Prometheus integration configuration is incomplete",
+            extra={
+                "event": "prometheus_configuration_not_ready",
+                "errors": sorted(set(prometheus_configuration_errors)),
+            },
+        )
+    else:
+        prometheus_client = PrometheusClient(client, settings)
+
     try:
         catalog = DashboardCatalog.from_path(settings.dashboard_catalog_path)
         logger.info(
@@ -69,6 +85,7 @@ async def lifespan(app: FastAPI):
 
     admin_provider = DatabricksDashboardProvider(http, auth, settings, catalog)
     app.state.settings = settings
+    app.state.prometheus_client = prometheus_client
     app.state.dashboard_service = DashboardService(
         admin_provider,
         settings.chart_cache_ttl_seconds,
@@ -128,6 +145,8 @@ async def lifespan(app: FastAPI):
         logger.info("service stopping", extra={"event": "service_stopping"})
         if analytics_repository is not None:
             await analytics_repository.close()
+        if prometheus_client is not None:
+            await prometheus_client.close()
         await client.aclose()
 
 
@@ -192,4 +211,5 @@ async def request_context(request: Request, call_next):
 
 
 app.include_router(router)
+app.include_router(observability_router)
 app.include_router(user_dashboard_router)
