@@ -197,3 +197,44 @@ async def test_prometheus_provider_maps_range_to_line_rows(
     assert calls == [
         ("sum(rate(ai_server_http_requests_total[5m]))", 60)
     ]
+
+
+@pytest.mark.asyncio
+async def test_prometheus_socks_relay_preserves_base_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeRelay:
+        local_host = "127.0.0.1"
+        local_port = 19090
+
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        async def start(self) -> None:
+            return
+
+        async def close(self) -> None:
+            return
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/prometheus/api/v1/query"
+        return httpx.Response(
+            200,
+            json={"status": "success", "data": {"result": []}},
+        )
+
+    monkeypatch.setattr(
+        "app.clients.prometheus.Socks5TcpRelay",
+        FakeRelay,
+    )
+    settings = Settings(
+        prometheus_url="http://prometheus.internal:9090/prometheus",
+        prometheus_socks_host="tailscale-proxy",
+    )
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    prometheus = PrometheusHttpClient(client, settings)
+
+    assert await prometheus.query("up") == []
+
+    await prometheus.close()
+    await client.aclose()
