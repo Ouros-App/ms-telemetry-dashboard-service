@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes import router
 from app.api.user_dashboards import router as user_dashboard_router
 from app.clients.databricks import DatabricksAuthClient, DatabricksHttpClient
+from app.clients.prometheus import PrometheusHttpClient
 from app.core.config import settings
 from app.core.logging import (
     configure_logging,
@@ -19,6 +20,8 @@ from app.core.logging import (
 from app.core.metrics import HTTP_DURATION, HTTP_REQUESTS, metric_path
 from app.providers.analytics import AnalyticsDashboardProvider
 from app.providers.databricks import DatabricksDashboardProvider
+from app.providers.prometheus import PrometheusDashboardProvider
+from app.providers.registry import DashboardProviderRegistry
 from app.repositories.analytics import AnalyticsRepository, AnalyticsUnavailable
 from app.repositories.catalog import CatalogError, DashboardCatalog
 from app.services.dashboard import DashboardService
@@ -36,6 +39,7 @@ async def lifespan(app: FastAPI):
             "event": "service_starting",
             "configured": settings.ready,
             "databricks_configured": bool(settings.databricks_host),
+            "prometheus_configured": settings.prometheus_configured,
             "analytics_configured": settings.user_analytics_configured,
             "catalog_path": str(settings.dashboard_catalog_path),
         },
@@ -67,13 +71,33 @@ async def lifespan(app: FastAPI):
         )
         catalog = DashboardCatalog([])
 
-    admin_provider = DatabricksDashboardProvider(http, auth, settings, catalog)
+    admin_providers = [
+        DatabricksDashboardProvider(http, auth, settings, catalog)
+    ]
+    prometheus_http: PrometheusHttpClient | None = None
+    if settings.prometheus_configured:
+        prometheus_http = PrometheusHttpClient(client, settings)
+        try:
+            await prometheus_http.start()
+        except OSError:
+            logger.exception(
+                "Prometheus SOCKS relay could not start",
+                extra={"event": "prometheus_relay_start_failed"},
+            )
+            await prometheus_http.close()
+            prometheus_http = None
+        else:
+            admin_providers.append(
+                PrometheusDashboardProvider(prometheus_http, settings)
+            )
+
     app.state.settings = settings
     app.state.dashboard_service = DashboardService(
-        admin_provider,
+        DashboardProviderRegistry(admin_providers),
         settings.chart_cache_ttl_seconds,
     )
     app.state.http_client = client
+    app.state.prometheus_http = prometheus_http
 
     analytics_repository: AnalyticsRepository | None = None
     analytics_ready = False
@@ -128,6 +152,8 @@ async def lifespan(app: FastAPI):
         logger.info("service stopping", extra={"event": "service_stopping"})
         if analytics_repository is not None:
             await analytics_repository.close()
+        if prometheus_http is not None:
+            await prometheus_http.close()
         await client.aclose()
 
 

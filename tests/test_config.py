@@ -181,3 +181,43 @@ def test_malformed_ipv6_analytics_url_is_reported_without_crashing() -> None:
     )
 
     assert "ANALYTICS_DATABASE_URL_INVALID" in config.analytics_configuration_errors()
+
+
+def test_prometheus_provider_accepts_homelab_socks_proxy() -> None:
+    config = base_settings(
+        prometheus_url="http://192.168.15.11:9090",
+        prometheus_socks_host="tailscale-proxy",
+        prometheus_socks_port=1055,
+        prometheus_socks_connect_timeout_seconds=5,
+    )
+
+    assert config.prometheus_configuration_errors() == []
+    assert config.prometheus_configured
+    assert config.ready
+
+
+def test_prometheus_provider_rejects_invalid_socks_configuration() -> None:
+    config = base_settings(
+        prometheus_url="https://192.168.15.11:9090",
+        prometheus_socks_host="tailscale-proxy",
+        prometheus_socks_port=0,
+        prometheus_socks_connect_timeout_seconds=31,
+    )
+
+    errors = config.prometheus_configuration_errors()
+
+    assert "PROMETHEUS_URL_SOCKS_TLS_UNSUPPORTED" in errors
+    assert "PROMETHEUS_SOCKS_PORT_INVALID" in errors
+    assert "PROMETHEUS_SOCKS_CONNECT_TIMEOUT_SECONDS_INVALID" in errors
+    assert not config.prometheus_configured
+    assert not config.ready
+
+
+def test_prometheus_socks_requires_prometheus_url() -> None:
+    config = base_settings(
+        prometheus_url=None,
+        prometheus_socks_host="tailscale-proxy",
+    )
+
+    assert config.prometheus_configuration_errors() == ["PROMETHEUS_URL"]
+    assert not config.ready

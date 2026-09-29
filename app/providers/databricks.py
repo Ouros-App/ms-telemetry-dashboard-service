@@ -28,6 +28,7 @@ SAFE_PATH_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$")
 
 
 class DatabricksDashboardProvider:
+    provider_name: ClassVar[str] = "databricks"
     chart_types: ClassVar[set[str]] = {"counter", "bar", "line", "pie"}
 
     def __init__(
