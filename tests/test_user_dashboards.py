@@ -6,6 +6,7 @@ from app.main import app
 from app.providers.analytics import AnalyticsDashboardProvider, AnalyticsScope
 from app.repositories.analytics import AnalyticsQueryError, AnalyticsUnavailable
 from app.schemas.user_dashboards import (
+    CustomDashboardRequest,
     UserChartListResponse,
     UserChartPublic,
     UserDashboardListResponse,
@@ -269,6 +270,46 @@ def test_user_plotly_route_returns_hardened_html_headers(
     assert response.headers["x-content-type-options"] == "nosniff"
 
 
+def test_custom_dashboard_route_returns_private_transient_payload(
+    authenticated_farm_owner,
+    monkeypatch,
+) -> None:
+    from app.schemas.user_dashboards import CustomDashboardResponse
+
+    class SuccessfulService:
+        async def build_custom_dashboard(self, principal, payload):
+            assert principal.farm_id == 7
+            assert payload.period_days == 14
+            return CustomDashboardResponse(
+                title=payload.title,
+                charts=[
+                    {
+                        "id": "goal-status",
+                        "title": "Status das metas",
+                        "render_as": "pie",
+                        "html": "<html>chart</html>",
+                    }
+                ],
+            )
+
+    with TestClient(app) as client:
+        monkeypatch.setattr(app.state, "user_dashboard_service", SuccessfulService())
+        response = client.post(
+            "/v1/user/dashboards/custom",
+            headers={"Authorization": "Bearer signed-token"},
+            json={
+                "title": " Metas ",
+                "period_days": 14,
+                "charts": [{"chart_id": "goal-status", "render_as": "pie"}],
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.json()["title"] == "Metas"
+    assert response.json()["charts"][0]["render_as"] == "pie"
+
+
 def test_user_dashboard_route_requires_its_own_user_auth_dependency() -> None:
     app.dependency_overrides.pop(require_user_bearer, None)
     with TestClient(app) as client:
@@ -380,6 +421,51 @@ async def test_chart_catalog_exposes_figma_render_options() -> None:
     status = next(item for item in goals.items if item.id == "goal-status")
     assert status.default_render_as == "donut"
     assert status.render_options == ["pie", "donut", "bar"]
+
+
+@pytest.mark.asyncio
+async def test_custom_dashboard_service_renders_selected_charts_and_period() -> None:
+    repository = FakeRepository(
+        {
+            "goal_status": [{"goal_status": "active", "count": 3}],
+            "monthly_consumption": [
+                {
+                    "month_start": "2026-09-01",
+                    "water_consumed_m3": 12.5,
+                    "energy_consumed_kwh": 33.0,
+                }
+            ],
+        }
+    )
+    service = UserDashboardService(AnalyticsDashboardProvider(repository))
+    request = CustomDashboardRequest(
+        title="  Painel customizado  ",
+        period_days=14,
+        charts=[
+            {"chart_id": "goal-status", "render_as": "pie"},
+            {"chart_id": "monthly-consumption", "render_as": "histogram"},
+        ],
+    )
+
+    result = await service.build_custom_dashboard(farm_owner(), request)
+
+    assert result.title == "Painel customizado"
+    assert [chart.render_as for chart in result.charts] == ["pie", "histogram"]
+    assert all("Plotly.newPlot" in chart.html for chart in result.charts)
+    assert len(repository.calls) == 2
+    assert repository.calls[1][2][-1] == 14
+
+
+@pytest.mark.asyncio
+async def test_custom_dashboard_service_rejects_unknown_chart() -> None:
+    service = UserDashboardService(AnalyticsDashboardProvider(FakeRepository()))
+    request = CustomDashboardRequest(
+        title="Painel",
+        charts=[{"chart_id": "unknown", "render_as": "auto"}],
+    )
+
+    with pytest.raises(UserChartNotFound):
+        await service.build_custom_dashboard(farm_owner(), request)
 
 
 @pytest.mark.asyncio
