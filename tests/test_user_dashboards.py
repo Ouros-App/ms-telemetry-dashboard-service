@@ -318,12 +318,12 @@ async def test_chart_catalog_exposes_figma_render_options() -> None:
     consumption = await service.list_charts(farm_owner(), "consumption")
     monthly = next(item for item in consumption.items if item.id == "monthly-consumption")
     assert monthly.default_render_as == "bar"
-    assert monthly.render_options == ["bar", "line"]
+    assert monthly.render_options == ["bar", "line", "histogram"]
 
     goals = await service.list_charts(farm_owner(), "goals")
     status = next(item for item in goals.items if item.id == "goal-status")
     assert status.default_render_as == "donut"
-    assert status.render_options == ["donut", "bar"]
+    assert status.render_options == ["pie", "donut", "bar"]
 
 
 @pytest.mark.asyncio
@@ -534,7 +534,9 @@ async def test_plotly_renderer_uses_ouros_visual_language_for_series() -> None:
     )
 
     assert "shape: \"spline\"" in html
-    assert "hole: 0.64" in html
+    assert 'hole: renderType === "donut" ? 0.64 : 0' in html
+    assert 'type: "histogram"' in html
+    assert "nbinsx: 10" in html
     assert "border-radius: 15px" in html
     assert "Ouros Analytics" not in html
     assert "native-legend" in html
