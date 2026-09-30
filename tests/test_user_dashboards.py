@@ -602,7 +602,7 @@ async def test_plotly_renderer_covers_line_and_pie_shapes() -> None:
         ],
         render_as="line",
     )
-    assert 'type: renderType === "line" ? "scatter" : "bar"' in line_html
+    assert 'type: ["line", "area", "scatter"].includes(renderType)' in line_html
 
     pie_chart = await provider.get_chart("goals", "goal-status")
     pie_html, _ = render_plotly_html(
@@ -708,7 +708,7 @@ async def test_plotly_renderer_uses_ouros_visual_language_for_series() -> None:
     )
 
     assert 'shape: "spline"' in html
-    assert 'hole: renderType === "donut" ? 0.64 : 0' in html
+    assert 'hole: renderType === "donut" ? 0.64 : undefined' in html
     assert 'type: "histogram"' in html
     assert '["heatmap", "contour", "surface"]' in html
     assert 'type: "scatter3d"' in html
