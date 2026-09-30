@@ -459,7 +459,7 @@ async def test_chart_catalog_exposes_figma_render_options() -> None:
 async def test_custom_dashboard_service_renders_selected_charts_and_period() -> None:
     repository = FakeRepository(
         {
-            "goal_status": [{"goal_status": "active", "count": 3}],
+            "goal_status": [{"label": "active", "value": 3}],
             "monthly_consumption": [
                 {
                     "month_start": "2026-09-01",
@@ -484,6 +484,7 @@ async def test_custom_dashboard_service_renders_selected_charts_and_period() -> 
     assert result.title == "Painel customizado"
     assert [chart.render_as for chart in result.charts] == ["pie", "histogram"]
     assert all("Plotly.newPlot" in chart.html for chart in result.charts)
+    assert '"rows":[{"label":"active","value":3}]' in result.charts[0].html
     assert len(repository.calls) == 2
     assert repository.calls[1][2][-1] == 14
 
