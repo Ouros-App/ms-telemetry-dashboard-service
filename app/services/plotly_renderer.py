@@ -44,8 +44,10 @@ def render_plotly_html(
 ) -> tuple[str, str]:
     nonce = secrets.token_urlsafe(18)
     resolved_render_as: UserChartRenderType = (
-        "donut" if render_as == "auto" and chart.type == "pie"
-        else chart.type if render_as == "auto"
+        "donut"
+        if render_as == "auto" and chart.type == "pie"
+        else chart.type
+        if render_as == "auto"
         else render_as
     )
     payload = _safe_json(
@@ -738,7 +740,9 @@ def render_plotly_html(
       target.setAttribute("aria-label", series.label);
 
       panel.append(heading, target);
-      const comparison = buildYearComparison(series, xField);
+      const comparison = renderType === "histogram"
+        ? null
+        : buildYearComparison(series, xField);
       const unit = seriesUnit(series);
       const hoverSuffix = unit ? " " + unit : "";
       const markerSize = isMobile() ? 8 : 10;
@@ -800,7 +804,18 @@ def render_plotly_html(
         const xValues = rows.map((row) => formatCategory(row[xField], xField));
         const yValues = rows.map((row) => nullableNumber(row[series.field]));
         traces = [
-          renderType === "line"
+          renderType === "histogram"
+            ? {{
+                type: "histogram",
+                name: series.label,
+                x: rows
+                  .map((row) => nullableNumber(row[series.field]))
+                  .filter((value) => value !== null),
+                nbinsx: 10,
+                marker: {{ color, line: {{ color: tokens.surface, width: 1 }} }},
+                hovertemplate: series.label + ": %{{y}} itens<extra></extra>",
+              }}
+            : renderType === "line"
             ? {{
                 type: "scatter",
                 mode: "lines+markers",
@@ -846,7 +861,11 @@ def render_plotly_html(
       if (unit) {{
         layout.yaxis.ticksuffix = unit;
       }}
-      if (renderType === "bar") {{
+      if (renderType === "histogram") {{
+        layout.xaxis.title = series.label;
+        layout.yaxis.title = "Frequência";
+        layout.bargap = 0.08;
+      }} else if (renderType === "bar") {{
         layout.barmode = "group";
         layout.bargap = 0.42;
         layout.bargroupgap = 0.08;
@@ -869,9 +888,9 @@ def render_plotly_html(
       const xField = categoricalValue ? chart.label_field : chart.x_field;
       const shouldSplitSeries = (
         ["monthly-consumption", "resource-efficiency"].includes(chart.id)
-        && ["line", "bar"].includes(renderType)
+        && ["line", "bar", "histogram"].includes(renderType)
         && sourceSeries.length === 2
-      );
+      ) || (renderType === "histogram" && sourceSeries.length > 1);
 
       if (shouldSplitSeries) {{
         document.body.dataset.splitSeries = "true";
@@ -886,7 +905,7 @@ def render_plotly_html(
       }} else {{
         let traces = [];
         let layout = baseLayout();
-        if (["line", "bar"].includes(renderType)) {{
+        if (["line", "bar", "histogram", "area", "scatter", "scattergl", "box", "violin", "waterfall", "funnel"].includes(renderType)) {{
           buildNativeLegend(sourceSeries);
           layout.showlegend = false;
           layout.margin = {{ ...layout.margin, b: sourceSeries.length > 1 ? 34 : 48 }};
@@ -915,7 +934,112 @@ def render_plotly_html(
             paper_bgcolor: "rgba(0,0,0,0)",
             plot_bgcolor: "rgba(0,0,0,0)",
           }};
-        }} else if (renderType === "donut") {{
+        }} else if (renderType === "histogram") {{
+          traces = sourceSeries.map((series, index) => ({{
+            type: "histogram",
+            name: series.label,
+            x: rows
+              .map((row) => nullableNumber(row[series.field]))
+              .filter((value) => value !== null),
+            nbinsx: 10,
+            marker: {{ color: palette[index % palette.length] }},
+            hovertemplate: series.label + ": %{{y}} itens<extra></extra>",
+          }}));
+          layout.barmode = "overlay";
+          layout.bargap = 0.08;
+          layout.xaxis.title = sourceSeries.length === 1
+            ? sourceSeries[0].label
+            : "Valor";
+          layout.yaxis.title = "Frequência";
+        }} else if (renderType === "scatter3d") {{
+          const axes = sourceSeries.slice(0, 3);
+          traces = [{{
+            type: "scatter3d",
+            mode: "markers",
+            x: rows.map((row) => nullableNumber(row[axes[0].field])),
+            y: rows.map((row) => nullableNumber(row[axes[1].field])),
+            z: rows.map((row) => nullableNumber(row[axes[2].field])),
+            text: rows.map((row) => formatCategory(row[xField], xField)),
+            marker: {{ color: tokens.primary, size: 5 }},
+            hovertemplate: "%{{text}}<br>%{{x}}, %{{y}}, %{{z}}<extra></extra>",
+          }}];
+          layout.scene = {{
+            xaxis: {{ title: axes[0].label }},
+            yaxis: {{ title: axes[1].label }},
+            zaxis: {{ title: axes[2].label }},
+          }};
+        }} else if (["scatterpolar", "barpolar"].includes(renderType)) {{
+          traces = sourceSeries.map((series, index) => ({{
+            type: renderType,
+            name: series.label,
+            theta: rows.map((row) => formatCategory(row[xField], xField)),
+            r: rows.map((row) => nullableNumber(row[series.field])),
+            mode: renderType === "scatterpolar" ? "lines+markers" : undefined,
+            marker: {{ color: palette[index % palette.length] }},
+            line: renderType === "scatterpolar"
+              ? {{ color: palette[index % palette.length] }}
+              : undefined,
+          }}));
+          layout.polar = {{
+            radialaxis: {{ color: tokens.muted, gridcolor: tokens.border }},
+            angularaxis: {{ color: tokens.muted, gridcolor: tokens.border }},
+          }};
+        }} else if (renderType === "scatterternary") {{
+          const axes = sourceSeries.slice(0, 3);
+          traces = [{{
+            type: "scatterternary",
+            mode: "markers",
+            a: rows.map((row) => nullableNumber(row[axes[0].field])),
+            b: rows.map((row) => nullableNumber(row[axes[1].field])),
+            c: rows.map((row) => nullableNumber(row[axes[2].field])),
+            text: rows.map((row) => formatCategory(row[xField], xField)),
+            marker: {{ color: tokens.primary, size: 8 }},
+            hovertemplate: "%{{text}}<br>%{{a}}, %{{b}}, %{{c}}<extra></extra>",
+          }}];
+          layout.ternary = {{
+            aaxis: {{ title: axes[0].label }},
+            baxis: {{ title: axes[1].label }},
+            caxis: {{ title: axes[2].label }},
+          }};
+        }} else if (["heatmap", "contour", "surface"].includes(renderType)) {{
+          const xValues = rows.map((_row, index) => index);
+          const yValues = sourceSeries.map((_series, index) => index);
+          const renderAsSurface = renderType === "surface" && xValues.length > 1;
+          const resolvedTrace = renderType === "surface" || renderType === "contour"
+            ? (xValues.length > 1 ? renderType : "heatmap")
+            : renderType;
+          traces = [{{
+            type: resolvedTrace,
+            x: renderAsSurface
+              ? xValues
+              : rows.map((row) => formatCategory(row[xField], xField)),
+            y: renderAsSurface
+              ? yValues
+              : sourceSeries.map((series) => series.label),
+            z: sourceSeries.map((series) =>
+              rows.map((row) => nullableNumber(row[series.field]))
+            ),
+            colorscale: [
+              [0, "#e9f5f1"],
+              [0.5, tokens.chart_blue],
+              [1, tokens.primary],
+            ],
+            colorbar: {{ tickfont: {{ color: tokens.muted }} }},
+            hovertemplate: "%{{y}} · %{{x}}: %{{z}}<extra></extra>",
+          }}];
+          if (renderAsSurface) {{
+            layout.scene = {{
+              xaxis: {{ title: "Período", tickvals: xValues, ticktext: rows.map((row) => formatCategory(row[xField], xField)) }},
+              yaxis: {{ title: "Série", tickvals: yValues, ticktext: sourceSeries.map((series) => series.label) }},
+              zaxis: {{ title: "Valor" }},
+            }};
+          }} else {{
+            layout.xaxis.title = "Período";
+            layout.yaxis.title = "Série";
+          }}
+        }} else if ([
+          "donut", "pie", "funnelarea", "treemap", "sunburst", "icicle",
+        ].includes(renderType)) {{
           if (chart.type === "indicator" && chart.value_field) {{
             const value = numberOrZero(rows[0][chart.value_field]);
             const bounded = Math.max(0, Math.min(100, value));
@@ -923,7 +1047,7 @@ def render_plotly_html(
               type: "pie",
               values: [bounded, Math.max(0, 100 - bounded)],
               labels: [chart.title, "Restante"],
-              hole: 0.76,
+              hole: renderType === "donut" ? 0.76 : 0,
               sort: false,
               direction: "clockwise",
               marker: {{
@@ -934,7 +1058,7 @@ def render_plotly_html(
               hoverinfo: "skip",
               showlegend: false,
             }}];
-            layout.annotations = [{{
+            layout.annotations = renderType === "donut" ? [{{
               x: 0.5,
               y: 0.5,
               xref: "paper",
@@ -946,7 +1070,7 @@ def render_plotly_html(
                 size: 30,
                 family: "Poppins, Inter, system-ui, sans-serif",
               }},
-            }}];
+            }}] : [];
           }} else {{
             const labels = chart.label_field
               ? rows.map((row) => text(row[chart.label_field]))
@@ -954,11 +1078,13 @@ def render_plotly_html(
             const valueField = chart.value_field || chart.series?.[0]?.field;
             const values = rows.map((row) => numberOrZero(row[valueField]));
             const total = values.reduce((sum, value) => sum + value, 0);
+            const isHierarchy = ["treemap", "sunburst", "icicle"].includes(renderType);
             traces = [{{
-              type: "pie",
-              labels,
-              values,
-              hole: 0.64,
+              type: renderType === "donut" ? "pie" : renderType,
+              labels: isHierarchy ? [chart.title, ...labels] : labels,
+              parents: isHierarchy ? ["", ...labels.map(() => chart.title)] : undefined,
+              values: isHierarchy ? [total, ...values] : values,
+              hole: renderType === "donut" ? 0.64 : undefined,
               sort: false,
               marker: {{
                 colors: palette,
@@ -968,7 +1094,7 @@ def render_plotly_html(
               automargin: true,
               hovertemplate: "<b>%{{label}}</b><br>%{{value}} · %{{percent}}<extra></extra>",
             }}];
-            layout.annotations = [{{
+            layout.annotations = renderType === "donut" ? [{{
               x: 0.5,
               y: 0.5,
               xref: "paper",
@@ -980,7 +1106,7 @@ def render_plotly_html(
                 size: 25,
                 family: "Poppins, Inter, system-ui, sans-serif",
               }},
-            }}];
+            }}] : [];
             layout.legend = {{
               ...layout.legend,
               x: 0.5,
@@ -1000,24 +1126,39 @@ def render_plotly_html(
             const yValues = rows.map((row) => nullableNumber(row[series.field]));
 
             const base = {{
-              type: renderType === "line" ? "scatter" : "bar",
-              mode: renderType === "line" ? "lines+markers" : undefined,
+              type: ["line", "area", "scatter"].includes(renderType)
+                ? "scatter"
+                : renderType,
+              mode: ["line", "area"].includes(renderType)
+                ? "lines+markers"
+                : ["scatter", "scattergl"].includes(renderType) ? "markers" : undefined,
               name: series.label,
               x: xValues,
               y: yValues,
               connectgaps: false,
               hovertemplate: "<b>%{{x}}</b><br>" + series.label + ": %{{y}}" + hoverSuffix + "<extra></extra>",
             }};
-            if (renderType === "line") {{
+            if (["line", "area", "scatter", "scattergl"].includes(renderType)) {{
               return {{
                 ...base,
-                line: {{ color, width: 2.2, shape: "spline", smoothing: 0.32 }},
+                line: ["line", "area"].includes(renderType)
+                  ? {{ color, width: 2.2, shape: "spline", smoothing: 0.32 }}
+                  : undefined,
                 marker: {{
                   color,
                   size: isMobile() ? 8 : 10,
                   line: {{ color: tokens.surface, width: 1.5 }},
                 }},
-                fill: "none",
+                fill: renderType === "area" ? "tozeroy" : "none",
+              }};
+            }}
+            if (renderType === "funnel") {{
+              return {{
+                ...base,
+                x: yValues,
+                y: xValues,
+                marker: {{ color }},
+                hovertemplate: "<b>%{{y}}</b><br>" + series.label + ": %{{x}}<extra></extra>",
               }};
             }}
             return {{
@@ -1025,7 +1166,7 @@ def render_plotly_html(
               marker: {{
                 color,
                 line: {{ width: 0 }},
-                cornerradius: 2,
+                cornerradius: renderType === "bar" ? 2 : undefined,
               }},
               opacity: 1,
             }};
@@ -1035,6 +1176,10 @@ def render_plotly_html(
             layout.barmode = "group";
             layout.bargap = 0.42;
             layout.bargroupgap = 0.08;
+          }} else if (renderType === "funnel") {{
+            layout.yaxis.autorange = "reversed";
+          }} else if (renderType === "waterfall") {{
+            layout.waterfallgap = 0.25;
           }}
         }}
 

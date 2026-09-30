@@ -4,18 +4,27 @@ from fastapi.testclient import TestClient
 from app.core.auth import Principal, require_user_bearer
 from app.main import app
 from app.providers.analytics import AnalyticsDashboardProvider, AnalyticsScope
+from app.repositories.analytics import AnalyticsQueryError, AnalyticsUnavailable
 from app.schemas.user_dashboards import (
+    CustomDashboardRequest,
     UserChartListResponse,
     UserChartPublic,
     UserDashboardListResponse,
     UserDashboardPublic,
+    UserDashboardRecord,
 )
 from app.services.plotly_renderer import (
     OUROS_CHART_TOKENS,
     PLOTLY_JS_SRI,
     render_plotly_html,
 )
-from app.services.user_dashboard import UserDashboardService, UserScopeError
+from app.services.user_dashboard import (
+    UserChartNotFound,
+    UserChartRenderUnsupported,
+    UserDashboardNotFound,
+    UserDashboardService,
+    UserScopeError,
+)
 
 
 class FakeRepository:
@@ -261,12 +270,103 @@ def test_user_plotly_route_returns_hardened_html_headers(
     assert response.headers["x-content-type-options"] == "nosniff"
 
 
+def test_custom_dashboard_route_returns_private_transient_payload(
+    authenticated_farm_owner,
+    monkeypatch,
+) -> None:
+    from app.schemas.user_dashboards import CustomDashboardResponse
+
+    class SuccessfulService:
+        async def build_custom_dashboard(self, principal, payload):
+            assert principal.farm_id == 7
+            assert payload.period_days == 14
+            return CustomDashboardResponse(
+                title=payload.title,
+                charts=[
+                    {
+                        "id": "goal-status",
+                        "title": "Status das metas",
+                        "render_as": "pie",
+                        "html": "<html>chart</html>",
+                    }
+                ],
+            )
+
+    with TestClient(app) as client:
+        monkeypatch.setattr(app.state, "user_dashboard_service", SuccessfulService())
+        response = client.post(
+            "/v1/user/dashboards/custom",
+            headers={"Authorization": "Bearer signed-token"},
+            json={
+                "title": " Metas ",
+                "period_days": 14,
+                "charts": [{"chart_id": "goal-status", "render_as": "pie"}],
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.json()["title"] == "Metas"
+    assert response.json()["charts"][0]["render_as"] == "pie"
+
+
 def test_user_dashboard_route_requires_its_own_user_auth_dependency() -> None:
     app.dependency_overrides.pop(require_user_bearer, None)
     with TestClient(app) as client:
         response = client.get("/v1/user/dashboards")
 
     assert response.status_code == 401
+
+
+def test_dashboard_record_validates_catalog_identifier() -> None:
+    assert (
+        UserDashboardRecord(
+            id="farm-overview",
+            title="Farm overview",
+        ).id
+        == "farm-overview"
+    )
+    with pytest.raises(ValueError):
+        UserDashboardRecord(id="Farm overview", title="Invalid")
+
+
+@pytest.mark.parametrize(
+    ("error", "expected_status"),
+    [
+        (UserScopeError("missing scope"), 403),
+        (UserChartRenderUnsupported("bar", ["indicator"]), 400),
+        (UserChartNotFound("missing chart"), 404),
+        (UserDashboardNotFound("missing dashboard"), 404),
+        (AnalyticsUnavailable("offline"), 503),
+        (AnalyticsQueryError("query failed"), 503),
+    ],
+)
+def test_custom_dashboard_route_maps_domain_errors(
+    authenticated_farm_owner,
+    monkeypatch,
+    error,
+    expected_status,
+) -> None:
+    class FailingService:
+        async def build_custom_dashboard(self, _principal, _payload):
+            raise error
+
+    with TestClient(app) as client:
+        monkeypatch.setattr(app.state, "user_dashboard_service", FailingService())
+        response = client.post(
+            "/v1/user/dashboards/custom",
+            headers={"Authorization": "Bearer signed-token"},
+            json={
+                "title": "Painel da fazenda",
+                "charts": [{"chart_id": "current-flock"}],
+            },
+        )
+
+    assert response.status_code == expected_status
+    if expected_status == 400:
+        assert response.json()["detail"]["allowed"] == ["indicator"]
+    if expected_status == 404:
+        assert response.json()["detail"] == "chart not found"
 
 
 @pytest.mark.asyncio
@@ -316,14 +416,89 @@ async def test_chart_catalog_exposes_figma_render_options() -> None:
     service = UserDashboardService(AnalyticsDashboardProvider(FakeRepository()))
 
     consumption = await service.list_charts(farm_owner(), "consumption")
-    monthly = next(item for item in consumption.items if item.id == "monthly-consumption")
+    monthly = next(
+        item for item in consumption.items if item.id == "monthly-consumption"
+    )
     assert monthly.default_render_as == "bar"
-    assert monthly.render_options == ["bar", "line"]
+    assert monthly.render_options == [
+        "bar",
+        "line",
+        "area",
+        "scatter",
+        "scattergl",
+        "scatterpolar",
+        "barpolar",
+        "histogram",
+        "box",
+        "violin",
+        "waterfall",
+        "funnel",
+        "heatmap",
+        "contour",
+        "surface",
+    ]
 
     goals = await service.list_charts(farm_owner(), "goals")
     status = next(item for item in goals.items if item.id == "goal-status")
     assert status.default_render_as == "donut"
-    assert status.render_options == ["donut", "bar"]
+    assert status.render_options == [
+        "pie",
+        "donut",
+        "bar",
+        "funnel",
+        "funnelarea",
+        "treemap",
+        "sunburst",
+        "icicle",
+        "scatterpolar",
+        "barpolar",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_custom_dashboard_service_renders_selected_charts_and_period() -> None:
+    repository = FakeRepository(
+        {
+            "goal_status": [{"label": "active", "value": 3}],
+            "monthly_consumption": [
+                {
+                    "month_start": "2026-09-01",
+                    "water_consumed_m3": 12.5,
+                    "energy_consumed_kwh": 33.0,
+                }
+            ],
+        }
+    )
+    service = UserDashboardService(AnalyticsDashboardProvider(repository))
+    request = CustomDashboardRequest(
+        title="  Painel customizado  ",
+        period_days=14,
+        charts=[
+            {"chart_id": "goal-status", "render_as": "pie"},
+            {"chart_id": "monthly-consumption", "render_as": "histogram"},
+        ],
+    )
+
+    result = await service.build_custom_dashboard(farm_owner(), request)
+
+    assert result.title == "Painel customizado"
+    assert [chart.render_as for chart in result.charts] == ["pie", "histogram"]
+    assert all("Plotly.newPlot" in chart.html for chart in result.charts)
+    assert '"rows":[{"label":"active","value":3}]' in result.charts[0].html
+    assert len(repository.calls) == 2
+    assert repository.calls[1][2][-1] == 14
+
+
+@pytest.mark.asyncio
+async def test_custom_dashboard_service_rejects_unknown_chart() -> None:
+    service = UserDashboardService(AnalyticsDashboardProvider(FakeRepository()))
+    request = CustomDashboardRequest(
+        title="Painel",
+        charts=[{"chart_id": "unknown", "render_as": "auto"}],
+    )
+
+    with pytest.raises(UserChartNotFound):
+        await service.build_custom_dashboard(farm_owner(), request)
 
 
 @pytest.mark.asyncio
@@ -428,7 +603,7 @@ async def test_plotly_renderer_covers_line_and_pie_shapes() -> None:
         ],
         render_as="line",
     )
-    assert 'type: renderType === "line" ? "scatter" : "bar"' in line_html
+    assert 'type: ["line", "area", "scatter"].includes(renderType)' in line_html
 
     pie_chart = await provider.get_chart("goals", "goal-status")
     pie_html, _ = render_plotly_html(
@@ -506,8 +681,8 @@ async def test_plotly_renderer_splits_mixed_unit_consumption_series() -> None:
 
     assert '"monthly-consumption", "resource-efficiency"' in html
     assert 'seriesGrid.dataset.active = "true"' in html
-    assert 'connectgaps: false' in html
-    assert 'return null;' in html
+    assert "connectgaps: false" in html
+    assert "return null;" in html
     assert 'month: "short"' in html
     assert "buildYearComparison" in html
     assert '"Este ano"' in html
@@ -533,8 +708,12 @@ async def test_plotly_renderer_uses_ouros_visual_language_for_series() -> None:
         render_as="line",
     )
 
-    assert "shape: \"spline\"" in html
-    assert "hole: 0.64" in html
+    assert 'shape: "spline"' in html
+    assert 'hole: renderType === "donut" ? 0.64 : undefined' in html
+    assert 'type: "histogram"' in html
+    assert '["heatmap", "contour", "surface"]' in html
+    assert 'type: "scatter3d"' in html
+    assert "nbinsx: 10" in html
     assert "border-radius: 15px" in html
     assert "Ouros Analytics" not in html
     assert "native-legend" in html
