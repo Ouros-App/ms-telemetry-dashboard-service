@@ -4,18 +4,26 @@ from fastapi.testclient import TestClient
 from app.core.auth import Principal, require_user_bearer
 from app.main import app
 from app.providers.analytics import AnalyticsDashboardProvider, AnalyticsScope
+from app.repositories.analytics import AnalyticsQueryError, AnalyticsUnavailable
 from app.schemas.user_dashboards import (
     UserChartListResponse,
     UserChartPublic,
     UserDashboardListResponse,
     UserDashboardPublic,
+    UserDashboardRecord,
 )
 from app.services.plotly_renderer import (
     OUROS_CHART_TOKENS,
     PLOTLY_JS_SRI,
     render_plotly_html,
 )
-from app.services.user_dashboard import UserDashboardService, UserScopeError
+from app.services.user_dashboard import (
+    UserChartNotFound,
+    UserChartRenderUnsupported,
+    UserDashboardNotFound,
+    UserDashboardService,
+    UserScopeError,
+)
 
 
 class FakeRepository:
@@ -267,6 +275,54 @@ def test_user_dashboard_route_requires_its_own_user_auth_dependency() -> None:
         response = client.get("/v1/user/dashboards")
 
     assert response.status_code == 401
+
+
+def test_dashboard_record_validates_catalog_identifier() -> None:
+    assert UserDashboardRecord(
+        id="farm-overview",
+        title="Farm overview",
+    ).id == "farm-overview"
+    with pytest.raises(ValueError):
+        UserDashboardRecord(id="Farm overview", title="Invalid")
+
+
+@pytest.mark.parametrize(
+    ("error", "expected_status"),
+    [
+        (UserScopeError("missing scope"), 403),
+        (UserChartRenderUnsupported("bar", ["indicator"]), 400),
+        (UserChartNotFound("missing chart"), 404),
+        (UserDashboardNotFound("missing dashboard"), 404),
+        (AnalyticsUnavailable("offline"), 503),
+        (AnalyticsQueryError("query failed"), 503),
+    ],
+)
+def test_custom_dashboard_route_maps_domain_errors(
+    authenticated_farm_owner,
+    monkeypatch,
+    error,
+    expected_status,
+) -> None:
+    class FailingService:
+        async def build_custom_dashboard(self, _principal, _payload):
+            raise error
+
+    monkeypatch.setattr(app.state, "user_dashboard_service", FailingService())
+    with TestClient(app) as client:
+        response = client.post(
+            "/v1/user/dashboards/custom",
+            headers={"Authorization": "Bearer signed-token"},
+            json={
+                "title": "Painel da fazenda",
+                "charts": [{"chart_id": "current-flock"}],
+            },
+        )
+
+    assert response.status_code == expected_status
+    if expected_status == 400:
+        assert response.json()["detail"]["allowed"] == ["indicator"]
+    if expected_status == 404:
+        assert response.json()["detail"] == "chart not found"
 
 
 @pytest.mark.asyncio
