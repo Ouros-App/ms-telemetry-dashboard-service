@@ -945,7 +945,9 @@ def render_plotly_html(
           }}));
           layout.barmode = "overlay";
           layout.bargap = 0.08;
-          layout.xaxis.title = "Valor";
+          layout.xaxis.title = sourceSeries.length === 1
+            ? sourceSeries[0].label
+            : "Valor";
           layout.yaxis.title = "Frequência";
         }} else if (["donut", "pie"].includes(renderType)) {{
           if (chart.type === "indicator" && chart.value_field) {{

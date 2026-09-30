@@ -180,8 +180,17 @@ class UserDashboardService:
             period_days=period_days,
         )
         html, nonce = render_plotly_html(chart, rows, render_as=resolved_render_as)
+        now = time.monotonic()
+        if len(self._html_cache) >= 512:
+            self._html_cache = {
+                key: value
+                for key, value in self._html_cache.items()
+                if now - value.created_at < self.chart_cache_ttl_seconds
+            }
+            if len(self._html_cache) >= 512:
+                self._html_cache = dict(list(self._html_cache.items())[-511:])
         self._html_cache[cache_key] = CachedHtml(
-            created_at=time.monotonic(),
+            created_at=now,
             html=html,
             nonce=nonce,
         )

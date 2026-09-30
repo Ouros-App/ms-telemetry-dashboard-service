@@ -64,7 +64,7 @@ async def build_custom_dashboard(
                 "allowed": exc.allowed,
             },
         ) from exc
-    except UserChartNotFound as exc:
+    except (UserChartNotFound, UserDashboardNotFound) as exc:
         raise HTTPException(status_code=404, detail="chart not found") from exc
     except (AnalyticsUnavailable, AnalyticsQueryError) as exc:
         raise HTTPException(

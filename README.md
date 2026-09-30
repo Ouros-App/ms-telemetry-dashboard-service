@@ -224,7 +224,7 @@ GET /v1/user/dashboards/overview/charts/capacity-utilization/plotly?render_as=do
 GET /v1/user/dashboards/overview/charts/capacity-utilization/plotly?render_as=indicator
 ```
 
-Valores disponíveis no contrato: `auto`, `indicator`, `donut`, `line` e `bar`. `auto` usa o preset padrão do gráfico. Nem toda combinação é semanticamente válida; por exemplo, `current-flock` só aceita `indicator`. O endpoint de listagem de charts informa `default_render_as` e `render_options`, então mobile e web não precisam manter uma tabela própria de compatibilidade.
+Valores disponíveis no contrato: `auto`, `indicator`, `donut`, `pie`, `line`, `bar` e `histogram`. `auto` usa o preset padrão do gráfico. Nem toda combinação é semanticamente válida; por exemplo, `current-flock` só aceita `indicator`. O endpoint de listagem de charts informa `default_render_as` e `render_options`, então mobile e web não precisam manter uma tabela própria de compatibilidade.
 
 Exemplo de item retornado por `GET /v1/user/dashboards/consumption/charts`:
 
