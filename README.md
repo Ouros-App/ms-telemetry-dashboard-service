@@ -197,7 +197,7 @@ curl -H "Authorization: Bearer $KEYCLOAK_ACCESS_TOKEN" \
 
 O último endpoint retorna `text/html` com Plotly.js e pode ser carregado pelo front. O HTML recebe CSP, `nosniff`, cache privado curto e serialização segura dos valores vindos do banco.
 
-O endpoint de painel customizado recebe `title`, uma lista de `chart_id`/`render_as` e `period_days` (1 a 366, padrão 30). Os formatos incluem indicador, barras, linha, pizza, donut e histograma; cada gráfico valida quais formatos são compatíveis. Histogramas são limitados a séries numéricas do catálogo. A janela é aplicada somente aos gráficos com série temporal de produção e consumo. O endpoint nunca aceita SQL, `farm_id` ou `enterprise_id`; o escopo vem do mesmo JWT Keycloak validado nas rotas de usuário. O resultado é `Cache-Control: private, no-store` e não persiste a configuração do painel.
+O endpoint de painel customizado recebe `title`, uma lista de `chart_id`/`render_as` e `period_days` (1 a 366, padrão 30). O catálogo expõe os tipos de trace Plotly compatíveis com os dados de cada gráfico: barras, linhas, áreas, dispersão, histogramas, box/violin, waterfall/funnel, heatmap/contour, pizza/donut e indicadores. O endpoint de listagem informa as opções válidas por gráfico; não há uma lista própria de estilos no cliente. O endpoint nunca aceita SQL, `farm_id`, `enterprise_id` ou configuração Plotly arbitrária; o escopo vem do mesmo JWT Keycloak validado nas rotas de usuário. O resultado é `Cache-Control: private, no-store` e não persiste a configuração do painel.
 
 ```http
 POST /v1/user/dashboards/custom
@@ -224,7 +224,7 @@ GET /v1/user/dashboards/overview/charts/capacity-utilization/plotly?render_as=do
 GET /v1/user/dashboards/overview/charts/capacity-utilization/plotly?render_as=indicator
 ```
 
-Valores disponíveis no contrato: `auto`, `indicator`, `donut`, `pie`, `line`, `bar` e `histogram`. `auto` usa o preset padrão do gráfico. Nem toda combinação é semanticamente válida; por exemplo, `current-flock` só aceita `indicator`. O endpoint de listagem de charts informa `default_render_as` e `render_options`, então mobile e web não precisam manter uma tabela própria de compatibilidade.
+`render_as` recebe o nome do trace Plotly publicado em `render_options` para aquele gráfico; `auto` usa o preset padrão. O campo aceita novos nomes sem atualizar os clientes, enquanto o catálogo da API publica apenas traces que o renderer sabe mapear para os dados daquele gráfico. Nem toda combinação é semanticamente válida: heatmap/contour exigem várias séries e traces 3D exigem dimensões suficientes. O endpoint de listagem informa `default_render_as` e `render_options`, então mobile e web não precisam manter uma tabela própria de compatibilidade.
 
 Exemplo de item retornado por `GET /v1/user/dashboards/consumption/charts`:
 

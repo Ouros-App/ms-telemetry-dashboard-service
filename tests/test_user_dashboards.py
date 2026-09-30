@@ -319,10 +319,13 @@ def test_user_dashboard_route_requires_its_own_user_auth_dependency() -> None:
 
 
 def test_dashboard_record_validates_catalog_identifier() -> None:
-    assert UserDashboardRecord(
-        id="farm-overview",
-        title="Farm overview",
-    ).id == "farm-overview"
+    assert (
+        UserDashboardRecord(
+            id="farm-overview",
+            title="Farm overview",
+        ).id
+        == "farm-overview"
+    )
     with pytest.raises(ValueError):
         UserDashboardRecord(id="Farm overview", title="Invalid")
 
@@ -413,14 +416,43 @@ async def test_chart_catalog_exposes_figma_render_options() -> None:
     service = UserDashboardService(AnalyticsDashboardProvider(FakeRepository()))
 
     consumption = await service.list_charts(farm_owner(), "consumption")
-    monthly = next(item for item in consumption.items if item.id == "monthly-consumption")
+    monthly = next(
+        item for item in consumption.items if item.id == "monthly-consumption"
+    )
     assert monthly.default_render_as == "bar"
-    assert monthly.render_options == ["bar", "line", "histogram"]
+    assert monthly.render_options == [
+        "bar",
+        "line",
+        "area",
+        "scatter",
+        "scattergl",
+        "scatterpolar",
+        "barpolar",
+        "histogram",
+        "box",
+        "violin",
+        "waterfall",
+        "funnel",
+        "heatmap",
+        "contour",
+        "surface",
+    ]
 
     goals = await service.list_charts(farm_owner(), "goals")
     status = next(item for item in goals.items if item.id == "goal-status")
     assert status.default_render_as == "donut"
-    assert status.render_options == ["pie", "donut", "bar"]
+    assert status.render_options == [
+        "pie",
+        "donut",
+        "bar",
+        "funnel",
+        "funnelarea",
+        "treemap",
+        "sunburst",
+        "icicle",
+        "scatterpolar",
+        "barpolar",
+    ]
 
 
 @pytest.mark.asyncio
@@ -648,8 +680,8 @@ async def test_plotly_renderer_splits_mixed_unit_consumption_series() -> None:
 
     assert '"monthly-consumption", "resource-efficiency"' in html
     assert 'seriesGrid.dataset.active = "true"' in html
-    assert 'connectgaps: false' in html
-    assert 'return null;' in html
+    assert "connectgaps: false" in html
+    assert "return null;" in html
     assert 'month: "short"' in html
     assert "buildYearComparison" in html
     assert '"Este ano"' in html
@@ -675,9 +707,11 @@ async def test_plotly_renderer_uses_ouros_visual_language_for_series() -> None:
         render_as="line",
     )
 
-    assert "shape: \"spline\"" in html
+    assert 'shape: "spline"' in html
     assert 'hole: renderType === "donut" ? 0.64 : 0' in html
     assert 'type: "histogram"' in html
+    assert '["heatmap", "contour", "surface"]' in html
+    assert 'type: "scatter3d"' in html
     assert "nbinsx: 10" in html
     assert "border-radius: 15px" in html
     assert "Ouros Analytics" not in html

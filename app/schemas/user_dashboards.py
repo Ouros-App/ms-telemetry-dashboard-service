@@ -3,15 +3,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 UserChartType = Literal["indicator", "bar", "line", "pie"]
-UserChartRenderType = Literal[
-    "auto",
-    "indicator",
-    "bar",
-    "line",
-    "pie",
-    "donut",
-    "histogram",
-]
+UserChartRenderType = str
 
 
 class UserDashboardRecord(BaseModel):

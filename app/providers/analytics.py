@@ -21,7 +21,9 @@ class AnalyticsScope:
 
     @property
     def cache_key(self) -> tuple[str, int]:
-        scope_id = self.farm_id if self.account_type == "farm_owner" else self.enterprise_id
+        scope_id = (
+            self.farm_id if self.account_type == "farm_owner" else self.enterprise_id
+        )
         if scope_id is None:
             raise ValueError("analytics scope is incomplete")
         return self.account_type, scope_id
@@ -76,7 +78,7 @@ class AnalyticsDashboardProvider:
             query_name="capacity_utilization",
             value_field="value",
             value_suffix="%",
-            render_options=["indicator", "donut"],
+            render_options=["indicator", "pie", "donut"],
         ),
         UserChartDefinition(
             id="mortality-rate",
@@ -86,7 +88,7 @@ class AnalyticsDashboardProvider:
             query_name="mortality_rate",
             value_field="value",
             value_suffix="%",
-            render_options=["indicator", "donut"],
+            render_options=["indicator", "pie", "donut"],
         ),
         UserChartDefinition(
             id="farm-capacity",
@@ -99,7 +101,23 @@ class AnalyticsDashboardProvider:
                 UserChartSeries(field="chickens_now", label="Aves atuais"),
                 UserChartSeries(field="poultry_capacity", label="Capacidade"),
             ],
-            render_options=["bar", "line", "histogram"],
+            render_options=[
+                "bar",
+                "line",
+                "area",
+                "scatter",
+                "scattergl",
+                "scatterpolar",
+                "barpolar",
+                "histogram",
+                "box",
+                "violin",
+                "waterfall",
+                "funnel",
+                "heatmap",
+                "contour",
+                "surface",
+            ],
         ),
         UserChartDefinition(
             id="lot-throughput",
@@ -113,7 +131,25 @@ class AnalyticsDashboardProvider:
                 UserChartSeries(field="delivered_chickens", label="Entregues"),
                 UserChartSeries(field="lost_chickens", label="Perdidas"),
             ],
-            render_options=["bar", "line", "histogram"],
+            render_options=[
+                "bar",
+                "line",
+                "area",
+                "scatter",
+                "scattergl",
+                "scatter3d",
+                "scatterpolar",
+                "barpolar",
+                "scatterternary",
+                "histogram",
+                "box",
+                "violin",
+                "waterfall",
+                "funnel",
+                "heatmap",
+                "contour",
+                "surface",
+            ],
         ),
         UserChartDefinition(
             id="lot-mortality",
@@ -122,8 +158,23 @@ class AnalyticsDashboardProvider:
             type="line",
             query_name="lot_mortality",
             x_field="delivery_date",
-            series=[UserChartSeries(field="mortality_rate_pct", label="Mortalidade (%)")],
-            render_options=["line", "bar", "histogram"],
+            series=[
+                UserChartSeries(field="mortality_rate_pct", label="Mortalidade (%)")
+            ],
+            render_options=[
+                "line",
+                "bar",
+                "area",
+                "scatter",
+                "scattergl",
+                "scatterpolar",
+                "barpolar",
+                "histogram",
+                "box",
+                "violin",
+                "waterfall",
+                "funnel",
+            ],
         ),
         UserChartDefinition(
             id="lot-cost",
@@ -133,7 +184,20 @@ class AnalyticsDashboardProvider:
             query_name="lot_cost",
             x_field="delivery_date",
             series=[UserChartSeries(field="cost", label="Custo")],
-            render_options=["line", "bar", "histogram"],
+            render_options=[
+                "line",
+                "bar",
+                "area",
+                "scatter",
+                "scattergl",
+                "scatterpolar",
+                "barpolar",
+                "histogram",
+                "box",
+                "violin",
+                "waterfall",
+                "funnel",
+            ],
         ),
         UserChartDefinition(
             id="monthly-consumption",
@@ -146,7 +210,23 @@ class AnalyticsDashboardProvider:
                 UserChartSeries(field="water_consumed_m3", label="Água (m³)"),
                 UserChartSeries(field="energy_consumed_kwh", label="Energia (kWh)"),
             ],
-            render_options=["bar", "line", "histogram"],
+            render_options=[
+                "bar",
+                "line",
+                "area",
+                "scatter",
+                "scattergl",
+                "scatterpolar",
+                "barpolar",
+                "histogram",
+                "box",
+                "violin",
+                "waterfall",
+                "funnel",
+                "heatmap",
+                "contour",
+                "surface",
+            ],
         ),
         UserChartDefinition(
             id="resource-efficiency",
@@ -157,9 +237,27 @@ class AnalyticsDashboardProvider:
             x_field="month_start",
             series=[
                 UserChartSeries(field="water_m3_per_chicken", label="Água m³/ave"),
-                UserChartSeries(field="energy_kwh_per_chicken", label="Energia kWh/ave"),
+                UserChartSeries(
+                    field="energy_kwh_per_chicken", label="Energia kWh/ave"
+                ),
             ],
-            render_options=["line", "bar", "histogram"],
+            render_options=[
+                "line",
+                "bar",
+                "area",
+                "scatter",
+                "scattergl",
+                "scatterpolar",
+                "barpolar",
+                "histogram",
+                "box",
+                "violin",
+                "waterfall",
+                "funnel",
+                "heatmap",
+                "contour",
+                "surface",
+            ],
         ),
         UserChartDefinition(
             id="goal-status",
@@ -169,7 +267,18 @@ class AnalyticsDashboardProvider:
             query_name="goal_status",
             label_field="label",
             value_field="value",
-            render_options=["pie", "donut", "bar"],
+            render_options=[
+                "pie",
+                "donut",
+                "bar",
+                "funnel",
+                "funnelarea",
+                "treemap",
+                "sunburst",
+                "icicle",
+                "scatterpolar",
+                "barpolar",
+            ],
         ),
         UserChartDefinition(
             id="goal-type",
@@ -179,7 +288,24 @@ class AnalyticsDashboardProvider:
             query_name="goal_type",
             x_field="label",
             series=[UserChartSeries(field="value", label="Metas")],
-            render_options=["bar", "line"],
+            render_options=[
+                "bar",
+                "line",
+                "area",
+                "scatter",
+                "scattergl",
+                "scatterpolar",
+                "barpolar",
+                "histogram",
+                "box",
+                "violin",
+                "waterfall",
+                "funnel",
+                "funnelarea",
+                "treemap",
+                "sunburst",
+                "icicle",
+            ],
         ),
     )
 
@@ -317,7 +443,9 @@ class AnalyticsDashboardProvider:
         return list(self.dashboards)
 
     async def get_dashboard(self, dashboard_id: str) -> UserDashboardRecord:
-        dashboard = next((item for item in self.dashboards if item.id == dashboard_id), None)
+        dashboard = next(
+            (item for item in self.dashboards if item.id == dashboard_id), None
+        )
         if dashboard is None:
             raise KeyError(dashboard_id)
         return dashboard
