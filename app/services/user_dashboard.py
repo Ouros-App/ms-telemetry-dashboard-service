@@ -5,6 +5,9 @@ from app.core.auth import Principal
 from app.providers.analytics import AnalyticsDashboardProvider, AnalyticsScope
 from app.repositories.analytics import AnalyticsQueryError, AnalyticsUnavailable
 from app.schemas.user_dashboards import (
+    CustomDashboardChart,
+    CustomDashboardRequest,
+    CustomDashboardResponse,
     UserChartListResponse,
     UserChartPublic,
     UserChartRenderType,
@@ -49,7 +52,7 @@ class UserDashboardService:
         self.provider = provider
         self.chart_cache_ttl_seconds = chart_cache_ttl_seconds
         self._html_cache: dict[
-            tuple[str, int, str, str, str],
+            tuple[str, int, str, str, str, int | None],
             CachedHtml,
         ] = {}
 
@@ -138,6 +141,7 @@ class UserDashboardService:
         dashboard_id: str,
         chart_id: str,
         render_as: UserChartRenderType = "auto",
+        period_days: int | None = None,
     ) -> tuple[str, str]:
         scope = self.scope_for(principal)
 
@@ -156,7 +160,13 @@ class UserDashboardService:
         if resolved_render_as not in allowed:
             raise UserChartRenderUnsupported(resolved_render_as, list(allowed))
 
-        cache_key = (*scope.cache_key, dashboard_id, chart_id, resolved_render_as)
+        cache_key = (
+            *scope.cache_key,
+            dashboard_id,
+            chart_id,
+            resolved_render_as,
+            period_days,
+        )
         cached = self._html_cache.get(cache_key)
         if (
             cached is not None
@@ -164,7 +174,11 @@ class UserDashboardService:
         ):
             return cached.html, cached.nonce
 
-        rows = await self.provider.execute_chart_query(scope, chart)
+        rows = await self.provider.execute_chart_query(
+            scope,
+            chart,
+            period_days=period_days,
+        )
         html, nonce = render_plotly_html(chart, rows, render_as=resolved_render_as)
         self._html_cache[cache_key] = CachedHtml(
             created_at=time.monotonic(),
@@ -172,6 +186,49 @@ class UserDashboardService:
             nonce=nonce,
         )
         return html, nonce
+
+    async def build_custom_dashboard(
+        self,
+        principal: Principal,
+        request: CustomDashboardRequest,
+    ) -> CustomDashboardResponse:
+        """Compose a transient dashboard from the fixed, safe chart catalog."""
+        self.scope_for(principal)
+
+        chart_locations: dict[str, tuple[str, object]] = {}
+        for dashboard in await self.provider.list_dashboards():
+            for chart in await self.provider.list_charts(dashboard.id):
+                chart_locations[chart.id] = (dashboard.id, chart)
+
+        rendered: list[CustomDashboardChart] = []
+        for requested in request.charts:
+            location = chart_locations.get(requested.chart_id)
+            if location is None:
+                raise UserChartNotFound(requested.chart_id)
+
+            dashboard_id, chart = location
+            html, _nonce = await self.plotly_html(
+                principal,
+                dashboard_id,
+                chart.id,
+                render_as=requested.render_as,
+                period_days=request.period_days,
+            )
+            render_as = (
+                self._default_render_as(chart)
+                if requested.render_as == "auto"
+                else requested.render_as
+            )
+            rendered.append(
+                CustomDashboardChart(
+                    id=chart.id,
+                    title=chart.title,
+                    render_as=render_as,
+                    html=html,
+                )
+            )
+
+        return CustomDashboardResponse(title=request.title.strip(), charts=rendered)
 
 
 __all__ = [

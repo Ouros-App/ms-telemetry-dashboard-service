@@ -1,9 +1,17 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 UserChartType = Literal["indicator", "bar", "line", "pie"]
-UserChartRenderType = Literal["auto", "indicator", "bar", "line", "donut"]
+UserChartRenderType = Literal[
+    "auto",
+    "indicator",
+    "bar",
+    "line",
+    "pie",
+    "donut",
+    "histogram",
+]
 
 
 class UserDashboardRecord(BaseModel):
@@ -59,3 +67,45 @@ class UserChartPublic(BaseModel):
 
 class UserChartListResponse(BaseModel):
     items: list[UserChartPublic]
+
+
+class CustomDashboardChartRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    chart_id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,63}$")
+    render_as: UserChartRenderType = "auto"
+
+
+class CustomDashboardRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=120)
+    period_days: int = Field(default=30, ge=1, le=366)
+    charts: list[CustomDashboardChartRequest] = Field(min_length=1, max_length=4)
+
+    @field_validator("title")
+    @classmethod
+    def strip_title(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("title cannot be blank")
+        return value
+
+    @model_validator(mode="after")
+    def unique_chart_ids(self) -> "CustomDashboardRequest":
+        chart_ids = [chart.chart_id for chart in self.charts]
+        if len(chart_ids) != len(set(chart_ids)):
+            raise ValueError("chart_ids must be unique")
+        return self
+
+
+class CustomDashboardChart(BaseModel):
+    id: str
+    title: str
+    render_as: UserChartRenderType
+    html: str
+
+
+class CustomDashboardResponse(BaseModel):
+    title: str
+    charts: list[CustomDashboardChart]

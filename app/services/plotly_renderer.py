@@ -738,7 +738,9 @@ def render_plotly_html(
       target.setAttribute("aria-label", series.label);
 
       panel.append(heading, target);
-      const comparison = buildYearComparison(series, xField);
+      const comparison = renderType === "histogram"
+        ? null
+        : buildYearComparison(series, xField);
       const unit = seriesUnit(series);
       const hoverSuffix = unit ? " " + unit : "";
       const markerSize = isMobile() ? 8 : 10;
@@ -800,7 +802,18 @@ def render_plotly_html(
         const xValues = rows.map((row) => formatCategory(row[xField], xField));
         const yValues = rows.map((row) => nullableNumber(row[series.field]));
         traces = [
-          renderType === "line"
+          renderType === "histogram"
+            ? {{
+                type: "histogram",
+                name: series.label,
+                x: rows
+                  .map((row) => nullableNumber(row[series.field]))
+                  .filter((value) => value !== null),
+                nbinsx: 10,
+                marker: {{ color, line: {{ color: tokens.surface, width: 1 }} }},
+                hovertemplate: series.label + ": %{{y}} itens<extra></extra>",
+              }}
+            : renderType === "line"
             ? {{
                 type: "scatter",
                 mode: "lines+markers",
@@ -846,7 +859,11 @@ def render_plotly_html(
       if (unit) {{
         layout.yaxis.ticksuffix = unit;
       }}
-      if (renderType === "bar") {{
+      if (renderType === "histogram") {{
+        layout.xaxis.title = series.label;
+        layout.yaxis.title = "Frequência";
+        layout.bargap = 0.08;
+      }} else if (renderType === "bar") {{
         layout.barmode = "group";
         layout.bargap = 0.42;
         layout.bargroupgap = 0.08;
@@ -869,9 +886,9 @@ def render_plotly_html(
       const xField = categoricalValue ? chart.label_field : chart.x_field;
       const shouldSplitSeries = (
         ["monthly-consumption", "resource-efficiency"].includes(chart.id)
-        && ["line", "bar"].includes(renderType)
+        && ["line", "bar", "histogram"].includes(renderType)
         && sourceSeries.length === 2
-      );
+      ) || (renderType === "histogram" && sourceSeries.length > 1);
 
       if (shouldSplitSeries) {{
         document.body.dataset.splitSeries = "true";
@@ -886,7 +903,7 @@ def render_plotly_html(
       }} else {{
         let traces = [];
         let layout = baseLayout();
-        if (["line", "bar"].includes(renderType)) {{
+        if (["line", "bar", "histogram"].includes(renderType)) {{
           buildNativeLegend(sourceSeries);
           layout.showlegend = false;
           layout.margin = {{ ...layout.margin, b: sourceSeries.length > 1 ? 34 : 48 }};
@@ -915,7 +932,22 @@ def render_plotly_html(
             paper_bgcolor: "rgba(0,0,0,0)",
             plot_bgcolor: "rgba(0,0,0,0)",
           }};
-        }} else if (renderType === "donut") {{
+        }} else if (renderType === "histogram") {{
+          traces = sourceSeries.map((series, index) => ({{
+            type: "histogram",
+            name: series.label,
+            x: rows
+              .map((row) => nullableNumber(row[series.field]))
+              .filter((value) => value !== null),
+            nbinsx: 10,
+            marker: {{ color: palette[index % palette.length] }},
+            hovertemplate: series.label + ": %{{y}} itens<extra></extra>",
+          }}));
+          layout.barmode = "overlay";
+          layout.bargap = 0.08;
+          layout.xaxis.title = "Valor";
+          layout.yaxis.title = "Frequência";
+        }} else if (["donut", "pie"].includes(renderType)) {{
           if (chart.type === "indicator" && chart.value_field) {{
             const value = numberOrZero(rows[0][chart.value_field]);
             const bounded = Math.max(0, Math.min(100, value));
@@ -958,7 +990,7 @@ def render_plotly_html(
               type: "pie",
               labels,
               values,
-              hole: 0.64,
+              hole: renderType === "donut" ? 0.64 : 0,
               sort: false,
               marker: {{
                 colors: palette,
@@ -968,7 +1000,7 @@ def render_plotly_html(
               automargin: true,
               hovertemplate: "<b>%{{label}}</b><br>%{{value}} · %{{percent}}<extra></extra>",
             }}];
-            layout.annotations = [{{
+            layout.annotations = renderType === "donut" ? [{{
               x: 0.5,
               y: 0.5,
               xref: "paper",
@@ -980,7 +1012,7 @@ def render_plotly_html(
                 size: 25,
                 family: "Poppins, Inter, system-ui, sans-serif",
               }},
-            }}];
+            }}] : [];
             layout.legend = {{
               ...layout.legend,
               x: 0.5,

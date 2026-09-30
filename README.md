@@ -183,6 +183,7 @@ Rotas:
 - `GET /v1/user/dashboards/{dashboard_id}`;
 - `GET /v1/user/dashboards/{dashboard_id}/charts`;
 - `GET /v1/user/dashboards/{dashboard_id}/charts/{chart_id}/plotly`.
+- `POST /v1/user/dashboards/custom` compõe um painel temporário com até quatro gráficos do catálogo permitido e retorna HTML Plotly por gráfico.
 
 Exemplo:
 
@@ -195,6 +196,18 @@ curl -H "Authorization: Bearer $KEYCLOAK_ACCESS_TOKEN" \
 ```
 
 O último endpoint retorna `text/html` com Plotly.js e pode ser carregado pelo front. O HTML recebe CSP, `nosniff`, cache privado curto e serialização segura dos valores vindos do banco.
+
+O endpoint de painel customizado recebe `title`, uma lista de `chart_id`/`render_as` e `period_days` (1 a 366, padrão 30). Os formatos incluem indicador, barras, linha, pizza, donut e histograma; cada gráfico valida quais formatos são compatíveis. Histogramas são limitados a séries numéricas do catálogo. A janela é aplicada somente aos gráficos com série temporal de produção e consumo. O endpoint nunca aceita SQL, `farm_id` ou `enterprise_id`; o escopo vem do mesmo JWT Keycloak validado nas rotas de usuário. O resultado é `Cache-Control: private, no-store` e não persiste a configuração do painel.
+
+```http
+POST /v1/user/dashboards/custom
+Authorization: Bearer <JWT do usuário com audience ms-telemetry-dashboard-service>
+Content-Type: application/json
+
+{"title":"Consumo da minha fazenda","period_days":30,"charts":[{"chart_id":"monthly-consumption","render_as":"auto"}]}
+```
+
+A resposta contém `title` e `charts`; cada item traz `id`, `title`, `render_as` e o HTML Plotly independente para WebView/iframe.
 
 #### Integração visual mobile/web
 

@@ -1,11 +1,13 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse
 
 from app.core.auth import Principal, require_user_bearer
 from app.repositories.analytics import AnalyticsQueryError, AnalyticsUnavailable
 from app.schemas.user_dashboards import (
+    CustomDashboardRequest,
+    CustomDashboardResponse,
     UserChartListResponse,
     UserChartRenderType,
     UserDashboardListResponse,
@@ -31,6 +33,44 @@ def _scope_forbidden(exc: UserScopeError) -> HTTPException:
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Authenticated account has no dashboard scope",
     )
+
+
+@router.post(
+    "/custom",
+    summary="Render a transient dashboard from approved charts",
+    description=(
+        "Composes up to four charts from the server-owned analytics catalog. "
+        "The request cannot select SQL, farm IDs, or enterprise IDs."
+    ),
+)
+async def build_custom_dashboard(
+    payload: CustomDashboardRequest,
+    principal: Annotated[Principal, Depends(require_user_bearer)],
+    service: Annotated[UserDashboardService, Depends(get_user_dashboard_service)],
+    response: Response,
+) -> CustomDashboardResponse:
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    try:
+        return await service.build_custom_dashboard(principal, payload)
+    except UserScopeError as exc:
+        raise _scope_forbidden(exc) from exc
+    except UserChartRenderUnsupported as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "render style not supported by this chart",
+                "render_as": exc.render_as,
+                "allowed": exc.allowed,
+            },
+        ) from exc
+    except UserChartNotFound as exc:
+        raise HTTPException(status_code=404, detail="chart not found") from exc
+    except (AnalyticsUnavailable, AnalyticsQueryError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="User analytics is temporarily unavailable",
+        ) from exc
 
 
 @router.get("", summary="List dashboards available to the authenticated user")

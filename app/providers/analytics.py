@@ -28,6 +28,13 @@ class AnalyticsScope:
 
 
 class AnalyticsDashboardProvider:
+    PERIOD_COLUMNS: ClassVar[dict[str, str]] = {
+        "lot_throughput": "delivery_date",
+        "lot_mortality": "delivery_date",
+        "lot_cost": "delivery_date",
+        "monthly_consumption": "month_start",
+        "resource_efficiency": "month_start",
+    }
     dashboards: ClassVar[tuple[UserDashboardRecord, ...]] = (
         UserDashboardRecord(
             id="overview",
@@ -92,7 +99,7 @@ class AnalyticsDashboardProvider:
                 UserChartSeries(field="chickens_now", label="Aves atuais"),
                 UserChartSeries(field="poultry_capacity", label="Capacidade"),
             ],
-            render_options=["bar", "line"],
+            render_options=["bar", "line", "histogram"],
         ),
         UserChartDefinition(
             id="lot-throughput",
@@ -106,7 +113,7 @@ class AnalyticsDashboardProvider:
                 UserChartSeries(field="delivered_chickens", label="Entregues"),
                 UserChartSeries(field="lost_chickens", label="Perdidas"),
             ],
-            render_options=["bar", "line"],
+            render_options=["bar", "line", "histogram"],
         ),
         UserChartDefinition(
             id="lot-mortality",
@@ -116,7 +123,7 @@ class AnalyticsDashboardProvider:
             query_name="lot_mortality",
             x_field="delivery_date",
             series=[UserChartSeries(field="mortality_rate_pct", label="Mortalidade (%)")],
-            render_options=["line", "bar"],
+            render_options=["line", "bar", "histogram"],
         ),
         UserChartDefinition(
             id="lot-cost",
@@ -126,7 +133,7 @@ class AnalyticsDashboardProvider:
             query_name="lot_cost",
             x_field="delivery_date",
             series=[UserChartSeries(field="cost", label="Custo")],
-            render_options=["line", "bar"],
+            render_options=["line", "bar", "histogram"],
         ),
         UserChartDefinition(
             id="monthly-consumption",
@@ -139,7 +146,7 @@ class AnalyticsDashboardProvider:
                 UserChartSeries(field="water_consumed_m3", label="Água (m³)"),
                 UserChartSeries(field="energy_consumed_kwh", label="Energia (kWh)"),
             ],
-            render_options=["bar", "line"],
+            render_options=["bar", "line", "histogram"],
         ),
         UserChartDefinition(
             id="resource-efficiency",
@@ -152,7 +159,7 @@ class AnalyticsDashboardProvider:
                 UserChartSeries(field="water_m3_per_chicken", label="Água m³/ave"),
                 UserChartSeries(field="energy_kwh_per_chicken", label="Energia kWh/ave"),
             ],
-            render_options=["line", "bar"],
+            render_options=["line", "bar", "histogram"],
         ),
         UserChartDefinition(
             id="goal-status",
@@ -162,7 +169,7 @@ class AnalyticsDashboardProvider:
             query_name="goal_status",
             label_field="label",
             value_field="value",
-            render_options=["donut", "bar"],
+            render_options=["pie", "donut", "bar"],
         ),
         UserChartDefinition(
             id="goal-type",
@@ -337,15 +344,27 @@ class AnalyticsDashboardProvider:
         self,
         scope: AnalyticsScope,
         chart: UserChartDefinition,
+        period_days: int | None = None,
     ) -> list[dict[str, Any]]:
         if self.repository is None:
             raise AnalyticsUnavailable("Analytics database is not configured")
         query = self.queries.get(chart.query_name)
         if query is None:
             raise AnalyticsQueryError("Unknown analytics query")
+        if period_days is not None:
+            date_column = self.PERIOD_COLUMNS.get(chart.query_name)
+            if date_column is not None:
+                query = (
+                    f"SELECT * FROM ({query}) AS period_rows "
+                    f"WHERE {date_column} >= CURRENT_DATE - "
+                    "($3::integer * INTERVAL '1 day') "
+                    f"ORDER BY {date_column}"
+                )
+        query_args = [scope.farm_id, scope.enterprise_id]
+        if period_days is not None and chart.query_name in self.PERIOD_COLUMNS:
+            query_args.append(period_days)
         return await self.repository.fetch(
             chart.query_name,
             query,
-            scope.farm_id,
-            scope.enterprise_id,
+            *query_args,
         )
