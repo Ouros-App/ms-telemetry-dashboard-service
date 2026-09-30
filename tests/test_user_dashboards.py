@@ -307,8 +307,8 @@ def test_custom_dashboard_route_maps_domain_errors(
         async def build_custom_dashboard(self, _principal, _payload):
             raise error
 
-    monkeypatch.setattr(app.state, "user_dashboard_service", FailingService())
     with TestClient(app) as client:
+        monkeypatch.setattr(app.state, "user_dashboard_service", FailingService())
         response = client.post(
             "/v1/user/dashboards/custom",
             headers={"Authorization": "Bearer signed-token"},
