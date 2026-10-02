@@ -30,12 +30,16 @@ class AnalyticsScope:
 
 
 class AnalyticsDashboardProvider:
+    MONTH_BUCKET_QUERIES: ClassVar[frozenset[str]] = frozenset(
+        {"monthly_consumption", "resource_efficiency"}
+    )
     PERIOD_COLUMNS: ClassVar[dict[str, str]] = {
         "lot_throughput": "delivery_date",
         "lot_mortality": "delivery_date",
         "lot_cost": "delivery_date",
         "monthly_consumption": "month_start",
         "resource_efficiency": "month_start",
+        "water_consumption_by_reading": "registration_date",
     }
     dashboards: ClassVar[tuple[UserDashboardRecord, ...]] = (
         UserDashboardRecord(
@@ -51,7 +55,7 @@ class AnalyticsDashboardProvider:
         UserDashboardRecord(
             id="consumption",
             title="Consumo",
-            description="Consumo mensal de água e energia e eficiência por ave.",
+            description="Consumo mensal de água e energia e consumo por ave.",
         ),
         UserDashboardRecord(
             id="goals",
@@ -202,7 +206,7 @@ class AnalyticsDashboardProvider:
         UserChartDefinition(
             id="monthly-consumption",
             dashboard_id="consumption",
-            title="Consumo mensal",
+            title="Consumo mensal de água e energia",
             type="bar",
             query_name="monthly_consumption",
             x_field="month_start",
@@ -229,9 +233,79 @@ class AnalyticsDashboardProvider:
             ],
         ),
         UserChartDefinition(
+            id="monthly-water-consumption",
+            dashboard_id="consumption",
+            title="Consumo mensal de água",
+            type="bar",
+            query_name="monthly_consumption",
+            x_field="month_start",
+            series=[UserChartSeries(field="water_consumed_m3", label="Água (m³)")],
+            render_options=[
+                "bar",
+                "line",
+                "area",
+                "scatter",
+                "scattergl",
+                "scatterpolar",
+                "barpolar",
+                "histogram",
+                "box",
+                "violin",
+                "waterfall",
+                "funnel",
+                "surface",
+            ],
+        ),
+        UserChartDefinition(
+            id="water-consumption-by-reading",
+            dashboard_id="consumption",
+            title="Consumo de água por leitura",
+            type="bar",
+            query_name="water_consumption_by_reading",
+            x_field="registration_date",
+            series=[UserChartSeries(field="water_consumed_m3", label="Água (m³)")],
+            render_options=[
+                "bar",
+                "line",
+                "area",
+                "scatter",
+                "scattergl",
+                "histogram",
+                "box",
+                "violin",
+                "waterfall",
+            ],
+        ),
+        UserChartDefinition(
+            id="monthly-energy-consumption",
+            dashboard_id="consumption",
+            title="Consumo mensal de energia",
+            type="bar",
+            query_name="monthly_consumption",
+            x_field="month_start",
+            series=[
+                UserChartSeries(field="energy_consumed_kwh", label="Energia (kWh)")
+            ],
+            render_options=[
+                "bar",
+                "line",
+                "area",
+                "scatter",
+                "scattergl",
+                "scatterpolar",
+                "barpolar",
+                "histogram",
+                "box",
+                "violin",
+                "waterfall",
+                "funnel",
+                "surface",
+            ],
+        ),
+        UserChartDefinition(
             id="resource-efficiency",
             dashboard_id="consumption",
-            title="Consumo por ave",
+            title="Consumo de água e energia por ave",
             type="line",
             query_name="resource_efficiency",
             x_field="month_start",
@@ -256,6 +330,60 @@ class AnalyticsDashboardProvider:
                 "funnel",
                 "heatmap",
                 "contour",
+                "surface",
+            ],
+        ),
+        UserChartDefinition(
+            id="water-efficiency",
+            dashboard_id="consumption",
+            title="Consumo de água por ave",
+            type="line",
+            query_name="resource_efficiency",
+            x_field="month_start",
+            series=[
+                UserChartSeries(field="water_m3_per_chicken", label="Água m³/ave")
+            ],
+            render_options=[
+                "line",
+                "bar",
+                "area",
+                "scatter",
+                "scattergl",
+                "scatterpolar",
+                "barpolar",
+                "histogram",
+                "box",
+                "violin",
+                "waterfall",
+                "funnel",
+                "surface",
+            ],
+        ),
+        UserChartDefinition(
+            id="energy-efficiency",
+            dashboard_id="consumption",
+            title="Consumo de energia por ave",
+            type="line",
+            query_name="resource_efficiency",
+            x_field="month_start",
+            series=[
+                UserChartSeries(
+                    field="energy_kwh_per_chicken", label="Energia kWh/ave"
+                )
+            ],
+            render_options=[
+                "line",
+                "bar",
+                "area",
+                "scatter",
+                "scattergl",
+                "scatterpolar",
+                "barpolar",
+                "histogram",
+                "box",
+                "violin",
+                "waterfall",
+                "funnel",
                 "surface",
             ],
         ),
@@ -397,6 +525,16 @@ class AnalyticsDashboardProvider:
             GROUP BY c.month_start
             ORDER BY c.month_start
         """,
+        "water_consumption_by_reading": """
+            SELECT
+                r.registration_date,
+                ROUND(SUM(r.water_consumed_m3), 3) AS water_consumed_m3
+            FROM analytics.fact_water_registry r
+            WHERE ($1::integer IS NOT NULL AND r.farm_id = $1)
+               OR ($2::integer IS NOT NULL AND r.enterprise_id = $2)
+            GROUP BY r.registration_date
+            ORDER BY r.registration_date
+        """,
         "resource_efficiency": """
             SELECT
                 c.month_start,
@@ -490,17 +628,16 @@ class AnalyticsDashboardProvider:
                     # the cutoff falls after the first day of that month.
                     period_filter = (
                         f"{date_column} >= date_trunc('month', CURRENT_DATE - "
-                        "($3::integer * INTERVAL '1 day'))"
+                        "(($3::integer - 1) * INTERVAL '1 day'))"
                     )
                 else:
                     period_filter = (
                         f"{date_column} >= CURRENT_DATE - "
-                        "($3::integer * INTERVAL '1 day')"
+                        "(($3::integer - 1) * INTERVAL '1 day')"
                     )
                 query = (
                     f"SELECT * FROM ({query}) AS period_rows "
-                    f"WHERE {period_filter} "
-                    f"ORDER BY {date_column}"
+                    f"WHERE {period_filter} ORDER BY {date_column}"
                 )
         query_args = [scope.farm_id, scope.enterprise_id]
         if period_days is not None and chart.query_name in self.PERIOD_COLUMNS:

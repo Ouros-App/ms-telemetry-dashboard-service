@@ -108,7 +108,7 @@ def render_plotly_html(
     .chart-shell {{
       position: relative;
       width: 100%;
-      max-width: 419px;
+      max-width: 1160px;
       min-width: 0;
       min-height: 484px;
       height: 484px;
