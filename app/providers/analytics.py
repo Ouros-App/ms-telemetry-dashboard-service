@@ -30,6 +30,9 @@ class AnalyticsScope:
 
 
 class AnalyticsDashboardProvider:
+    MONTH_BUCKET_QUERIES: ClassVar[frozenset[str]] = frozenset(
+        {"monthly_consumption", "resource_efficiency"}
+    )
     PERIOD_COLUMNS: ClassVar[dict[str, str]] = {
         "lot_throughput": "delivery_date",
         "lot_mortality": "delivery_date",
@@ -582,11 +585,23 @@ class AnalyticsDashboardProvider:
         if period_days is not None:
             date_column = self.PERIOD_COLUMNS.get(chart.query_name)
             if date_column is not None:
+                if chart.query_name in self.MONTH_BUCKET_QUERIES:
+                    # Monthly aggregates represent a whole calendar month. Keep a
+                    # month when any part of its bucket overlaps the requested range;
+                    # comparing month_start to the exact day cutoff drops the prior
+                    # month for common requests such as "last 30 days" on the 2nd.
+                    period_filter = (
+                        f"WHERE {date_column} + INTERVAL '1 month' > CURRENT_DATE - "
+                        "($3::integer * INTERVAL '1 day') "
+                    )
+                else:
+                    period_filter = (
+                        f"WHERE {date_column} >= CURRENT_DATE - "
+                        "($3::integer * INTERVAL '1 day') "
+                    )
                 query = (
                     f"SELECT * FROM ({query}) AS period_rows "
-                    f"WHERE {date_column} >= CURRENT_DATE - "
-                    "($3::integer * INTERVAL '1 day') "
-                    f"ORDER BY {date_column}"
+                    f"{period_filter}ORDER BY {date_column}"
                 )
         query_args = [scope.farm_id, scope.enterprise_id]
         if period_days is not None and chart.query_name in self.PERIOD_COLUMNS:
