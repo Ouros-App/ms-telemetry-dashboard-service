@@ -482,10 +482,23 @@ class AnalyticsDashboardProvider:
         if period_days is not None:
             date_column = self.PERIOD_COLUMNS.get(chart.query_name)
             if date_column is not None:
+                if date_column == "month_start":
+                    # Monthly rows represent a whole calendar-month bucket. Keep
+                    # the bucket containing the start of the requested window;
+                    # comparing month_start with the exact cutoff drops it when
+                    # the cutoff falls after the first day of that month.
+                    period_filter = (
+                        f"{date_column} >= date_trunc('month', CURRENT_DATE - "
+                        "($3::integer * INTERVAL '1 day'))"
+                    )
+                else:
+                    period_filter = (
+                        f"{date_column} >= CURRENT_DATE - "
+                        "($3::integer * INTERVAL '1 day')"
+                    )
                 query = (
                     f"SELECT * FROM ({query}) AS period_rows "
-                    f"WHERE {date_column} >= CURRENT_DATE - "
-                    "($3::integer * INTERVAL '1 day') "
+                    f"WHERE {period_filter} "
                     f"ORDER BY {date_column}"
                 )
         query_args = [scope.farm_id, scope.enterprise_id]

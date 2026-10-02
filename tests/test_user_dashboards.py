@@ -91,6 +91,24 @@ async def test_company_employee_query_is_scoped_only_by_signed_enterprise_id() -
     assert args == (None, 3)
 
 
+@pytest.mark.asyncio
+async def test_monthly_consumption_period_includes_the_overlapping_month_bucket() -> None:
+    repository = FakeRepository({"monthly_consumption": []})
+    provider = AnalyticsDashboardProvider(repository)
+    chart = await provider.get_chart("consumption", "monthly-consumption")
+
+    await provider.execute_chart_query(
+        AnalyticsScope(account_type="farm_owner", farm_id=7),
+        chart,
+        period_days=30,
+    )
+
+    _, query, args = repository.calls[0]
+    assert "month_start >= date_trunc('month', CURRENT_DATE - " in query
+    assert "($3::integer * INTERVAL '1 day')" in query
+    assert args == (7, None, 30)
+
+
 def test_every_analytics_query_uses_bound_scope_parameters() -> None:
     for query in AnalyticsDashboardProvider.queries.values():
         assert "$1" in query
