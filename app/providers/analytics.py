@@ -39,6 +39,7 @@ class AnalyticsDashboardProvider:
         "lot_cost": "delivery_date",
         "monthly_consumption": "month_start",
         "resource_efficiency": "month_start",
+        "water_consumption_by_reading": "registration_date",
     }
     dashboards: ClassVar[tuple[UserDashboardRecord, ...]] = (
         UserDashboardRecord(
@@ -117,6 +118,8 @@ class AnalyticsDashboardProvider:
                 "violin",
                 "waterfall",
                 "funnel",
+                "heatmap",
+                "contour",
                 "surface",
             ],
         ),
@@ -147,6 +150,8 @@ class AnalyticsDashboardProvider:
                 "violin",
                 "waterfall",
                 "funnel",
+                "heatmap",
+                "contour",
                 "surface",
             ],
         ),
@@ -249,6 +254,26 @@ class AnalyticsDashboardProvider:
                 "waterfall",
                 "funnel",
                 "surface",
+            ],
+        ),
+        UserChartDefinition(
+            id="water-consumption-by-reading",
+            dashboard_id="consumption",
+            title="Consumo de água por leitura",
+            type="bar",
+            query_name="water_consumption_by_reading",
+            x_field="registration_date",
+            series=[UserChartSeries(field="water_consumed_m3", label="Água (m³)")],
+            render_options=[
+                "bar",
+                "line",
+                "area",
+                "scatter",
+                "scattergl",
+                "histogram",
+                "box",
+                "violin",
+                "waterfall",
             ],
         ),
         UserChartDefinition(
@@ -500,6 +525,16 @@ class AnalyticsDashboardProvider:
             GROUP BY c.month_start
             ORDER BY c.month_start
         """,
+        "water_consumption_by_reading": """
+            SELECT
+                r.registration_date,
+                ROUND(SUM(r.water_consumed_m3), 3) AS water_consumed_m3
+            FROM analytics.fact_water_registry r
+            WHERE ($1::integer IS NOT NULL AND r.farm_id = $1)
+               OR ($2::integer IS NOT NULL AND r.enterprise_id = $2)
+            GROUP BY r.registration_date
+            ORDER BY r.registration_date
+        """,
         "resource_efficiency": """
             SELECT
                 c.month_start,
@@ -577,6 +612,7 @@ class AnalyticsDashboardProvider:
         chart: UserChartDefinition,
         period_days: int | None = None,
     ) -> list[dict[str, Any]]:
+        """Fetch chart rows scoped to the account and optional time window."""
         if self.repository is None:
             raise AnalyticsUnavailable("Analytics database is not configured")
         query = self.queries.get(chart.query_name)
@@ -585,23 +621,23 @@ class AnalyticsDashboardProvider:
         if period_days is not None:
             date_column = self.PERIOD_COLUMNS.get(chart.query_name)
             if date_column is not None:
-                if chart.query_name in self.MONTH_BUCKET_QUERIES:
-                    # Monthly aggregates represent a whole calendar month. Keep a
-                    # month when any part of its bucket overlaps the requested range;
-                    # comparing month_start to the exact day cutoff drops the prior
-                    # month for common requests such as "last 30 days" on the 2nd.
+                if date_column == "month_start":
+                    # Monthly rows represent a whole calendar-month bucket. Keep
+                    # the bucket containing the start of the requested window;
+                    # comparing month_start with the exact cutoff drops it when
+                    # the cutoff falls after the first day of that month.
                     period_filter = (
-                        f"WHERE {date_column} + INTERVAL '1 month' > CURRENT_DATE - "
-                        "($3::integer * INTERVAL '1 day') "
+                        f"{date_column} >= date_trunc('month', CURRENT_DATE - "
+                        "(($3::integer - 1) * INTERVAL '1 day'))"
                     )
                 else:
                     period_filter = (
-                        f"WHERE {date_column} >= CURRENT_DATE - "
-                        "($3::integer * INTERVAL '1 day') "
+                        f"{date_column} >= CURRENT_DATE - "
+                        "(($3::integer - 1) * INTERVAL '1 day')"
                     )
                 query = (
                     f"SELECT * FROM ({query}) AS period_rows "
-                    f"{period_filter}ORDER BY {date_column}"
+                    f"WHERE {period_filter} ORDER BY {date_column}"
                 )
         query_args = [scope.farm_id, scope.enterprise_id]
         if period_days is not None and chart.query_name in self.PERIOD_COLUMNS:

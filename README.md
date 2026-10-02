@@ -197,14 +197,14 @@ curl -H "Authorization: Bearer $KEYCLOAK_ACCESS_TOKEN" \
 
 O último endpoint retorna `text/html` com Plotly.js e pode ser carregado pelo front. O HTML recebe CSP, `nosniff`, cache privado curto e serialização segura dos valores vindos do banco.
 
-O endpoint de painel customizado recebe `title`, uma lista de `chart_id`/`render_as` e `period_days` (1 a 366, padrão 30). O catálogo expõe os tipos de trace Plotly compatíveis com os dados de cada gráfico: barras, linhas, áreas, dispersão, histogramas, box/violin, waterfall/funnel, heatmap/contour, pizza/donut e indicadores. Consumo de água e energia tem opções separadas e também um gráfico combinado para pedidos que mencionem ambos. O endpoint de listagem informa as opções válidas por gráfico; não há uma lista própria de estilos no cliente. O endpoint nunca aceita SQL, `farm_id`, `enterprise_id` ou configuração Plotly arbitrária; o escopo vem do mesmo JWT Keycloak validado nas rotas de usuário. O resultado é `Cache-Control: private, no-store` e não persiste a configuração do painel.
+O endpoint de painel customizado recebe `title`, uma lista de `chart_id`/`render_as` e `period_days` (1 a 366, padrão 30). O catálogo expõe os tipos de trace Plotly compatíveis com os dados de cada gráfico: barras, linhas, áreas, dispersão, histogramas, box/violin, waterfall/funnel, heatmap/contour, pizza/donut e indicadores. Consumo de água e energia tem opções separadas e também um gráfico combinado para pedidos que mencionem ambos. Para períodos curtos, `water-consumption-by-reading` apresenta somente água usando as datas reais das leituras do hidrômetro; `monthly-water-consumption` continua disponível para análises mensais. O endpoint de listagem informa as opções válidas por gráfico; não há uma lista própria de estilos no cliente. O endpoint nunca aceita SQL, `farm_id`, `enterprise_id` ou configuração Plotly arbitrária; o escopo vem do mesmo JWT Keycloak validado nas rotas de usuário. O resultado é `Cache-Control: private, no-store` e não persiste a configuração do painel.
 
 ```http
 POST /v1/user/dashboards/custom
 Authorization: Bearer <JWT do usuário com audience ms-telemetry-dashboard-service>
 Content-Type: application/json
 
-{"title":"Consumo de água da minha fazenda","period_days":30,"charts":[{"chart_id":"monthly-water-consumption","render_as":"auto"}]}
+{"title":"Consumo de água da minha fazenda","period_days":30,"charts":[{"chart_id":"water-consumption-by-reading","render_as":"auto"}]}
 ```
 
 A resposta contém `title` e `charts`; cada item traz `id`, `title`, `render_as` e o HTML Plotly independente para WebView/iframe.
@@ -230,8 +230,8 @@ Exemplo de item retornado por `GET /v1/user/dashboards/consumption/charts`:
 
 ```json
 {
-  "id": "monthly-water-consumption",
-  "title": "Consumo mensal de água",
+  "id": "water-consumption-by-reading",
+  "title": "Consumo de água por leitura",
   "type": "bar",
   "default_render_as": "bar",
   "render_options": ["bar", "line"]

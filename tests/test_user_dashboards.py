@@ -91,6 +91,66 @@ async def test_company_employee_query_is_scoped_only_by_signed_enterprise_id() -
     assert args == (None, 3)
 
 
+@pytest.mark.asyncio
+async def test_monthly_consumption_period_includes_the_overlapping_month_bucket() -> None:
+    """Monthly aggregates include the calendar bucket containing the cutoff."""
+    repository = FakeRepository({"monthly_consumption": []})
+    provider = AnalyticsDashboardProvider(repository)
+    chart = await provider.get_chart("consumption", "monthly-consumption")
+
+    await provider.execute_chart_query(
+        AnalyticsScope(account_type="farm_owner", farm_id=7),
+        chart,
+        period_days=30,
+    )
+
+    _, query, args = repository.calls[0]
+    assert "month_start >= date_trunc('month', CURRENT_DATE - " in query
+    assert "(($3::integer - 1) * INTERVAL '1 day')" in query
+    assert args == (7, None, 30)
+
+
+@pytest.mark.asyncio
+async def test_daily_chart_period_keeps_the_exact_requested_cutoff() -> None:
+    """Daily-grain analytics keep filtering from the exact requested date."""
+    repository = FakeRepository({"lot_throughput": []})
+    provider = AnalyticsDashboardProvider(repository)
+    chart = await provider.get_chart("production", "lot-throughput")
+
+    await provider.execute_chart_query(
+        AnalyticsScope(account_type="farm_owner", farm_id=7),
+        chart,
+        period_days=30,
+    )
+
+    _, query, args = repository.calls[0]
+    assert "delivery_date >= CURRENT_DATE - " in query
+    assert "date_trunc('month'" not in query
+    assert args == (7, None, 30)
+
+
+@pytest.mark.asyncio
+async def test_water_reading_chart_uses_scoped_dates_and_single_series() -> None:
+    """Short-period water charts use dated readings without energy series."""
+    repository = FakeRepository({"water_consumption_by_reading": []})
+    provider = AnalyticsDashboardProvider(repository)
+    chart = await provider.get_chart("consumption", "water-consumption-by-reading")
+
+    await provider.execute_chart_query(
+        AnalyticsScope(account_type="farm_owner", farm_id=7),
+        chart,
+        period_days=30,
+    )
+
+    _, query, args = repository.calls[0]
+    assert "analytics.fact_water_registry" in query
+    assert "registration_date >= CURRENT_DATE - " in query
+    assert "(($3::integer - 1) * INTERVAL '1 day')" in query
+    assert chart.title == "Consumo de água por leitura"
+    assert [series.field for series in chart.series] == ["water_consumed_m3"]
+    assert args == (7, None, 30)
+
+
 def test_every_analytics_query_uses_bound_scope_parameters() -> None:
     for query in AnalyticsDashboardProvider.queries.values():
         assert "$1" in query
@@ -437,6 +497,23 @@ async def test_chart_catalog_exposes_figma_render_options() -> None:
         "contour",
         "surface",
     ]
+
+    water_readings = next(
+        item for item in consumption.items if item.id == "water-consumption-by-reading"
+    )
+    assert water_readings.title == "Consumo de água por leitura"
+    assert water_readings.default_render_as == "bar"
+    assert "heatmap" not in next(
+        item for item in consumption.items if item.id == "monthly-water-consumption"
+    ).render_options
+
+    overview = await service.list_charts(farm_owner(), "overview")
+    capacity = next(item for item in overview.items if item.id == "farm-capacity")
+    assert {"heatmap", "contour"}.issubset(capacity.render_options)
+
+    production = await service.list_charts(farm_owner(), "production")
+    throughput = next(item for item in production.items if item.id == "lot-throughput")
+    assert {"heatmap", "contour"}.issubset(throughput.render_options)
 
     goals = await service.list_charts(farm_owner(), "goals")
     status = next(item for item in goals.items if item.id == "goal-status")
