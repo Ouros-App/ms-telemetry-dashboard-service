@@ -474,6 +474,7 @@ class AnalyticsDashboardProvider:
         chart: UserChartDefinition,
         period_days: int | None = None,
     ) -> list[dict[str, Any]]:
+        """Fetch chart rows scoped to the account and optional time window."""
         if self.repository is None:
             raise AnalyticsUnavailable("Analytics database is not configured")
         query = self.queries.get(chart.query_name)
