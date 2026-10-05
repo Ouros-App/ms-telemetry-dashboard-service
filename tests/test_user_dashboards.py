@@ -809,3 +809,23 @@ async def test_plotly_renderer_uses_ouros_visual_language_for_series() -> None:
     assert "font-size: 14.348px" in html
     assert "width: 7.652px" in html
     assert "const barWidth = isMobile() ? 0.23 : 0.22" in html
+
+
+@pytest.mark.asyncio
+async def test_plotly_renderer_makes_single_metric_monthly_bars_readable() -> None:
+    provider = AnalyticsDashboardProvider(FakeRepository())
+    chart = await provider.get_chart("consumption", "monthly-water-consumption")
+
+    html, _ = render_plotly_html(
+        chart,
+        [
+            {"month_start": "2026-08-01", "water_consumed_m3": 630},
+            {"month_start": "2026-09-01", "water_consumed_m3": 540},
+        ],
+    )
+
+    assert "labelMonthlyValues" in html
+    assert 'base.textposition = "outside"' in html
+    assert 'layout.yaxis.ticksuffix = " " + unit' in html
+    assert 'sourceSeries.length === 1 ? 0.62 : 0.42' in html
+    assert "layout.margin.t = 34" in html
