@@ -1,5 +1,6 @@
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from app.core.auth import Principal
 from app.providers.analytics import AnalyticsDashboardProvider, AnalyticsScope
@@ -11,6 +12,7 @@ from app.schemas.user_dashboards import (
     UserChartListResponse,
     UserChartPublic,
     UserChartRenderType,
+    UserDashboardDataStatus,
     UserDashboardListResponse,
     UserDashboardPublic,
 )
@@ -90,6 +92,38 @@ class UserDashboardService:
         dashboards = await self.provider.list_dashboards()
         return UserDashboardListResponse(
             items=[UserDashboardPublic.from_record(item) for item in dashboards]
+        )
+
+    async def data_status(
+        self,
+        principal: Principal,
+        stale_after_seconds: int,
+    ) -> UserDashboardDataStatus:
+        self.scope_for(principal)
+        sync_state = await self.provider.get_sync_status()
+        if not sync_state or sync_state.get("last_updated_at") is None:
+            return UserDashboardDataStatus(
+                status="unknown",
+                last_updated_at=None,
+                age_seconds=None,
+                stale_after_seconds=stale_after_seconds,
+            )
+
+        last_updated_at = sync_state["last_updated_at"]
+        if last_updated_at.tzinfo is None:
+            last_updated_at = last_updated_at.replace(tzinfo=UTC)
+        age_seconds = max(
+            0,
+            int((datetime.now(UTC) - last_updated_at).total_seconds()),
+        )
+        is_stale = age_seconds > stale_after_seconds or bool(
+            sync_state.get("has_error")
+        )
+        return UserDashboardDataStatus(
+            status="stale" if is_stale else "fresh",
+            last_updated_at=last_updated_at,
+            age_seconds=age_seconds,
+            stale_after_seconds=stale_after_seconds,
         )
 
     async def get_dashboard(

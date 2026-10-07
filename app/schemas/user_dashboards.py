@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -26,6 +27,13 @@ class UserDashboardPublic(BaseModel):
 
 class UserDashboardListResponse(BaseModel):
     items: list[UserDashboardPublic]
+
+
+class UserDashboardDataStatus(BaseModel):
+    status: Literal["fresh", "stale", "unknown"]
+    last_updated_at: datetime | None
+    age_seconds: int | None
+    stale_after_seconds: int
 
 
 class UserChartSeries(BaseModel):

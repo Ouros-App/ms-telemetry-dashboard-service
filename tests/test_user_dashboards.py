@@ -1,3 +1,5 @@
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -9,6 +11,7 @@ from app.schemas.user_dashboards import (
     CustomDashboardRequest,
     UserChartListResponse,
     UserChartPublic,
+    UserDashboardDataStatus,
     UserDashboardListResponse,
     UserDashboardPublic,
     UserDashboardRecord,
@@ -143,7 +146,7 @@ async def test_water_reading_chart_uses_scoped_dates_and_single_series() -> None
     )
 
     _, query, args = repository.calls[0]
-    assert "analytics.fact_water_registry" in query
+    assert "analytics.dashboard_water_reading_history" in query
     assert "registration_date >= CURRENT_DATE - " in query
     assert "(($3::integer - 1) * INTERVAL '1 day')" in query
     assert chart.title == "Consumo de água por leitura"
@@ -155,6 +158,105 @@ def test_every_analytics_query_uses_bound_scope_parameters() -> None:
     for query in AnalyticsDashboardProvider.queries.values():
         assert "$1" in query
         assert "$2" in query
+        assert "analytics.dim_" not in query
+        assert "analytics.fact_" not in query
+
+
+@pytest.mark.asyncio
+async def test_analytics_provider_reads_sync_freshness_from_dashboard_view() -> None:
+    repository = FakeRepository({"sync_status": [{"last_updated_at": None, "has_error": False}]})
+    provider = AnalyticsDashboardProvider(repository)
+
+    status = await provider.get_sync_status()
+
+    assert status == {"last_updated_at": None, "has_error": False}
+    operation, query, args = repository.calls[0]
+    assert operation == "sync_status"
+    assert "analytics.dashboard_sync_status" in query
+    assert args == ()
+
+
+@pytest.mark.asyncio
+async def test_dashboard_data_status_marks_oldest_successful_sync_as_stale() -> None:
+    repository = FakeRepository(
+        {
+            "sync_status": [
+                {
+                    "last_updated_at": datetime.now(UTC) - timedelta(minutes=20),
+                    "has_error": False,
+                }
+            ]
+        }
+    )
+    service = UserDashboardService(AnalyticsDashboardProvider(repository))
+
+    status = await service.data_status(farm_owner(), stale_after_seconds=900)
+
+    assert status.status == "stale"
+    assert status.age_seconds is not None
+    assert status.age_seconds >= 1200
+    assert status.stale_after_seconds == 900
+
+
+@pytest.mark.asyncio
+async def test_dashboard_data_status_is_unknown_when_no_dataset_has_synced() -> None:
+    repository = FakeRepository(
+        {"sync_status": [{"last_updated_at": None, "has_error": True}]}
+    )
+    service = UserDashboardService(AnalyticsDashboardProvider(repository))
+
+    status = await service.data_status(farm_owner(), stale_after_seconds=900)
+
+    assert status.status == "unknown"
+    assert status.age_seconds is None
+
+
+@pytest.mark.asyncio
+async def test_dashboard_data_status_normalizes_naive_timestamp_and_reports_fresh() -> None:
+    repository = FakeRepository(
+        {
+            "sync_status": [
+                {
+                    "last_updated_at": datetime.now(UTC).replace(tzinfo=None)
+                    - timedelta(seconds=30),
+                    "has_error": False,
+                }
+            ]
+        }
+    )
+    service = UserDashboardService(AnalyticsDashboardProvider(repository))
+
+    status = await service.data_status(farm_owner(), stale_after_seconds=900)
+
+    assert status.status == "fresh"
+    assert status.last_updated_at is not None
+    assert status.last_updated_at.tzinfo == UTC
+    assert status.age_seconds is not None
+    assert status.age_seconds < 60
+
+
+@pytest.mark.asyncio
+async def test_dashboard_data_status_marks_sync_errors_stale() -> None:
+    repository = FakeRepository(
+        {
+            "sync_status": [
+                {"last_updated_at": datetime.now(UTC), "has_error": True}
+            ]
+        }
+    )
+    service = UserDashboardService(AnalyticsDashboardProvider(repository))
+
+    status = await service.data_status(farm_owner(), stale_after_seconds=900)
+
+    assert status.status == "stale"
+
+
+@pytest.mark.asyncio
+async def test_sync_status_requires_analytics_repository() -> None:
+    provider = AnalyticsDashboardProvider(repository=None)
+
+    with pytest.raises(AnalyticsUnavailable):
+        await provider.get_sync_status()
 
 
 @pytest.mark.asyncio
@@ -236,6 +338,15 @@ async def test_plotly_renderer_escapes_database_text_from_inline_script() -> Non
 
 
 class StubUserDashboardService:
+    async def data_status(self, principal, stale_after_seconds):
+        assert principal.farm_id == 7
+        return UserDashboardDataStatus(
+            status="fresh",
+            last_updated_at=datetime.now(UTC),
+            age_seconds=0,
+            stale_after_seconds=stale_after_seconds,
+        )
+
     async def list_dashboards(self, principal):
         assert principal.farm_id == 7
         return UserDashboardListResponse(
@@ -302,6 +413,54 @@ def test_user_dashboard_route_uses_authenticated_scope(
 
     assert response.status_code == 200
     assert response.json()["items"][0]["id"] == "overview"
+
+
+def test_user_dashboard_status_route_reports_data_freshness(
+    authenticated_farm_owner,
+    monkeypatch,
+) -> None:
+    with TestClient(app) as client:
+        monkeypatch.setattr(
+            app.state,
+            "user_dashboard_service",
+            StubUserDashboardService(),
+        )
+        response = client.get(
+            "/v1/user/dashboards/status",
+            headers={"Authorization": "Bearer signed-token"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "fresh"
+    assert response.json()["age_seconds"] == 0
+
+
+@pytest.mark.parametrize(
+    ("error", "expected_status"),
+    [
+        (UserScopeError("missing scope"), 403),
+        (AnalyticsUnavailable("offline"), 503),
+        (AnalyticsQueryError("query failed"), 503),
+    ],
+)
+def test_user_dashboard_status_route_maps_errors(
+    authenticated_farm_owner,
+    monkeypatch,
+    error,
+    expected_status,
+) -> None:
+    class FailingService:
+        async def data_status(self, _principal, _stale_after_seconds):
+            raise error
+
+    with TestClient(app) as client:
+        monkeypatch.setattr(app.state, "user_dashboard_service", FailingService())
+        response = client.get(
+            "/v1/user/dashboards/status",
+            headers={"Authorization": "Bearer signed-token"},
+        )
+
+    assert response.status_code == expected_status
 
 
 def test_user_plotly_route_returns_hardened_html_headers(

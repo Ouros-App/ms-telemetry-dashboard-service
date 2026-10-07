@@ -71,9 +71,19 @@ async def lifespan(app: FastAPI):
         )
         catalog = DashboardCatalog([])
 
-    admin_providers = [
-        DatabricksDashboardProvider(http, auth, settings, catalog)
-    ]
+    admin_providers = []
+    if settings.databricks_configured:
+        admin_providers.append(
+            DatabricksDashboardProvider(http, auth, settings, catalog)
+        )
+    elif settings.databricks_configuration_errors():
+        logger.warning(
+            "Databricks provider disabled because its configuration is incomplete",
+            extra={
+                "event": "databricks_provider_disabled",
+                "errors": settings.databricks_configuration_errors(),
+            },
+        )
     prometheus_http: PrometheusHttpClient | None = None
     if settings.prometheus_configured:
         prometheus_http = PrometheusHttpClient(client, settings)
