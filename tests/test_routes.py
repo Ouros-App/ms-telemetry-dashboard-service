@@ -5,6 +5,7 @@ from fastapi import HTTPException, Response
 
 from app.api import routes
 from app.clients.databricks import DatabricksIntegrationError, DatabricksTimeoutError
+from app.repositories.analytics import AnalyticsQueryError, AnalyticsUnavailable
 from app.services.dashboard import ChartNotFound, DashboardNotFound
 
 
@@ -66,6 +67,35 @@ async def test_routes_map_provider_failure_to_502(handler, args) -> None:
 
     assert error.value.status_code == 502
     assert error.value.detail == routes.DASHBOARD_PROVIDER_INTEGRATION_DETAIL
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("handler", "args"),
+    [
+        (routes.list_dashboards, ()),
+        (routes.get_dashboard, ("analytics-overview",)),
+        (routes.list_charts, ("analytics-overview",)),
+        (routes.chart_png, ("analytics-overview", "current-flock")),
+        (routes.chartjs_chart, ("analytics-overview", "current-flock")),
+    ],
+)
+@pytest.mark.parametrize(
+    "exception",
+    [AnalyticsUnavailable("offline"), AnalyticsQueryError("query failed")],
+)
+async def test_routes_return_503_when_analytics_is_unavailable(
+    handler,
+    args,
+    exception,
+) -> None:
+    service = FailingService(exception)
+
+    with pytest.raises(HTTPException) as error:
+        await handler(*args, service=service)
+
+    assert error.value.status_code == 503
+    assert error.value.detail == routes.DASHBOARD_ANALYTICS_UNAVAILABLE_DETAIL
 
 
 @pytest.mark.asyncio

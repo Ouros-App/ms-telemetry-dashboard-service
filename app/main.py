@@ -19,6 +19,7 @@ from app.core.logging import (
 )
 from app.core.metrics import HTTP_DURATION, HTTP_REQUESTS, metric_path
 from app.providers.analytics import AnalyticsDashboardProvider
+from app.providers.analytics_admin import AnalyticsAdminDashboardProvider
 from app.providers.databricks import DatabricksDashboardProvider
 from app.providers.prometheus import PrometheusDashboardProvider
 from app.providers.registry import DashboardProviderRegistry
@@ -102,10 +103,6 @@ async def lifespan(app: FastAPI):
             )
 
     app.state.settings = settings
-    app.state.dashboard_service = DashboardService(
-        DashboardProviderRegistry(admin_providers),
-        settings.chart_cache_ttl_seconds,
-    )
     app.state.http_client = client
     app.state.prometheus_http = prometheus_http
 
@@ -150,6 +147,13 @@ async def lifespan(app: FastAPI):
 
     app.state.analytics_repository = analytics_repository
     app.state.analytics_ready = analytics_ready
+    admin_providers.append(
+        AnalyticsAdminDashboardProvider(analytics_repository)
+    )
+    app.state.dashboard_service = DashboardService(
+        DashboardProviderRegistry(admin_providers),
+        settings.chart_cache_ttl_seconds,
+    )
     app.state.user_dashboard_service = UserDashboardService(
         AnalyticsDashboardProvider(analytics_repository),
         settings.chart_cache_ttl_seconds,

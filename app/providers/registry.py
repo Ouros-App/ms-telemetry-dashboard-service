@@ -9,6 +9,7 @@ from app.clients.prometheus import (
     PrometheusIntegrationError,
     PrometheusTimeoutError,
 )
+from app.repositories.analytics import AnalyticsQueryError, AnalyticsUnavailable
 from app.schemas.dashboards import DashboardChartDefinition, DashboardRecord
 
 logger = logging.getLogger(__name__)
@@ -18,6 +19,8 @@ _PROVIDER_ERRORS = (
     DatabricksTimeoutError,
     PrometheusIntegrationError,
     PrometheusTimeoutError,
+    AnalyticsQueryError,
+    AnalyticsUnavailable,
 )
 
 
