@@ -17,6 +17,7 @@ from app.clients.databricks import DatabricksIntegrationError, DatabricksTimeout
 from app.clients.prometheus import PrometheusIntegrationError, PrometheusTimeoutError
 from app.core.auth import require_bearer
 from app.core.metrics import metrics_payload
+from app.repositories.analytics import AnalyticsQueryError, AnalyticsUnavailable
 from app.schemas.common import HealthResponse, MessageResponse, ReadinessResponse
 from app.schemas.dashboards import (
     DashboardChartListResponse,
@@ -29,6 +30,7 @@ router = APIRouter()
 
 DASHBOARD_PROVIDER_TIMEOUT_DETAIL = "Dashboard provider request timed out"
 DASHBOARD_PROVIDER_INTEGRATION_DETAIL = "Dashboard provider integration failed"
+DASHBOARD_ANALYTICS_UNAVAILABLE_DETAIL = "Analytics dashboard data is temporarily unavailable"
 
 
 def get_dashboard_service(request: Request) -> DashboardService:
@@ -66,6 +68,7 @@ def metrics() -> Response:
     responses={
         502: {"description": DASHBOARD_PROVIDER_INTEGRATION_DETAIL},
         504: {"description": DASHBOARD_PROVIDER_TIMEOUT_DETAIL},
+        503: {"description": DASHBOARD_ANALYTICS_UNAVAILABLE_DETAIL},
     },
     dependencies=[Depends(require_bearer)],
     tags=["dashboards"],
@@ -85,6 +88,11 @@ async def list_dashboards(
             status_code=502,
             detail=DASHBOARD_PROVIDER_INTEGRATION_DETAIL,
         ) from exc
+    except (AnalyticsUnavailable, AnalyticsQueryError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=DASHBOARD_ANALYTICS_UNAVAILABLE_DETAIL,
+        ) from exc
 
 
 @router.get(
@@ -94,6 +102,7 @@ async def list_dashboards(
         404: {"description": "Dashboard not found"},
         502: {"description": DASHBOARD_PROVIDER_INTEGRATION_DETAIL},
         504: {"description": DASHBOARD_PROVIDER_TIMEOUT_DETAIL},
+        503: {"description": DASHBOARD_ANALYTICS_UNAVAILABLE_DETAIL},
     },
     dependencies=[Depends(require_bearer)],
     tags=["dashboards"],
@@ -116,6 +125,11 @@ async def get_dashboard(
             status_code=502,
             detail=DASHBOARD_PROVIDER_INTEGRATION_DETAIL,
         ) from exc
+    except (AnalyticsUnavailable, AnalyticsQueryError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=DASHBOARD_ANALYTICS_UNAVAILABLE_DETAIL,
+        ) from exc
 
 
 @router.get(
@@ -125,6 +139,7 @@ async def get_dashboard(
         404: {"description": "Dashboard not found"},
         502: {"description": DASHBOARD_PROVIDER_INTEGRATION_DETAIL},
         504: {"description": DASHBOARD_PROVIDER_TIMEOUT_DETAIL},
+        503: {"description": DASHBOARD_ANALYTICS_UNAVAILABLE_DETAIL},
     },
     dependencies=[Depends(require_bearer)],
     tags=["dashboards"],
@@ -147,6 +162,11 @@ async def list_charts(
             status_code=502,
             detail=DASHBOARD_PROVIDER_INTEGRATION_DETAIL,
         ) from exc
+    except (AnalyticsUnavailable, AnalyticsQueryError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=DASHBOARD_ANALYTICS_UNAVAILABLE_DETAIL,
+        ) from exc
 
 
 @router.get(
@@ -159,6 +179,7 @@ async def list_charts(
         404: {"description": "Dashboard or chart not found"},
         502: {"description": DASHBOARD_PROVIDER_INTEGRATION_DETAIL},
         504: {"description": DASHBOARD_PROVIDER_TIMEOUT_DETAIL},
+        503: {"description": DASHBOARD_ANALYTICS_UNAVAILABLE_DETAIL},
     },
     tags=["dashboards"],
 )
@@ -186,6 +207,11 @@ async def chart_png(
             status_code=502,
             detail=DASHBOARD_PROVIDER_INTEGRATION_DETAIL,
         ) from exc
+    except (AnalyticsUnavailable, AnalyticsQueryError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=DASHBOARD_ANALYTICS_UNAVAILABLE_DETAIL,
+        ) from exc
 
 
 @router.get(
@@ -198,6 +224,7 @@ async def chart_png(
         404: {"description": "Dashboard or chart not found"},
         502: {"description": DASHBOARD_PROVIDER_INTEGRATION_DETAIL},
         504: {"description": DASHBOARD_PROVIDER_TIMEOUT_DETAIL},
+        503: {"description": DASHBOARD_ANALYTICS_UNAVAILABLE_DETAIL},
     },
     tags=["dashboards"],
 )
@@ -291,4 +318,9 @@ async def chartjs_chart(
         raise HTTPException(
             status_code=502,
             detail=DASHBOARD_PROVIDER_INTEGRATION_DETAIL,
+        ) from exc
+    except (AnalyticsUnavailable, AnalyticsQueryError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=DASHBOARD_ANALYTICS_UNAVAILABLE_DETAIL,
         ) from exc

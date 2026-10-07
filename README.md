@@ -140,7 +140,7 @@ Rotas públicas:
 
 ### Fluxo administrativo
 
-O fluxo administrativo agrega dashboards de todos os providers registrados. Os dashboards retornados incluem o campo `provider`, hoje `databricks` ou `prometheus`. O provider Prometheus consulta a HTTP API privada do homelab; na Discloud, a conexão TCP passa pelo `tailscale-proxy:1055` usando o mesmo relay local já empregado pelo PostgreSQL Analytics.
+O fluxo administrativo agrega dashboards de todos os providers registrados. Os dashboards retornados incluem o campo `provider`: `analytics`, `prometheus` ou `databricks` quando o provider legado está habilitado. O provider Analytics publica `analytics-overview` com fazendas monitoradas, aves atuais, uso da capacidade e histórico mensal de água, por meio das mesmas views usadas pelo fluxo de usuário. O provider Prometheus consulta a HTTP API privada do homelab; na Discloud, a conexão TCP passa pelo `tailscale-proxy:1055` usando o mesmo relay local já empregado pelo PostgreSQL Analytics.
 
 As rotas administrativas continuam protegidas por access token do Keycloak com audience `ms-telemetry-dashboard-service` e realm role `admin`:
 
@@ -149,6 +149,18 @@ As rotas administrativas continuam protegidas por access token do Keycloak com a
 - `GET /v1/dashboards/{id}/charts`: lista os gráficos do dashboard.
 - `GET /v1/dashboards/{id}/charts/{chart_id}/png`: retorna PNG.
 - `GET /v1/dashboards/{id}/charts/{chart_id}/chartjs`: retorna HTML com Chart.js.
+
+Para testar o provider Analytics pelo fluxo de ADM, use um access token com role `admin`:
+
+```bash
+curl -H "Authorization: Bearer $KEYCLOAK_ACCESS_TOKEN" \
+  http://localhost:8000/v1/dashboards/analytics-overview/charts
+
+curl -H "Authorization: Bearer $KEYCLOAK_ACCESS_TOKEN" \
+  http://localhost:8000/v1/dashboards/analytics-overview/charts/current-flock/chartjs
+```
+
+`GET /v1/dashboards/analytics-overview/charts` retorna `200` com as definições estáticas dos gráficos, mesmo quando o Analytics está indisponível. As rotas que consultam dados (`/png` e `/chartjs`) retornam `503` nessa situação; não há fallback silencioso para Databricks.
 
 Use um `id` retornado por `/v1/dashboards` nas chamadas seguintes:
 
