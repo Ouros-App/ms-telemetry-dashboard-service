@@ -160,7 +160,7 @@ curl -H "Authorization: Bearer $KEYCLOAK_ACCESS_TOKEN" \
   http://localhost:8000/v1/dashboards/analytics-overview/charts/current-flock/chartjs
 ```
 
-Se o Analytics estiver indisponível, os endpoints de charts desse provider retornam `503`; não há fallback silencioso para Databricks.
+`GET /v1/dashboards/analytics-overview/charts` retorna `200` com as definições estáticas dos gráficos, mesmo quando o Analytics está indisponível. As rotas que consultam dados (`/png` e `/chartjs`) retornam `503` nessa situação; não há fallback silencioso para Databricks.
 
 Use um `id` retornado por `/v1/dashboards` nas chamadas seguintes:
 
