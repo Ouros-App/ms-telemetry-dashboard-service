@@ -23,6 +23,7 @@ from app.services.user_dashboard import (
 )
 
 router = APIRouter(prefix="/v1/user/dashboards", tags=["user-dashboards"])
+USER_ANALYTICS_UNAVAILABLE_DETAIL = "User analytics is temporarily unavailable"
 
 
 def get_user_dashboard_service(request: Request) -> UserDashboardService:
@@ -70,7 +71,7 @@ async def build_custom_dashboard(
     except (AnalyticsUnavailable, AnalyticsQueryError) as exc:
         raise HTTPException(
             status_code=503,
-            detail="User analytics is temporarily unavailable",
+            detail=USER_ANALYTICS_UNAVAILABLE_DETAIL,
         ) from exc
 
 
@@ -88,7 +89,7 @@ async def list_user_dashboards(
 @router.get(
     "/status",
     summary="Get the freshness of Analytics dashboard data",
-    responses={503: {"description": "User analytics is temporarily unavailable"}},
+    responses={503: {"description": USER_ANALYTICS_UNAVAILABLE_DETAIL}},
 )
 async def user_dashboard_data_status(
     request: Request,
@@ -105,7 +106,7 @@ async def user_dashboard_data_status(
     except (AnalyticsUnavailable, AnalyticsQueryError) as exc:
         raise HTTPException(
             status_code=503,
-            detail="User analytics is temporarily unavailable",
+            detail=USER_ANALYTICS_UNAVAILABLE_DETAIL,
         ) from exc
 
 
@@ -142,7 +143,7 @@ async def list_user_charts(
     response_class=HTMLResponse,
     responses={
         400: {"description": "Render style is not supported by this chart"},
-        503: {"description": "User analytics is temporarily unavailable"},
+        503: {"description": USER_ANALYTICS_UNAVAILABLE_DETAIL},
     },
     summary="Render a scoped user chart as Plotly HTML",
     description=(
@@ -184,7 +185,7 @@ async def user_chart_plotly(
     except (AnalyticsUnavailable, AnalyticsQueryError) as exc:
         raise HTTPException(
             status_code=503,
-            detail="User analytics is temporarily unavailable",
+            detail=USER_ANALYTICS_UNAVAILABLE_DETAIL,
         ) from exc
 
     return HTMLResponse(

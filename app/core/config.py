@@ -230,6 +230,11 @@ class Settings(BaseSettings):
             errors.append("ANALYTICS_RETRY_BACKOFF_SECONDS_INVALID")
         if self.analytics_stale_after_seconds < 1:
             errors.append("ANALYTICS_STALE_AFTER_SECONDS_INVALID")
+        errors.extend(self._analytics_socks_configuration_errors())
+        return errors
+
+    def _analytics_socks_configuration_errors(self) -> list[str]:
+        errors: list[str] = []
         if self.analytics_socks_host and self.analytics_database_url:
             parsed_database_url = urlsplit(self.analytics_database_url)
             try:

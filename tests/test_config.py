@@ -110,6 +110,7 @@ def test_analytics_database_url_and_pool_are_validated_independently() -> None:
         analytics_command_timeout_seconds=0,
         analytics_connect_timeout_seconds=0,
         analytics_retry_backoff_seconds=61,
+        analytics_stale_after_seconds=0,
     )
 
     errors = config.analytics_configuration_errors()
@@ -122,6 +123,7 @@ def test_analytics_database_url_and_pool_are_validated_independently() -> None:
     assert "ANALYTICS_COMMAND_TIMEOUT_SECONDS_INVALID" in errors
     assert "ANALYTICS_CONNECT_TIMEOUT_SECONDS_INVALID" in errors
     assert "ANALYTICS_RETRY_BACKOFF_SECONDS_INVALID" in errors
+    assert "ANALYTICS_STALE_AFTER_SECONDS_INVALID" in errors
 
 
 def test_analytics_socks_settings_are_validated_independently() -> None:
