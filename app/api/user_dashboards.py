@@ -10,6 +10,7 @@ from app.schemas.user_dashboards import (
     CustomDashboardResponse,
     UserChartListResponse,
     UserChartRenderType,
+    UserDashboardDataStatus,
     UserDashboardListResponse,
     UserDashboardPublic,
 )
@@ -82,6 +83,30 @@ async def list_user_dashboards(
         return await service.list_dashboards(principal)
     except UserScopeError as exc:
         raise _scope_forbidden(exc) from exc
+
+
+@router.get(
+    "/status",
+    summary="Get the freshness of Analytics dashboard data",
+    responses={503: {"description": "User analytics is temporarily unavailable"}},
+)
+async def user_dashboard_data_status(
+    request: Request,
+    principal: Annotated[Principal, Depends(require_user_bearer)],
+    service: Annotated[UserDashboardService, Depends(get_user_dashboard_service)],
+) -> UserDashboardDataStatus:
+    try:
+        return await service.data_status(
+            principal,
+            request.app.state.settings.analytics_stale_after_seconds,
+        )
+    except UserScopeError as exc:
+        raise _scope_forbidden(exc) from exc
+    except (AnalyticsUnavailable, AnalyticsQueryError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="User analytics is temporarily unavailable",
+        ) from exc
 
 
 @router.get("/{dashboard_id}", summary="Get one user dashboard")

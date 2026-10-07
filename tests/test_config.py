@@ -43,20 +43,23 @@ def test_settings_validate_urls_and_runtime_limits() -> None:
         sql_wait_timeout_seconds=51,
     )
 
-    errors = config.configuration_errors()
+    errors = config.databricks_configuration_errors()
+    runtime_errors = config.configuration_errors()
 
     assert config.token_url == "http://workspace.example.com/token"
     assert "DATABRICKS_HOST_INVALID" in errors
     assert "DATABRICKS_TOKEN_URL_INVALID" in errors
-    assert "CHART_CACHE_TTL_SECONDS_INVALID" in errors
-    assert "SQL_WAIT_TIMEOUT_SECONDS_INVALID" in errors
+    assert "CHART_CACHE_TTL_SECONDS_INVALID" in runtime_errors
+    assert "SQL_WAIT_TIMEOUT_SECONDS_INVALID" in runtime_errors
+    assert not config.ready
 
 
-def test_settings_derive_token_url_only_when_host_is_configured() -> None:
+def test_databricks_is_optional_and_token_url_derives_only_when_host_is_configured() -> None:
     config = base_settings(databricks_host=None, databricks_token_url=None)
 
     assert config.token_url is None
-    assert "DATABRICKS_HOST" in config.configuration_errors()
+    assert config.ready
+    assert not config.databricks_configured
 
 
 def test_missing_keycloak_contract_makes_configuration_not_ready() -> None:

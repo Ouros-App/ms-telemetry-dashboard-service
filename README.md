@@ -12,7 +12,7 @@
 </div>
 <!-- REPO-METADATA:END -->
 
-Microserviço FastAPI com dois fluxos independentes de dashboards: administração via providers Databricks e Prometheus, e dashboards do app via PostgreSQL Analytics. O fluxo admin mantém dados/HTML Chart.js/PNG; o fluxo de usuário retorna HTML Plotly.js já filtrado pelo escopo assinado no JWT.
+Microserviço FastAPI com dashboards operacionais de negócio servidos pelo PostgreSQL Analytics e dashboards técnicos via Prometheus. Databricks continua disponível como provider administrativo opcional para dashboards legados e análises, mas não é dependência dos dashboards de negócio. O fluxo admin mantém HTML Chart.js/PNG; o fluxo de usuário retorna HTML Plotly.js filtrado pelo escopo assinado no JWT.
 
 ## Status e escopo
 
@@ -20,7 +20,7 @@ O serviço possui:
 
 - consulta de dashboards administrativos via registry de providers, com Databricks e Prometheus;
 - dashboards de observabilidade do Prometheus para saúde dos targets, tráfego, latência, Midas AI e dependências do telemetry;
-- dashboards de usuário derivados do PostgreSQL Analytics com isolamento por `farm_id` ou `enterprise_id` do JWT;
+- dashboards de negócio derivados de views do PostgreSQL Analytics com isolamento por `farm_id` ou `enterprise_id` do JWT;
 - listagem de dashboards e gráficos;
 - renderização de gráficos administrativos em PNG;
 - retorno de páginas HTML individuais com Chart.js no fluxo admin e Plotly.js no fluxo de usuário;
@@ -28,7 +28,7 @@ O serviço possui:
 - autenticação JWT do Keycloak nas rotas de negócio, sem fallback de shared bearer;
 - métricas Prometheus, logs JSON, cache de gráficos e tentativas de repetição para chamadas externas.
 
-O arquivo `data/dashboards.json` existe no repositório e atualmente contém uma lista vazia. A fonte principal dos dashboards é o workspace Databricks.
+O arquivo `data/dashboards.json` existe no repositório e atualmente contém uma lista vazia. O fluxo de dashboards de negócio usa PostgreSQL Analytics; Databricks e Prometheus são providers administrativos independentes.
 
 ## Principais componentes
 
@@ -36,9 +36,8 @@ O arquivo `data/dashboards.json` existe no repositório e atualmente contém uma
 admin routes
   -> DashboardService
       -> DashboardProviderRegistry
-          -> DatabricksDashboardProvider
-              -> DatabricksHttpClient
-              -> DatabricksAuthClient
+          -> DatabricksDashboardProvider (opcional)
+              -> DatabricksHttpClient / DatabricksAuthClient
           -> PrometheusDashboardProvider
               -> PrometheusHttpClient
               -> SOCKS5 relay
@@ -49,7 +48,7 @@ user routes
   -> UserDashboardService
       -> AnalyticsDashboardProvider
           -> AnalyticsRepository
-              -> PostgreSQL Analytics (analytics_ro)
+              -> PostgreSQL Analytics (views dashboard_*, analytics_ro)
       -> Plotly renderer
 ```
 
@@ -97,6 +96,7 @@ Copie `.env.example` para `.env`. As variáveis disponíveis são:
 | `ANALYTICS_COMMAND_TIMEOUT_SECONDS` | Timeout das queries do Analytics. |
 | `ANALYTICS_CONNECT_TIMEOUT_SECONDS` | Timeout curto para abrir uma conexão PostgreSQL; padrão `5`. |
 | `ANALYTICS_RETRY_BACKOFF_SECONDS` | Janela de backoff após falha de conexão para evitar tempestade de reconexões; padrão `5`. |
+| `ANALYTICS_STALE_AFTER_SECONDS` | Limite para classificar os dados como desatualizados; padrão `900` (15 min). |
 | `HTTP_TIMEOUT_SECONDS` / `HTTP_MAX_RETRIES` | Timeout e tentativas adicionais das chamadas externas. |
 | `CHART_CACHE_TTL_SECONDS` | Tempo de vida do cache de gráficos. |
 | `SQL_WAIT_TIMEOUT_SECONDS` | Limite de espera de consultas SQL. |
@@ -104,7 +104,7 @@ Copie `.env.example` para `.env`. As variáveis disponíveis são:
 | `TOKEN_REFRESH_MARGIN_SECONDS` | Margem para renovar o token OAuth. |
 | `CORS_ORIGINS` | Lista JSON de origens permitidas, por exemplo `["https://frontend.example.com"]`. |
 
-`/ready` considera obrigatórios `DATABRICKS_HOST`, `DATABRICKS_CLIENT_ID` e `DATABRICKS_CLIENT_SECRET`, além de validar os parâmetros de configuração. O JWT é validado por request contra o JWKS do Keycloak.
+`/ready` valida a configuração do serviço e do Keycloak sem depender das credenciais ou disponibilidade do Databricks. O provider Databricks só é registrado quando host, client ID e secret estão configurados; uma configuração parcial o desativa sem impedir os fluxos Analytics e Prometheus. O JWT é validado por request contra o JWKS do Keycloak.
 
 ### Infisical
 
@@ -112,10 +112,9 @@ O serviço carrega os secrets do Infisical antes da criação de `Settings`. Par
 
 Secrets de aplicação esperados no path `/ms-telemetry-dashboard-service`:
 
-- `DATABRICKS_CLIENT_SECRET`;
 - `ANALYTICS_DATABASE_URL`.
 
-`DATABRICKS_CLIENT_ID` e `DATABRICKS_HOST` são configuração e podem permanecer no ambiente de deploy, embora o client ID também possa ser centralizado no Infisical se desejado. `ANALYTICS_DATABASE_URL` deve usar exclusivamente `analytics_ro` e apontar para o endereço privado do PostgreSQL no homelab; não use o writer do sincronizador. Em Discloud, configure `ANALYTICS_SOCKS_HOST=tailscale-proxy` e `ANALYTICS_SOCKS_PORT=1055`: o serviço abre um relay apenas em `127.0.0.1`, alcança o proxy pela VLAN da Discloud e deixa o proxy encaminhar o TCP até a subnet do homelab. O telemetry não precisa participar diretamente da Tailnet. `INFISICAL_TOKEN` é o único bootstrap secreto necessário fora do cofre; project ID, environment, path e host são configuração.
+`DATABRICKS_CLIENT_SECRET` só é necessário quando o provider Databricks legado está habilitado. `DATABRICKS_CLIENT_ID` e `DATABRICKS_HOST` são configuração opcional do provider e podem permanecer no ambiente de deploy. `ANALYTICS_DATABASE_URL` deve usar exclusivamente `analytics_ro` e apontar para o endereço privado do PostgreSQL no homelab; não use o writer do sincronizador. Em Discloud, configure `ANALYTICS_SOCKS_HOST=tailscale-proxy` e `ANALYTICS_SOCKS_PORT=1055`: o serviço abre um relay apenas em `127.0.0.1`, alcança o proxy pela VLAN da Discloud e deixa o proxy encaminhar o TCP até a subnet do homelab. O telemetry não precisa participar diretamente da Tailnet. `INFISICAL_TOKEN` é o único bootstrap secreto necessário fora do cofre; project ID, environment, path e host são configuração.
 
 ## Execução
 
@@ -135,7 +134,7 @@ O Dockerfile também inicia `uvicorn app.main:app` e usa a porta `8000` por padr
 Rotas públicas:
 
 - `GET /health`: saúde do processo, sem chamada ao Databricks.
-- `GET /ready`: verifica a configuração necessária para acessar o Databricks.
+- `GET /ready`: verifica a configuração do serviço e do Keycloak; não depende do Databricks.
 - `GET /metrics`: métricas Prometheus.
 - `GET /docs`: documentação gerada pelo FastAPI.
 
@@ -180,6 +179,7 @@ O cliente **não envia farm/enterprise ID** nas rotas. O serviço deriva o escop
 Rotas:
 
 - `GET /v1/user/dashboards`;
+- `GET /v1/user/dashboards/status` informa `fresh`, `stale` ou `unknown`, o sync bem-sucedido mais antigo entre datasets e sua idade. Falha do Analytics retorna `503`; não há fallback para Databricks.
 - `GET /v1/user/dashboards/{dashboard_id}`;
 - `GET /v1/user/dashboards/{dashboard_id}/charts`;
 - `GET /v1/user/dashboards/{dashboard_id}/charts/{chart_id}/plotly`.
@@ -291,7 +291,9 @@ return (
 
 O listener valida a janela emissora, o tipo do evento, o `chartId` e a altura antes de redimensionar o iframe. Configure `CORS_ORIGINS` para a origem real do frontend que fará o `fetch`.
 
-O pool PostgreSQL força transações read-only e valida `current_user = analytics_ro`. Quando `ANALYTICS_SOCKS_HOST` está configurado, cada conexão do `asyncpg` entra em um listener efêmero em `127.0.0.1`, que executa o handshake SOCKS5 e encaminha bytes ao host/porta definidos no próprio `ANALYTICS_DATABASE_URL`. O listener não é exposto externamente. Se o Analytics ou o proxy estiver indisponível, o fluxo admin continua funcionando e as rotas de usuário que precisam consultar dados retornam `503`. O connect usa timeout curto e backoff entre novas tentativas para evitar filas de reconexão durante uma queda. O pool é recriado de forma lazy após falhas, então um reboot do homelab não exige restart do telemetry.
+O pool PostgreSQL força transações read-only e valida `current_user = analytics_ro`. As queries dos dashboards leem somente views `dashboard_*`, nunca tabelas `dim_*`/`fact_*` diretamente. A migration versionada [`001_dashboard_read_models.sql`](migrations/analytics/001_dashboard_read_models.sql) cria views de fazendas, resumo financeiro de lotes, consumo, leituras de água, metas e status do sync, além de ampliar `sync_state` com metadados de execução. A migration deve ser aplicada pelo processo de deploy do Analytics antes de habilitar esta versão do serviço.
+
+O sync writer permanece fora deste repositório: deve continuar executando fora do banco transacional, em timer systemd, com upserts idempotentes, retries e escrita atômica no Analytics. O writer atualiza `sync_state` por dataset, mantendo `last_success_at` somente para execuções completas e gravando tentativa, cursor, quantidade, duração, status e erro. O serviço não dispara sync nem tem credenciais de escrita; ausência de estado retorna `unknown`, atraso acima de `ANALYTICS_STALE_AFTER_SECONDS` ou falha mais recente retorna `stale`. Quando `ANALYTICS_SOCKS_HOST` está configurado, cada conexão do `asyncpg` usa listener efêmero em `127.0.0.1` e o proxy encaminha bytes ao host definido em `ANALYTICS_DATABASE_URL`. Se o Analytics ou proxy estiver indisponível, Prometheus continua funcionando e as rotas de usuário que consultam dados retornam `503`. O pool usa timeout curto e backoff e é recriado de forma lazy após falhas.
 
 Os logs são emitidos em JSON e incluem evento, request ID, rota, status, duração e tentativas do Databricks, sem registrar tokens, secrets ou payloads de consultas.
 

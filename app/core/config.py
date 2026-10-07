@@ -65,6 +65,7 @@ class Settings(BaseSettings):
     analytics_command_timeout_seconds: float = 8.0
     analytics_connect_timeout_seconds: float = 5.0
     analytics_retry_backoff_seconds: float = 5.0
+    analytics_stale_after_seconds: int = 900
     analytics_socks_host: str | None = None
     analytics_socks_port: int = 1055
     analytics_socks_connect_timeout_seconds: float = 5.0
@@ -84,13 +85,38 @@ class Settings(BaseSettings):
             return f"{self.databricks_host.rstrip('/')}/oidc/v1/token"
         return None
 
-    def _required_configuration_errors(self) -> list[str]:
-        required = {
-            "DATABRICKS_HOST": self.databricks_host,
-            "DATABRICKS_CLIENT_ID": self.databricks_client_id,
-            "DATABRICKS_CLIENT_SECRET": self.databricks_client_secret,
-        }
-        return [name for name, value in required.items() if not value]
+    def databricks_configuration_errors(self) -> list[str]:
+        configured = (
+            self.databricks_host,
+            self.databricks_client_id,
+            self.databricks_client_secret,
+        )
+        if not any(configured):
+            return []
+        errors = []
+        for name, value in zip(
+            ("DATABRICKS_HOST", "DATABRICKS_CLIENT_ID", "DATABRICKS_CLIENT_SECRET"),
+            configured,
+        ):
+            if not value:
+                errors.append(f"{name}_MISSING")
+        errors.extend(
+            f"{name}_INVALID"
+            for name, value in (
+                ("DATABRICKS_HOST", self.databricks_host),
+                ("DATABRICKS_TOKEN_URL", self.token_url),
+            )
+            if value and not _https_url_is_valid(value)
+        )
+        return errors
+
+    @property
+    def databricks_configured(self) -> bool:
+        return not self.databricks_configuration_errors() and bool(
+            self.databricks_host
+            and self.databricks_client_id
+            and self.databricks_client_secret
+        )
 
     def _authentication_configuration_errors(self) -> list[str]:
         errors: list[str] = []
@@ -110,8 +136,6 @@ class Settings(BaseSettings):
 
     def _url_configuration_errors(self) -> list[str]:
         url_settings = (
-            ("DATABRICKS_HOST", self.databricks_host),
-            ("DATABRICKS_TOKEN_URL", self.token_url),
             ("KEYCLOAK_ISSUER_URL", self.keycloak_issuer_url),
             ("KEYCLOAK_JWKS_URL", self.keycloak_jwks_url),
         )
@@ -204,6 +228,8 @@ class Settings(BaseSettings):
             errors.append("ANALYTICS_CONNECT_TIMEOUT_SECONDS_INVALID")
         if not (0 <= self.analytics_retry_backoff_seconds <= 60):
             errors.append("ANALYTICS_RETRY_BACKOFF_SECONDS_INVALID")
+        if self.analytics_stale_after_seconds < 1:
+            errors.append("ANALYTICS_STALE_AFTER_SECONDS_INVALID")
         if self.analytics_socks_host and self.analytics_database_url:
             parsed_database_url = urlsplit(self.analytics_database_url)
             try:
@@ -229,7 +255,6 @@ class Settings(BaseSettings):
 
     def configuration_errors(self) -> list[str]:
         return [
-            *self._required_configuration_errors(),
             *self._authentication_configuration_errors(),
             *self._url_configuration_errors(),
             *self._runtime_configuration_errors(),

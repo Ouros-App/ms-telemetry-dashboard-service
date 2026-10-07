@@ -440,7 +440,7 @@ class AnalyticsDashboardProvider:
     queries: ClassVar[dict[str, str]] = {
         "current_flock": """
             SELECT COALESCE(SUM(f.chickens_now), 0)::bigint AS value
-            FROM analytics.dim_farm f
+            FROM analytics.dashboard_farm_overview f
             WHERE ($1::integer IS NOT NULL AND f.farm_id = $1)
                OR ($2::integer IS NOT NULL AND f.enterprise_id = $2)
         """,
@@ -453,7 +453,7 @@ class AnalyticsDashboardProvider:
                 ),
                 0
             ) AS value
-            FROM analytics.dim_farm f
+            FROM analytics.dashboard_farm_overview f
             WHERE ($1::integer IS NOT NULL AND f.farm_id = $1)
                OR ($2::integer IS NOT NULL AND f.enterprise_id = $2)
         """,
@@ -466,13 +466,13 @@ class AnalyticsDashboardProvider:
                 ),
                 0
             ) AS value
-            FROM analytics.fact_lot l
+            FROM analytics.dashboard_financial_summary l
             WHERE ($1::integer IS NOT NULL AND l.farm_id = $1)
                OR ($2::integer IS NOT NULL AND l.enterprise_id = $2)
         """,
         "farm_capacity": """
             SELECT f.farm_name, f.chickens_now, f.poultry_capacity
-            FROM analytics.dim_farm f
+            FROM analytics.dashboard_farm_overview f
             WHERE ($1::integer IS NOT NULL AND f.farm_id = $1)
                OR ($2::integer IS NOT NULL AND f.enterprise_id = $2)
             ORDER BY f.farm_name, f.farm_id
@@ -483,7 +483,7 @@ class AnalyticsDashboardProvider:
                 SUM(l.received_chickens)::bigint AS received_chickens,
                 SUM(l.delivered_chickens)::bigint AS delivered_chickens,
                 SUM(l.lost_chickens)::bigint AS lost_chickens
-            FROM analytics.fact_lot l
+            FROM analytics.dashboard_financial_summary l
             WHERE ($1::integer IS NOT NULL AND l.farm_id = $1)
                OR ($2::integer IS NOT NULL AND l.enterprise_id = $2)
             GROUP BY l.delivery_date
@@ -500,7 +500,7 @@ class AnalyticsDashboardProvider:
                     ),
                     0
                 ) AS mortality_rate_pct
-            FROM analytics.fact_lot l
+            FROM analytics.dashboard_financial_summary l
             WHERE ($1::integer IS NOT NULL AND l.farm_id = $1)
                OR ($2::integer IS NOT NULL AND l.enterprise_id = $2)
             GROUP BY l.delivery_date
@@ -508,7 +508,7 @@ class AnalyticsDashboardProvider:
         """,
         "lot_cost": """
             SELECT l.delivery_date, ROUND(SUM(l.cost), 2) AS cost
-            FROM analytics.fact_lot l
+            FROM analytics.dashboard_financial_summary l
             WHERE ($1::integer IS NOT NULL AND l.farm_id = $1)
                OR ($2::integer IS NOT NULL AND l.enterprise_id = $2)
             GROUP BY l.delivery_date
@@ -519,7 +519,7 @@ class AnalyticsDashboardProvider:
                 c.month_start,
                 ROUND(SUM(c.water_consumed_m3), 3) AS water_consumed_m3,
                 ROUND(SUM(c.energy_consumed_kwh), 3) AS energy_consumed_kwh
-            FROM analytics.fact_farm_consumption_monthly c
+            FROM analytics.dashboard_consumption_history c
             WHERE ($1::integer IS NOT NULL AND c.farm_id = $1)
                OR ($2::integer IS NOT NULL AND c.enterprise_id = $2)
             GROUP BY c.month_start
@@ -529,7 +529,7 @@ class AnalyticsDashboardProvider:
             SELECT
                 r.registration_date,
                 ROUND(SUM(r.water_consumed_m3), 3) AS water_consumed_m3
-            FROM analytics.fact_water_registry r
+            FROM analytics.dashboard_water_reading_history r
             WHERE ($1::integer IS NOT NULL AND r.farm_id = $1)
                OR ($2::integer IS NOT NULL AND r.enterprise_id = $2)
             GROUP BY r.registration_date
@@ -548,27 +548,25 @@ class AnalyticsDashboardProvider:
                     / NULLIF(SUM(c.chickens_reference), 0),
                     4
                 ) AS energy_kwh_per_chicken
-            FROM analytics.fact_farm_consumption_monthly c
+            FROM analytics.dashboard_consumption_history c
             WHERE ($1::integer IS NOT NULL AND c.farm_id = $1)
                OR ($2::integer IS NOT NULL AND c.enterprise_id = $2)
             GROUP BY c.month_start
             ORDER BY c.month_start
         """,
         "goal_status": """
-            SELECT g.goal_status AS label, COUNT(*)::bigint AS value
-            FROM analytics.fact_goal g
-            LEFT JOIN analytics.dim_farm f ON f.farm_id = g.farm_id
+            SELECT g.goal_status AS label, SUM(g.goal_count)::bigint AS value
+            FROM analytics.dashboard_goal_progress g
             WHERE ($1::integer IS NOT NULL AND g.farm_id = $1)
-               OR ($2::integer IS NOT NULL AND f.enterprise_id = $2)
+               OR ($2::integer IS NOT NULL AND g.enterprise_id = $2)
             GROUP BY g.goal_status
             ORDER BY value DESC, label
         """,
         "goal_type": """
-            SELECT g.goal_type AS label, COUNT(*)::bigint AS value
-            FROM analytics.fact_goal g
-            LEFT JOIN analytics.dim_farm f ON f.farm_id = g.farm_id
+            SELECT g.goal_type AS label, SUM(g.goal_count)::bigint AS value
+            FROM analytics.dashboard_goal_progress g
             WHERE ($1::integer IS NOT NULL AND g.farm_id = $1)
-               OR ($2::integer IS NOT NULL AND f.enterprise_id = $2)
+               OR ($2::integer IS NOT NULL AND g.enterprise_id = $2)
             GROUP BY g.goal_type
             ORDER BY value DESC, label
         """,
@@ -647,3 +645,20 @@ class AnalyticsDashboardProvider:
             query,
             *query_args,
         )
+
+    async def get_sync_status(self) -> dict[str, Any] | None:
+        if self.repository is None:
+            raise AnalyticsUnavailable("Analytics database is not configured")
+        rows = await self.repository.fetch(
+            "sync_status",
+            """
+            SELECT
+                MIN(last_success_at) AS last_updated_at,
+                COALESCE(
+                    BOOL_OR(last_success_at IS NULL OR status IN ('error', 'failed')),
+                    FALSE
+                ) AS has_error
+            FROM analytics.dashboard_sync_status
+            """,
+        )
+        return rows[0] if rows else None

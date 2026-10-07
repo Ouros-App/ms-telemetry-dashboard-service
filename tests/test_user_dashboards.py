@@ -1,3 +1,5 @@
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -143,7 +145,7 @@ async def test_water_reading_chart_uses_scoped_dates_and_single_series() -> None
     )
 
     _, query, args = repository.calls[0]
-    assert "analytics.fact_water_registry" in query
+    assert "analytics.dashboard_water_reading_history" in query
     assert "registration_date >= CURRENT_DATE - " in query
     assert "(($3::integer - 1) * INTERVAL '1 day')" in query
     assert chart.title == "Consumo de água por leitura"
@@ -155,6 +157,56 @@ def test_every_analytics_query_uses_bound_scope_parameters() -> None:
     for query in AnalyticsDashboardProvider.queries.values():
         assert "$1" in query
         assert "$2" in query
+        assert "analytics.dim_" not in query
+        assert "analytics.fact_" not in query
+
+
+@pytest.mark.asyncio
+async def test_analytics_provider_reads_sync_freshness_from_dashboard_view() -> None:
+    repository = FakeRepository({"sync_status": [{"last_updated_at": None, "has_error": False}]})
+    provider = AnalyticsDashboardProvider(repository)
+
+    status = await provider.get_sync_status()
+
+    assert status == {"last_updated_at": None, "has_error": False}
+    operation, query, args = repository.calls[0]
+    assert operation == "sync_status"
+    assert "analytics.dashboard_sync_status" in query
+    assert args == ()
+
+
+@pytest.mark.asyncio
+async def test_dashboard_data_status_marks_oldest_successful_sync_as_stale() -> None:
+    repository = FakeRepository(
+        {
+            "sync_status": [
+                {
+                    "last_updated_at": datetime.now(UTC) - timedelta(minutes=20),
+                    "has_error": False,
+                }
+            ]
+        }
+    )
+    service = UserDashboardService(AnalyticsDashboardProvider(repository))
+
+    status = await service.data_status(farm_owner(), stale_after_seconds=900)
+
+    assert status.status == "stale"
+    assert status.age_seconds is not None and status.age_seconds >= 1200
+    assert status.stale_after_seconds == 900
+
+
+@pytest.mark.asyncio
+async def test_dashboard_data_status_is_unknown_when_no_dataset_has_synced() -> None:
+    repository = FakeRepository(
+        {"sync_status": [{"last_updated_at": None, "has_error": True}]}
+    )
+    service = UserDashboardService(AnalyticsDashboardProvider(repository))
+
+    status = await service.data_status(farm_owner(), stale_after_seconds=900)
+
+    assert status.status == "unknown"
+    assert status.age_seconds is None
 
 
 @pytest.mark.asyncio
