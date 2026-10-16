@@ -2,7 +2,7 @@ import asyncio
 import json
 import time
 from base64 import b64encode
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -192,11 +192,11 @@ class DatabricksAuthClient:
         self._lock = asyncio.Lock()
 
     async def get_access_token(self) -> str:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if self._cached and self._cached.expires_at - timedelta(seconds=self.settings.token_refresh_margin_seconds) > now:
             return self._cached.value
         async with self._lock:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             if self._cached and self._cached.expires_at - timedelta(seconds=self.settings.token_refresh_margin_seconds) > now:
                 return self._cached.value
             token = await self._request_token({"grant_type": "client_credentials", "scope": "all-apis"})
@@ -219,5 +219,5 @@ class DatabricksAuthClient:
             token = DatabricksTokenResponse.model_validate(payload)
         except ValidationError as exc:
             raise DatabricksIntegrationError("Databricks returned an invalid OAuth response") from exc
-        expires_at = datetime.now(timezone.utc) + timedelta(seconds=token.expires_in or 3600)
+        expires_at = datetime.now(UTC) + timedelta(seconds=token.expires_in or 3600)
         return CachedToken(token.access_token, expires_at)
