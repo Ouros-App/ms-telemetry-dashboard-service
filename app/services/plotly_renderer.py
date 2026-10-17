@@ -1124,6 +1124,11 @@ def render_plotly_html(
             const hoverSuffix = unit ? " " + unit : "";
             const xValues = rows.map((row) => formatCategory(row[xField], xField));
             const yValues = rows.map((row) => nullableNumber(row[series.field]));
+            const labelMonthlyValues = (
+              renderType === "bar"
+              && xField === "month_start"
+              && sourceSeries.length === 1
+            );
 
             const base = {{
               type: ["line", "area", "scatter"].includes(renderType)
@@ -1138,6 +1143,14 @@ def render_plotly_html(
               connectgaps: false,
               hovertemplate: "<b>%{{x}}</b><br>" + series.label + ": %{{y}}" + hoverSuffix + "<extra></extra>",
             }};
+            if (labelMonthlyValues) {{
+              base.text = yValues.map((value) => (
+                value === null ? "" : numberFormatter.format(value)
+              ));
+              base.textposition = "outside";
+              base.textfont = {{ color: tokens.text, size: 12 }};
+              base.cliponaxis = false;
+            }}
             if (["line", "area", "scatter", "scattergl"].includes(renderType)) {{
               return {{
                 ...base,
@@ -1174,8 +1187,15 @@ def render_plotly_html(
 
           if (renderType === "bar") {{
             layout.barmode = "group";
-            layout.bargap = 0.42;
+            layout.bargap = (
+              xField === "month_start" && sourceSeries.length === 1 ? 0.62 : 0.42
+            );
             layout.bargroupgap = 0.08;
+            if (sourceSeries.length === 1) {{
+              const unit = seriesUnit(sourceSeries[0]);
+              if (unit) layout.yaxis.ticksuffix = " " + unit;
+              if (xField === "month_start") layout.margin.t = 34;
+            }}
           }} else if (renderType === "funnel") {{
             layout.yaxis.autorange = "reversed";
           }} else if (renderType === "waterfall") {{
