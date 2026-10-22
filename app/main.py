@@ -4,8 +4,8 @@ from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI, Request
-from pymongo.errors import PyMongoError
 from fastapi.middleware.cors import CORSMiddleware
+from pymongo.errors import PyMongoError
 
 from app.api.routes import router
 from app.api.user_dashboards import router as user_dashboard_router
