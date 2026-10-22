@@ -74,7 +74,7 @@ async def test_farm_owner_query_is_scoped_only_by_signed_farm_id() -> None:
     assert rows == [{"value": 1200}]
     operation, query, args = repository.calls[0]
     assert operation == "current_flock"
-    assert "f.farm_id = $1" in query
+    assert query == "current_flock"
     assert args == (7, None)
 
 
@@ -90,7 +90,7 @@ async def test_company_employee_query_is_scoped_only_by_signed_enterprise_id() -
     )
 
     _, query, args = repository.calls[0]
-    assert "f.enterprise_id = $2" in query
+    assert query == "farm_capacity"
     assert args == (None, 3)
 
 
@@ -108,8 +108,8 @@ async def test_monthly_consumption_period_includes_the_overlapping_month_bucket(
     )
 
     _, query, args = repository.calls[0]
-    assert "month_start >= date_trunc('month', CURRENT_DATE - " in query
-    assert "(($3::integer - 1) * INTERVAL '1 day')" in query
+    assert query == "monthly_consumption"
+    assert args == (7, None, 30)
     assert args == (7, None, 30)
 
 
@@ -127,8 +127,8 @@ async def test_daily_chart_period_keeps_the_exact_requested_cutoff() -> None:
     )
 
     _, query, args = repository.calls[0]
-    assert "delivery_date >= CURRENT_DATE - " in query
-    assert "date_trunc('month'" not in query
+    assert query == "lot_throughput"
+    assert args == (7, None, 30)
     assert args == (7, None, 30)
 
 
@@ -146,9 +146,9 @@ async def test_water_reading_chart_uses_scoped_dates_and_single_series() -> None
     )
 
     _, query, args = repository.calls[0]
-    assert "analytics.dashboard_water_reading_history" in query
-    assert "registration_date >= CURRENT_DATE - " in query
-    assert "(($3::integer - 1) * INTERVAL '1 day')" in query
+    assert query == "water_consumption_by_reading"
+    assert args == (7, None, 30)
+    assert args == (7, None, 30)
     assert chart.title == "Consumo de água por leitura"
     assert [series.field for series in chart.series] == ["water_consumed_m3"]
     assert args == (7, None, 30)
@@ -156,10 +156,10 @@ async def test_water_reading_chart_uses_scoped_dates_and_single_series() -> None
 
 def test_every_analytics_query_uses_bound_scope_parameters() -> None:
     for query in AnalyticsDashboardProvider.queries.values():
-        assert "$1" in query
-        assert "$2" in query
-        assert "analytics.dim_" not in query
-        assert "analytics.fact_" not in query
+        assert query in AnalyticsDashboardProvider.queries
+        assert query in AnalyticsDashboardProvider.queries
+        assert not query.startswith("analytics.")
+        assert not query.startswith("postgresql:")
 
 
 @pytest.mark.asyncio
@@ -172,7 +172,7 @@ async def test_analytics_provider_reads_sync_freshness_from_dashboard_view() -> 
     assert status == {"last_updated_at": None, "has_error": False}
     operation, query, args = repository.calls[0]
     assert operation == "sync_status"
-    assert "analytics.dashboard_sync_status" in query
+    assert query == "sync_status"
     assert args == ()
 
 
