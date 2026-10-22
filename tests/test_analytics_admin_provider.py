@@ -36,7 +36,7 @@ async def test_admin_analytics_provider_lists_dashboard_and_business_charts() ->
     assert rows == [{"value": 42}]
     operation, query, args = repository.calls[0]
     assert operation == "current-flock"
-    assert "analytics.dashboard_enterprise_summary" in query
+    assert query == "mongo:current-flock"
     assert args == ()
 
 
