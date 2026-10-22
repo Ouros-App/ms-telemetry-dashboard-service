@@ -248,6 +248,25 @@ async def test_mongodb_transport_failure_is_reported_as_unavailable():
 
 
 @pytest.mark.asyncio
+async def test_null_nested_metrics_are_zero_without_http_500():
+    repo = repository()
+    monthly = repo._database["poc_farm_monthly"].documents[0]
+    monthly["water_metrics"] = None
+    monthly["energy_metrics"] = None
+    rows = await repo.fetch("monthly_consumption", "", 7, None, 30)
+    assert rows[0]["water_consumed_m3"] == 0.0
+    assert rows[0]["energy_consumed_kwh"] == 0.0
+
+
+def test_mongo_socket_timeout_limits_blocking_network_reads():
+    with patch("app.repositories.analytics.MongoClient") as client:
+        AnalyticsRepository("mongodb+srv://reader:password@atlas.example.net/")
+    assert client.call_args.kwargs["serverSelectionTimeoutMS"] == 5000
+    assert client.call_args.kwargs["connectTimeoutMS"] == 5000
+    assert client.call_args.kwargs["socketTimeoutMS"] == 15000
+
+
+@pytest.mark.asyncio
 async def test_close_releases_mongo_client():
     repo = repository()
     await repo.close()
