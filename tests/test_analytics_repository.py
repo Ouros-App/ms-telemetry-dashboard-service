@@ -7,7 +7,9 @@ from bson import Decimal128
 from pymongo.errors import ServerSelectionTimeoutError
 
 from app.repositories.analytics import (
-    AnalyticsQueryError, AnalyticsRepository, AnalyticsUnavailable,
+    AnalyticsQueryError,
+    AnalyticsRepository,
+    AnalyticsUnavailable,
     validate_mongodb_uri,
 )
 
@@ -238,9 +240,11 @@ async def test_missing_or_old_checkpoint_does_not_expose_partial_data():
 @pytest.mark.asyncio
 async def test_mongodb_transport_failure_is_reported_as_unavailable():
     repo = repository()
-    with patch.object(repo, "_state", side_effect=ServerSelectionTimeoutError("offline")):
-        with pytest.raises(AnalyticsUnavailable):
-            await repo.fetch("current_flock", "", 7, None)
+    with (
+        patch.object(repo, "_state", side_effect=ServerSelectionTimeoutError("offline")),
+        pytest.raises(AnalyticsUnavailable),
+    ):
+        await repo.fetch("current_flock", "", 7, None)
 
 
 @pytest.mark.asyncio
