@@ -28,9 +28,15 @@ def _http_url_is_valid(value: str) -> bool:
     )
 
 
-def _postgres_url_is_valid(value: str) -> bool:
+def _mongo_url_is_valid(value: str) -> bool:
     try:
-        return urlsplit(value).scheme in {"postgres", "postgresql"}
+        parsed = urlsplit(value)
+        if parsed.scheme not in {"mongodb", "mongodb+srv"} or not parsed.hostname:
+            return False
+        from app.repositories.analytics import validate_mongodb_uri
+
+        validate_mongodb_uri(value, "ouros_analytics_poc")
+        return True
     except ValueError:
         return False
 
@@ -58,17 +64,11 @@ class Settings(BaseSettings):
     prometheus_socks_connect_timeout_seconds: float = 5.0
     prometheus_range_seconds: int = 3600
     prometheus_step_seconds: int = 60
-    analytics_database_url: str | None = None
-    analytics_expected_role: str = "analytics_ro"
-    analytics_pool_min_size: int = 1
-    analytics_pool_max_size: int = 5
-    analytics_command_timeout_seconds: float = 8.0
+    analytics_mongodb_uri: str | None = None
+    analytics_mongodb_database: str = "ouros_analytics_poc"
     analytics_connect_timeout_seconds: float = 5.0
     analytics_retry_backoff_seconds: float = 5.0
-    analytics_stale_after_seconds: int = 900
-    analytics_socks_host: str | None = None
-    analytics_socks_port: int = 1055
-    analytics_socks_connect_timeout_seconds: float = 5.0
+    analytics_stale_after_seconds: int = 2700
     http_timeout_seconds: float = 10.0
     http_max_retries: int = 2
     http_retry_backoff_seconds: float = 0.1
@@ -206,52 +206,18 @@ class Settings(BaseSettings):
 
     def analytics_configuration_errors(self) -> list[str]:
         errors: list[str] = []
-        if not self.analytics_database_url:
-            errors.append("ANALYTICS_DATABASE_URL")
-        elif not _postgres_url_is_valid(self.analytics_database_url):
-            errors.append("ANALYTICS_DATABASE_URL_INVALID")
-        if not self.analytics_expected_role.strip():
-            errors.append("ANALYTICS_EXPECTED_ROLE_INVALID")
-        if self.analytics_pool_min_size < 1:
-            errors.append("ANALYTICS_POOL_MIN_SIZE_INVALID")
-        if (
-            self.analytics_pool_max_size < self.analytics_pool_min_size
-            or self.analytics_pool_max_size > 20
-        ):
-            errors.append("ANALYTICS_POOL_MAX_SIZE_INVALID")
-        if (
-            self.analytics_command_timeout_seconds < 1
-            or self.analytics_command_timeout_seconds > 60
-        ):
-            errors.append("ANALYTICS_COMMAND_TIMEOUT_SECONDS_INVALID")
+        if not self.analytics_mongodb_uri:
+            errors.append("ANALYTICS_MONGODB_URI")
+        elif not _mongo_url_is_valid(self.analytics_mongodb_uri):
+            errors.append("ANALYTICS_MONGODB_URI_INVALID")
+        if not self.analytics_mongodb_database.startswith("ouros_analytics_poc"):
+            errors.append("ANALYTICS_MONGODB_DATABASE_INVALID")
         if not (0 < self.analytics_connect_timeout_seconds <= 30):
             errors.append("ANALYTICS_CONNECT_TIMEOUT_SECONDS_INVALID")
         if not (0 <= self.analytics_retry_backoff_seconds <= 60):
             errors.append("ANALYTICS_RETRY_BACKOFF_SECONDS_INVALID")
         if self.analytics_stale_after_seconds < 1:
             errors.append("ANALYTICS_STALE_AFTER_SECONDS_INVALID")
-        errors.extend(self._analytics_socks_configuration_errors())
-        return errors
-
-    def _analytics_socks_configuration_errors(self) -> list[str]:
-        errors: list[str] = []
-        if self.analytics_socks_host and self.analytics_database_url:
-            parsed_database_url = urlsplit(self.analytics_database_url)
-            try:
-                _ = parsed_database_url.port
-            except ValueError:
-                errors.append("ANALYTICS_DATABASE_URL_INVALID")
-            else:
-                if not parsed_database_url.hostname:
-                    errors.append("ANALYTICS_DATABASE_URL_SOCKS_TARGET_INVALID")
-        if self.analytics_socks_host and not (
-            1 <= self.analytics_socks_port <= 65535
-        ):
-            errors.append("ANALYTICS_SOCKS_PORT_INVALID")
-        if self.analytics_socks_host and not (
-            0 < self.analytics_socks_connect_timeout_seconds <= 30
-        ):
-            errors.append("ANALYTICS_SOCKS_CONNECT_TIMEOUT_SECONDS_INVALID")
         return errors
 
     @property
