@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI, Request
+from pymongo.errors import PyMongoError
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import router
@@ -118,19 +119,25 @@ async def lifespan(app: FastAPI):
             },
         )
     else:
-        analytics_repository = AnalyticsRepository(
-            settings.analytics_mongodb_uri,
-            database_name=settings.analytics_mongodb_database,
-            connect_timeout_seconds=settings.analytics_connect_timeout_seconds,
-            retry_backoff_seconds=settings.analytics_retry_backoff_seconds,
-        )
         try:
+            analytics_repository = AnalyticsRepository(
+                settings.analytics_mongodb_uri,
+                database_name=settings.analytics_mongodb_database,
+                connect_timeout_seconds=settings.analytics_connect_timeout_seconds,
+                retry_backoff_seconds=settings.analytics_retry_backoff_seconds,
+            )
             await analytics_repository.ping()
             analytics_ready = True
             logger.info(
                 "MongoDB Atlas analytics connected",
                 extra={"event": "analytics_connected"},
             )
+        except (PyMongoError, ValueError):
+            logger.exception(
+                "MongoDB Atlas analytics client could not be created",
+                extra={"event": "analytics_client_init_failed"},
+            )
+            analytics_repository = None
         except AnalyticsUnavailable:
             logger.warning(
                 "MongoDB Atlas analytics unavailable; requests will retry lazily",
