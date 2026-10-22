@@ -119,29 +119,21 @@ async def lifespan(app: FastAPI):
         )
     else:
         analytics_repository = AnalyticsRepository(
-            settings.analytics_database_url,
-            min_size=settings.analytics_pool_min_size,
-            max_size=settings.analytics_pool_max_size,
-            command_timeout_seconds=settings.analytics_command_timeout_seconds,
+            settings.analytics_mongodb_uri,
+            database_name=settings.analytics_mongodb_database,
             connect_timeout_seconds=settings.analytics_connect_timeout_seconds,
             retry_backoff_seconds=settings.analytics_retry_backoff_seconds,
-            expected_role=settings.analytics_expected_role,
-            socks_proxy_host=settings.analytics_socks_host,
-            socks_proxy_port=settings.analytics_socks_port,
-            socks_connect_timeout_seconds=(
-                settings.analytics_socks_connect_timeout_seconds
-            ),
         )
         try:
             await analytics_repository.ping()
             analytics_ready = True
             logger.info(
-                "user analytics database connected",
+                "MongoDB Atlas analytics connected",
                 extra={"event": "analytics_connected"},
             )
         except AnalyticsUnavailable:
             logger.warning(
-                "user analytics database unavailable; requests will retry lazily",
+                "MongoDB Atlas analytics unavailable; requests will retry lazily",
                 extra={"event": "analytics_connection_deferred"},
             )
 
