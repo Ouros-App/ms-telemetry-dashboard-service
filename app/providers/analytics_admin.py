@@ -28,6 +28,7 @@ class AnalyticsAdminDashboardProvider:
         "current-flock": "mongo:current-flock",
         "capacity-utilization": "mongo:capacity-utilization",
         "monthly-water-consumption": "mongo:monthly-water-consumption",
+    }
     charts: ClassVar[tuple[DashboardChartDefinition, ...]] = (
         DashboardChartDefinition(
             id="farm-count",
