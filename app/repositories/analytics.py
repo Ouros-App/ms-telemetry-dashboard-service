@@ -122,6 +122,7 @@ class AnalyticsRepository:
             tlsAllowInvalidHostnames=False,
             serverSelectionTimeoutMS=int(connect_timeout_seconds * 1000),
             connectTimeoutMS=int(connect_timeout_seconds * 1000),
+            socketTimeoutMS=int(max(connect_timeout_seconds * 3, 15) * 1000),
             retryWrites=False,
         )
         self._database = self._client[database_name]
@@ -243,8 +244,8 @@ class AnalyticsRepository:
                 if cutoff and month < cutoff:
                     continue
                 totals = monthly[month]
-                totals[0] += _number(item.get("water_metrics", {}).get("monthly_total_m3"))
-                totals[1] += _number(item.get("energy_metrics", {}).get("monthly_total_kwh"))
+                totals[0] += _number((item.get("water_metrics") or {}).get("monthly_total_m3"))
+                totals[1] += _number((item.get("energy_metrics") or {}).get("monthly_total_kwh"))
                 totals[2] += _number(item.get("chickens_reference"))
             result = []
             for month, (water, energy, chickens) in sorted(monthly.items()):
@@ -305,6 +306,10 @@ class AnalyticsRepository:
             rows = await asyncio.to_thread(self._fetch_sync, operation, args)
             ANALYTICS_QUERIES.labels(operation, "success").inc()
             return rows
+        except AnalyticsQueryError:
+            ANALYTICS_QUERIES.labels(operation, "error").inc()
+            ANALYTICS_ERRORS.labels(operation, "invalid_operation").inc()
+            raise
         except AnalyticsUnavailable:
             ANALYTICS_QUERIES.labels(operation, "error").inc()
             ANALYTICS_ERRORS.labels(operation, "unavailable").inc()
@@ -314,7 +319,7 @@ class AnalyticsRepository:
             ANALYTICS_QUERIES.labels(operation, "error").inc()
             ANALYTICS_ERRORS.labels(operation, type(exc).__name__).inc()
             raise AnalyticsUnavailable("MongoDB Atlas query unavailable") from exc
-        except (ValueError, TypeError, KeyError, ArithmeticError) as exc:
+        except (ValueError, TypeError, KeyError, AttributeError, ArithmeticError) as exc:
             ANALYTICS_QUERIES.labels(operation, "error").inc()
             ANALYTICS_ERRORS.labels(operation, type(exc).__name__).inc()
             raise AnalyticsQueryError("Invalid Atlas analytics document") from exc
