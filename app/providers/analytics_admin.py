@@ -13,42 +13,21 @@ from app.schemas.dashboards import (
 
 
 class AnalyticsAdminDashboardProvider:
-    """Global business dashboard backed exclusively by Analytics read models."""
+    """Global business dashboard backed by MongoDB Atlas analytics snapshots."""
 
     provider_name: ClassVar[str] = "analytics"
     dashboard: ClassVar[DashboardRecord] = DashboardRecord(
         id="analytics-overview",
         provider="analytics",
         title="Visão geral do Analytics",
-        description="Indicadores operacionais consolidados do banco Analytics.",
+        description="Indicadores operacionais consolidados do MongoDB Atlas.",
         dashboard_id="analytics-overview",
     )
     queries: ClassVar[dict[str, str]] = {
-        "farm-count": """
-            SELECT COALESCE(SUM(farm_count), 0)::bigint AS value
-            FROM analytics.dashboard_enterprise_summary
-        """,
-        "current-flock": """
-            SELECT COALESCE(SUM(chickens_now), 0)::bigint AS value
-            FROM analytics.dashboard_enterprise_summary
-        """,
-        "capacity-utilization": """
-            SELECT COALESCE(
-                ROUND(
-                    SUM(chickens_now)::numeric * 100
-                    / NULLIF(SUM(poultry_capacity), 0),
-                    2
-                ),
-                0
-            ) AS value
-            FROM analytics.dashboard_enterprise_summary
-        """,
-        "monthly-water-consumption": """
-            SELECT month_start, ROUND(SUM(water_consumed_m3), 3) AS water_consumed_m3
-            FROM analytics.dashboard_consumption_history
-            GROUP BY month_start
-            ORDER BY month_start
-        """,
+        "farm-count": "mongo:farm-count",
+        "current-flock": "mongo:current-flock",
+        "capacity-utilization": "mongo:capacity-utilization",
+        "monthly-water-consumption": "mongo:monthly-water-consumption",
     }
     charts: ClassVar[tuple[DashboardChartDefinition, ...]] = (
         DashboardChartDefinition(

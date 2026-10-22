@@ -9,7 +9,7 @@ def base_settings(**overrides) -> Settings:
         "databricks_host": "https://workspace.example.com",
         "databricks_client_id": "client",
         "databricks_client_secret": "secret",
-        "analytics_database_url": "postgresql://analytics_ro:secret@analytics.internal:55432/ouros_analytics_database",
+        "analytics_mongodb_uri": "mongodb+srv://reader:secret@atlas.example.net/",
     }
     values.update(overrides)
     return Settings(**values)
@@ -94,98 +94,48 @@ def test_keycloak_urls_and_role_are_validated() -> None:
     assert not config.ready
 
 
-def test_analytics_database_url_is_optional_for_admin_readiness() -> None:
-    config = base_settings(analytics_database_url=None)
-
+def test_missing_atlas_uri_does_not_block_admin_readiness() -> None:
+    config = base_settings(analytics_mongodb_uri=None)
     assert config.ready
-    assert config.analytics_configuration_errors() == ["ANALYTICS_DATABASE_URL"]
+    assert config.analytics_configuration_errors() == ["ANALYTICS_MONGODB_URI"]
 
 
-def test_analytics_database_url_and_pool_are_validated_independently() -> None:
+def test_atlas_uri_and_timeouts_are_validated() -> None:
     config = base_settings(
-        analytics_database_url="https://not-postgres.example",
-        analytics_expected_role="   ",
-        analytics_pool_min_size=0,
-        analytics_pool_max_size=25,
-        analytics_command_timeout_seconds=0,
+        analytics_mongodb_uri="postgresql://legacy-host/analytics",
+        analytics_mongodb_database="neondb",
         analytics_connect_timeout_seconds=0,
         analytics_retry_backoff_seconds=61,
         analytics_stale_after_seconds=0,
     )
-
     errors = config.analytics_configuration_errors()
-
-    assert config.ready
-    assert "ANALYTICS_DATABASE_URL_INVALID" in errors
-    assert "ANALYTICS_EXPECTED_ROLE_INVALID" in errors
-    assert "ANALYTICS_POOL_MIN_SIZE_INVALID" in errors
-    assert "ANALYTICS_POOL_MAX_SIZE_INVALID" in errors
-    assert "ANALYTICS_COMMAND_TIMEOUT_SECONDS_INVALID" in errors
+    assert "ANALYTICS_MONGODB_URI_INVALID" in errors
+    assert "ANALYTICS_MONGODB_DATABASE_INVALID" in errors
     assert "ANALYTICS_CONNECT_TIMEOUT_SECONDS_INVALID" in errors
     assert "ANALYTICS_RETRY_BACKOFF_SECONDS_INVALID" in errors
     assert "ANALYTICS_STALE_AFTER_SECONDS_INVALID" in errors
-
-
-def test_analytics_socks_settings_are_validated_independently() -> None:
-    config = base_settings(
-        analytics_socks_host="tailscale-proxy",
-        analytics_socks_port=0,
-        analytics_socks_connect_timeout_seconds=31,
-    )
-
-    errors = config.analytics_configuration_errors()
-
     assert config.ready
-    assert "ANALYTICS_SOCKS_PORT_INVALID" in errors
-    assert "ANALYTICS_SOCKS_CONNECT_TIMEOUT_SECONDS_INVALID" in errors
 
 
-def test_analytics_socks_settings_accept_discloud_vlan_proxy() -> None:
+def test_tls_bypasses_are_rejected_before_atlas_connection() -> None:
+    for suffix in (
+        "?tlsInsecure=true",
+        "?tlsAllowInvalidCertificates=true",
+        "?tlsAllowInvalidHostnames=true",
+        "?tls=false",
+    ):
+        config = base_settings(
+            analytics_mongodb_uri="mongodb://reader:secret@atlas.example.net/" + suffix,
+        )
+        assert "ANALYTICS_MONGODB_URI_INVALID" in config.analytics_configuration_errors()
+
+
+def test_atlas_accepts_verified_tls_settings() -> None:
     config = base_settings(
-        analytics_socks_host="tailscale-proxy",
-        analytics_socks_port=1055,
-        analytics_socks_connect_timeout_seconds=5,
+        analytics_mongodb_uri="mongodb+srv://reader:secret@atlas.example.net/?tls=true",
+        analytics_mongodb_database="ouros_analytics_poc",
     )
-
     assert config.analytics_configuration_errors() == []
-
-
-def test_direct_analytics_accepts_asyncpg_dsn_without_userinfo() -> None:
-    config = base_settings(
-        analytics_database_url="postgresql:///ouros_analytics_database?host=/run/postgresql",
-        analytics_socks_host=None,
-    )
-
-    assert "ANALYTICS_DATABASE_URL_INVALID" not in config.analytics_configuration_errors()
-
-
-def test_socks_analytics_requires_target_hostname_in_dsn() -> None:
-    config = base_settings(
-        analytics_database_url="postgresql:///ouros_analytics_database",
-        analytics_socks_host="tailscale-proxy",
-    )
-
-    assert (
-        "ANALYTICS_DATABASE_URL_SOCKS_TARGET_INVALID"
-        in config.analytics_configuration_errors()
-    )
-
-
-def test_socks_analytics_rejects_invalid_target_port_without_crashing() -> None:
-    config = base_settings(
-        analytics_database_url="postgresql://analytics_ro@192.168.15.11:99999/db",
-        analytics_socks_host="tailscale-proxy",
-    )
-
-    assert "ANALYTICS_DATABASE_URL_INVALID" in config.analytics_configuration_errors()
-
-
-def test_malformed_ipv6_analytics_url_is_reported_without_crashing() -> None:
-    config = base_settings(
-        analytics_database_url="postgresql://[::1/ouros_analytics_database",
-    )
-
-    assert "ANALYTICS_DATABASE_URL_INVALID" in config.analytics_configuration_errors()
 
 
 def test_prometheus_provider_accepts_homelab_socks_proxy() -> None:

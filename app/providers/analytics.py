@@ -437,139 +437,21 @@ class AnalyticsDashboardProvider:
         ),
     )
 
+    # Operations are allowlisted and interpreted by the MongoDB repository.
+    # Never accept arbitrary SQL or arbitrary collection names from requests.
     queries: ClassVar[dict[str, str]] = {
-        "current_flock": """
-            SELECT COALESCE(SUM(f.chickens_now), 0)::bigint AS value
-            FROM analytics.dashboard_farm_overview f
-            WHERE ($1::integer IS NOT NULL AND f.farm_id = $1)
-               OR ($2::integer IS NOT NULL AND f.enterprise_id = $2)
-        """,
-        "capacity_utilization": """
-            SELECT COALESCE(
-                ROUND(
-                    SUM(f.chickens_now)::numeric * 100
-                    / NULLIF(SUM(f.poultry_capacity), 0),
-                    2
-                ),
-                0
-            ) AS value
-            FROM analytics.dashboard_farm_overview f
-            WHERE ($1::integer IS NOT NULL AND f.farm_id = $1)
-               OR ($2::integer IS NOT NULL AND f.enterprise_id = $2)
-        """,
-        "mortality_rate": """
-            SELECT COALESCE(
-                ROUND(
-                    SUM(l.lost_chickens)::numeric * 100
-                    / NULLIF(SUM(l.received_chickens), 0),
-                    2
-                ),
-                0
-            ) AS value
-            FROM analytics.dashboard_financial_summary l
-            WHERE ($1::integer IS NOT NULL AND l.farm_id = $1)
-               OR ($2::integer IS NOT NULL AND l.enterprise_id = $2)
-        """,
-        "farm_capacity": """
-            SELECT f.farm_name, f.chickens_now, f.poultry_capacity
-            FROM analytics.dashboard_farm_overview f
-            WHERE ($1::integer IS NOT NULL AND f.farm_id = $1)
-               OR ($2::integer IS NOT NULL AND f.enterprise_id = $2)
-            ORDER BY f.farm_name, f.farm_id
-        """,
-        "lot_throughput": """
-            SELECT
-                l.delivery_date,
-                SUM(l.received_chickens)::bigint AS received_chickens,
-                SUM(l.delivered_chickens)::bigint AS delivered_chickens,
-                SUM(l.lost_chickens)::bigint AS lost_chickens
-            FROM analytics.dashboard_financial_summary l
-            WHERE ($1::integer IS NOT NULL AND l.farm_id = $1)
-               OR ($2::integer IS NOT NULL AND l.enterprise_id = $2)
-            GROUP BY l.delivery_date
-            ORDER BY l.delivery_date
-        """,
-        "lot_mortality": """
-            SELECT
-                l.delivery_date,
-                COALESCE(
-                    ROUND(
-                        SUM(l.lost_chickens)::numeric * 100
-                        / NULLIF(SUM(l.received_chickens), 0),
-                        2
-                    ),
-                    0
-                ) AS mortality_rate_pct
-            FROM analytics.dashboard_financial_summary l
-            WHERE ($1::integer IS NOT NULL AND l.farm_id = $1)
-               OR ($2::integer IS NOT NULL AND l.enterprise_id = $2)
-            GROUP BY l.delivery_date
-            ORDER BY l.delivery_date
-        """,
-        "lot_cost": """
-            SELECT l.delivery_date, ROUND(SUM(l.cost), 2) AS cost
-            FROM analytics.dashboard_financial_summary l
-            WHERE ($1::integer IS NOT NULL AND l.farm_id = $1)
-               OR ($2::integer IS NOT NULL AND l.enterprise_id = $2)
-            GROUP BY l.delivery_date
-            ORDER BY l.delivery_date
-        """,
-        "monthly_consumption": """
-            SELECT
-                c.month_start,
-                ROUND(SUM(c.water_consumed_m3), 3) AS water_consumed_m3,
-                ROUND(SUM(c.energy_consumed_kwh), 3) AS energy_consumed_kwh
-            FROM analytics.dashboard_consumption_history c
-            WHERE ($1::integer IS NOT NULL AND c.farm_id = $1)
-               OR ($2::integer IS NOT NULL AND c.enterprise_id = $2)
-            GROUP BY c.month_start
-            ORDER BY c.month_start
-        """,
-        "water_consumption_by_reading": """
-            SELECT
-                r.registration_date,
-                ROUND(SUM(r.water_consumed_m3), 3) AS water_consumed_m3
-            FROM analytics.dashboard_water_reading_history r
-            WHERE ($1::integer IS NOT NULL AND r.farm_id = $1)
-               OR ($2::integer IS NOT NULL AND r.enterprise_id = $2)
-            GROUP BY r.registration_date
-            ORDER BY r.registration_date
-        """,
-        "resource_efficiency": """
-            SELECT
-                c.month_start,
-                ROUND(
-                    SUM(c.water_consumed_m3)
-                    / NULLIF(SUM(c.chickens_reference), 0),
-                    4
-                ) AS water_m3_per_chicken,
-                ROUND(
-                    SUM(c.energy_consumed_kwh)
-                    / NULLIF(SUM(c.chickens_reference), 0),
-                    4
-                ) AS energy_kwh_per_chicken
-            FROM analytics.dashboard_consumption_history c
-            WHERE ($1::integer IS NOT NULL AND c.farm_id = $1)
-               OR ($2::integer IS NOT NULL AND c.enterprise_id = $2)
-            GROUP BY c.month_start
-            ORDER BY c.month_start
-        """,
-        "goal_status": """
-            SELECT g.goal_status AS label, SUM(g.goal_count)::bigint AS value
-            FROM analytics.dashboard_goal_progress g
-            WHERE ($1::integer IS NOT NULL AND g.farm_id = $1)
-               OR ($2::integer IS NOT NULL AND g.enterprise_id = $2)
-            GROUP BY g.goal_status
-            ORDER BY value DESC, label
-        """,
-        "goal_type": """
-            SELECT g.goal_type AS label, SUM(g.goal_count)::bigint AS value
-            FROM analytics.dashboard_goal_progress g
-            WHERE ($1::integer IS NOT NULL AND g.farm_id = $1)
-               OR ($2::integer IS NOT NULL AND g.enterprise_id = $2)
-            GROUP BY g.goal_type
-            ORDER BY value DESC, label
-        """,
+        "current_flock": "current_flock",
+        "capacity_utilization": "capacity_utilization",
+        "mortality_rate": "mortality_rate",
+        "farm_capacity": "farm_capacity",
+        "lot_throughput": "lot_throughput",
+        "lot_mortality": "lot_mortality",
+        "lot_cost": "lot_cost",
+        "monthly_consumption": "monthly_consumption",
+        "water_consumption_by_reading": "water_consumption_by_reading",
+        "resource_efficiency": "resource_efficiency",
+        "goal_status": "goal_status",
+        "goal_type": "goal_type",
     }
 
     def __init__(self, repository: AnalyticsRepository | None) -> None:
@@ -616,27 +498,6 @@ class AnalyticsDashboardProvider:
         query = self.queries.get(chart.query_name)
         if query is None:
             raise AnalyticsQueryError("Unknown analytics query")
-        if period_days is not None:
-            date_column = self.PERIOD_COLUMNS.get(chart.query_name)
-            if date_column is not None:
-                if date_column == "month_start":
-                    # Monthly rows represent a whole calendar-month bucket. Keep
-                    # the bucket containing the start of the requested window;
-                    # comparing month_start with the exact cutoff drops it when
-                    # the cutoff falls after the first day of that month.
-                    period_filter = (
-                        f"{date_column} >= date_trunc('month', CURRENT_DATE - "
-                        "(($3::integer - 1) * INTERVAL '1 day'))"
-                    )
-                else:
-                    period_filter = (
-                        f"{date_column} >= CURRENT_DATE - "
-                        "(($3::integer - 1) * INTERVAL '1 day')"
-                    )
-                query = (
-                    f"SELECT * FROM ({query}) AS period_rows "
-                    f"WHERE {period_filter} ORDER BY {date_column}"
-                )
         query_args = [scope.farm_id, scope.enterprise_id]
         if period_days is not None and chart.query_name in self.PERIOD_COLUMNS:
             query_args.append(period_days)
@@ -649,16 +510,5 @@ class AnalyticsDashboardProvider:
     async def get_sync_status(self) -> dict[str, Any] | None:
         if self.repository is None:
             raise AnalyticsUnavailable("Analytics database is not configured")
-        rows = await self.repository.fetch(
-            "sync_status",
-            """
-            SELECT
-                MIN(last_success_at) AS last_updated_at,
-                COALESCE(
-                    BOOL_OR(last_success_at IS NULL OR status IN ('error', 'failed')),
-                    FALSE
-                ) AS has_error
-            FROM analytics.dashboard_sync_status
-            """,
-        )
+        rows = await self.repository.fetch("sync_status", "sync_status")
         return rows[0] if rows else None
