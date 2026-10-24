@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from app.core.auth import Principal, require_user_bearer
 from app.main import app
@@ -988,7 +989,7 @@ async def test_relative_consumption_chart_definition_and_custom_dashboard_reques
     assert req.period_days == 730
 
     # Request > 732 days is invalid
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         CustomDashboardRequest(
             title="Painel Inválido",
             period_days=733,
