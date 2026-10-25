@@ -80,7 +80,7 @@ class CustomDashboardRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     title: str = Field(min_length=1, max_length=120)
-    period_days: int = Field(default=30, ge=1, le=366)
+    period_days: int = Field(default=30, ge=1, le=732)
     charts: list[CustomDashboardChartRequest] = Field(min_length=1, max_length=4)
 
     @field_validator("title")

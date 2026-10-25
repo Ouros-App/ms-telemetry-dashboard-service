@@ -504,6 +504,7 @@ def render_plotly_html(
       water_m3_per_chicken: "m³/ave",
       energy_kwh_per_chicken: "kWh/ave",
       mortality_rate_pct: "%",
+      relative_consumption_pct: "%",
       cost: "R$",
     }};
     const SERIES_TITLE_BY_FIELD = {{
@@ -511,7 +512,9 @@ def render_plotly_html(
       energy_consumed_kwh: "Energia",
       water_m3_per_chicken: "Água por ave",
       energy_kwh_per_chicken: "Energia por ave",
+      relative_consumption_pct: "Consumo",
     }};
+    const isWaterInLiters = (field) => chart.id === "monthly-water-consumption" && field === "water_consumed_m3";
     const MONTH_LABELS = [
       "Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
       "Jul", "Ago", "Set", "Out", "Nov", "Dez",
@@ -526,7 +529,10 @@ def render_plotly_html(
       return numberFormatter.format(value);
     }};
 
-    const seriesUnit = (series) => UNIT_BY_FIELD[series.field] || "";
+    const seriesUnit = (series) => {{
+      if (isWaterInLiters(series.field)) return "L";
+      return UNIT_BY_FIELD[series.field] || chart.value_suffix || "";
+    }};
     const isMobile = () => window.matchMedia("(max-width: 720px)").matches;
 
     const appendLegendItem = (legend, labelText, color) => {{
@@ -562,10 +568,17 @@ def render_plotly_html(
       const legend = document.createElement("div");
       legend.className = "panel-legend";
       legend.setAttribute("aria-label", "Legenda");
-      appendLegendItem(legend, "Este ano", comparisonPalette.current);
       appendLegendItem(legend, "Ano passado", comparisonPalette.previous);
+      appendLegendItem(legend, "Este ano", comparisonPalette.current);
       panel.append(legend);
       return legend;
+    }};
+
+    const buildComparisonLegend = (legendElement) => {{
+      legendElement.replaceChildren();
+      appendLegendItem(legendElement, "Ano passado", comparisonPalette.previous);
+      appendLegendItem(legendElement, "Este ano", comparisonPalette.current);
+      legendElement.hidden = false;
     }};
 
     const parseIsoDate = (value) => {{
@@ -615,7 +628,8 @@ def render_plotly_html(
       datedRows.forEach(({{ row, date }}) => {{
         const year = date.getUTCFullYear();
         const month = date.getUTCMonth();
-        const value = nullableNumber(row[series.field]);
+        const raw = nullableNumber(row[series.field]);
+        const value = raw !== null && isWaterInLiters(series.field) ? raw * 1000 : raw;
         if (year === currentYear) currentValues.set(month, value);
         if (year === previousYear) previousValues.set(month, value);
       }});
@@ -1118,12 +1132,96 @@ def render_plotly_html(
           layout.margin = {{ l: 20, r: 20, t: 8, b: 52 }};
           layout.hovermode = "closest";
         }} else {{
+          const comparison = (
+            sourceSeries.length === 1
+            && xField === "month_start"
+            && ["line", "bar", "area"].includes(renderType)
+          ) ? buildYearComparison(sourceSeries[0], xField) : null;
+
+          if (comparison) {{
+            const series = sourceSeries[0];
+            const unit = seriesUnit(series);
+            const hoverSuffix = unit ? " " + unit : "";
+            const markerSize = isMobile() ? 8 : 10;
+            const barWidth = isMobile() ? 0.23 : 0.22;
+
+            const traceFor = (label, values, year, color) => (
+              renderType === "line" || renderType === "area"
+                ? {{
+                    type: "scatter",
+                    mode: "lines+markers",
+                    name: label,
+                    x: comparison.x,
+                    y: values,
+                    customdata: comparison.x.map(() => year),
+                    connectgaps: false,
+                    line: {{ color, width: 2.2, shape: "spline", smoothing: 0.32 }},
+                    marker: {{
+                      color,
+                      size: markerSize,
+                      line: {{ color: tokens.surface, width: 1.5 }},
+                    }},
+                    fill: renderType === "area" ? "tozeroy" : "none",
+                    hovertemplate: "<b>%{{x}} %{{customdata}}</b><br>%{{y}}" + hoverSuffix + "<extra></extra>",
+                  }}
+                : {{
+                    type: "bar",
+                    name: label,
+                    x: comparison.x,
+                    y: values,
+                    customdata: comparison.x.map(() => year),
+                    width: barWidth,
+                    marker: {{
+                      color,
+                      line: {{ width: 0 }},
+                      cornerradius: 2,
+                    }},
+                    hovertemplate: "<b>%{{x}} %{{customdata}}</b><br>%{{y}}" + hoverSuffix + "<extra></extra>",
+                  }}
+            );
+
+            traces = [
+              traceFor(
+                "Ano passado",
+                comparison.previous,
+                comparison.previousYear,
+                comparisonPalette.previous,
+              ),
+              traceFor(
+                "Este ano",
+                comparison.current,
+                comparison.currentYear,
+                comparisonPalette.current,
+              ),
+            ];
+
+            buildComparisonLegend(nativeLegend);
+            layout.showlegend = false;
+            layout.margin = {{ ...layout.margin, b: 34 }};
+
+            if (renderType === "bar") {{
+              layout.barmode = "group";
+              layout.bargap = 0.42;
+              layout.bargroupgap = 0.08;
+            }}
+
+            if (unit) {{
+              layout.yaxis.ticksuffix = unit;
+            }}
+            if (chart.id === "relative-consumption" || series.field === "relative_consumption_pct" || chart.value_suffix === "%") {{
+              layout.yaxis.range = [0, 100];
+              layout.yaxis.dtick = 20;
+            }}
+          }} else {{
           traces = sourceSeries.map((series, index) => {{
             const color = palette[index % palette.length];
             const unit = seriesUnit(series);
             const hoverSuffix = unit ? " " + unit : "";
             const xValues = rows.map((row) => formatCategory(row[xField], xField));
-            const yValues = rows.map((row) => nullableNumber(row[series.field]));
+            const yValues = rows.map((row) => {{
+              const raw = nullableNumber(row[series.field]);
+              return raw !== null && isWaterInLiters(series.field) ? raw * 1000 : raw;
+            }});
 
             const base = {{
               type: ["line", "area", "scatter"].includes(renderType)
@@ -1183,6 +1281,7 @@ def render_plotly_html(
           }}
         }}
 
+          }}
         registerPlot(plot, traces, layout).then(() => requestAnimationFrame(postHeight));
       }}
 

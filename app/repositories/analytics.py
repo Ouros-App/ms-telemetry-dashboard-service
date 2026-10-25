@@ -32,7 +32,7 @@ USER_OPERATIONS = frozenset({
     "current_flock", "capacity_utilization", "mortality_rate", "farm_capacity",
     "lot_throughput", "lot_mortality", "lot_cost", "monthly_consumption",
     "water_consumption_by_reading", "resource_efficiency",
-    "goal_status", "goal_type",
+    "goal_status", "goal_type", "relative_consumption",
 })
 ADMIN_OPERATIONS = frozenset({
     "farm-count", "current-flock", "capacity-utilization",
@@ -40,9 +40,9 @@ ADMIN_OPERATIONS = frozenset({
 })
 DATED_OPERATIONS = frozenset({
     "lot_throughput", "lot_mortality", "lot_cost",
-    "monthly_consumption", "water_consumption_by_reading", "resource_efficiency",
+    "monthly_consumption", "water_consumption_by_reading", "resource_efficiency", "relative_consumption",
 })
-MONTHLY_OPERATIONS = frozenset({"monthly_consumption", "resource_efficiency"})
+MONTHLY_OPERATIONS = frozenset({"monthly_consumption", "resource_efficiency", "relative_consumption"})
 
 
 class AnalyticsUnavailable(RuntimeError):
@@ -90,10 +90,15 @@ def _day(value: Any) -> date:
 def _date_filter(days: int | None, *, monthly: bool = False) -> date | None:
     if days is None:
         return None
-    if not 1 <= days <= 366:
+    if not 1 <= days <= 732:
         raise AnalyticsQueryError("Invalid chart period")
-    cutoff = datetime.now(UTC).date() - timedelta(days=days - 1)
-    return cutoff.replace(day=1) if monthly else cutoff
+
+    today = datetime.now(UTC).date()
+    if monthly:
+        previous_year_start = date(today.year - 1, 1, 1)
+        cutoff = today - timedelta(days=days - 1)
+        return min(previous_year_start, cutoff.replace(day=1))
+    return today - timedelta(days=days - 1)
 
 
 class AnalyticsRepository:
@@ -237,7 +242,7 @@ class AnalyticsRepository:
             return result
 
         if operation in {"monthly_consumption", "resource_efficiency",
-                         "monthly-water-consumption"}:
+                         "monthly-water-consumption", "relative_consumption"}:
             monthly = defaultdict(lambda: [Decimal(0), Decimal(0), Decimal(0)])
             for item in records(MONTHLY):
                 month = _day(item["month_start"])
@@ -248,6 +253,20 @@ class AnalyticsRepository:
                 totals[1] += _number((item.get("energy_metrics") or {}).get("monthly_total_kwh"))
                 totals[2] += _number(item.get("chickens_reference"))
             result = []
+            if operation == "relative_consumption":
+                max_combined = max(
+                    (w + e for w, e, _ in monthly.values()),
+                    default=Decimal(0),
+                )
+                for month, (water, energy, _) in sorted(monthly.items()):
+                    key = month.isoformat()
+                    combined = water + energy
+                    pct = _rounded((combined * Decimal(100) / max_combined), 1) if max_combined > 0 else 0.0
+                    result.append({
+                        "month_start": key,
+                        "relative_consumption_pct": min(100.0, max(0.0, pct)),
+                    })
+                return result
             for month, (water, energy, chickens) in sorted(monthly.items()):
                 key = month.isoformat()
                 if operation == "monthly-water-consumption":
