@@ -724,6 +724,7 @@ async def test_custom_dashboard_service_renders_selected_charts_and_period() -> 
     assert '"rows":[{"label":"active","value":3}]' in result.charts[0].html
     assert len(repository.calls) == 2
     assert repository.calls[1][2][-1] == 14
+    assert all('"period_days":14' in chart.html for chart in result.charts)
 
 
 @pytest.mark.asyncio
@@ -1035,3 +1036,29 @@ async def test_plotly_renderer_relative_consumption_uses_percentage_and_range() 
     assert "layout.yaxis.dtick = 20" in html
     assert '"Ano passado"' in html
     assert '"Este ano"' in html
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("period_days", [30, 90, 365])
+async def test_custom_dashboard_propagates_period_days_to_rendered_html(
+    period_days: int,
+) -> None:
+    repository = FakeRepository(
+        {
+            "monthly_consumption": [
+                {
+                    "month_start": "2026-09-01",
+                    "water_consumed_m3": 12.5,
+                    "energy_consumed_kwh": 33.0,
+                }
+            ],
+        }
+    )
+    service = UserDashboardService(AnalyticsDashboardProvider(repository))
+    request = CustomDashboardRequest(
+        title="Painel Período",
+        period_days=period_days,
+        charts=[{"chart_id": "monthly-consumption", "render_as": "auto"}],
+    )
+    result = await service.build_custom_dashboard(farm_owner(), request)
+    assert f'"period_days":{period_days}' in result.charts[0].html

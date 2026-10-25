@@ -213,7 +213,12 @@ class UserDashboardService:
             chart,
             period_days=period_days,
         )
-        html, nonce = render_plotly_html(chart, rows, render_as=resolved_render_as)
+        html, nonce = render_plotly_html(
+            chart,
+            rows,
+            render_as=resolved_render_as,
+            period_days=period_days,
+        )
         now = time.monotonic()
         if len(self._html_cache) >= 512:
             self._html_cache = {
