@@ -15,55 +15,32 @@ _REQUIRED_INFISICAL_KEYS = (
 
 
 def load_infisical_secrets() -> None:
-    """Load runtime secrets from Infisical using Ouros Universal Auth (Machine Identity)."""
+    """Load runtime secrets from Infisical using Ouros Universal Auth."""
 
     load_dotenv(override=False)
 
-    client_id = os.getenv("INFISICAL_CLIENT_ID")
-    client_secret = os.getenv("INFISICAL_CLIENT_SECRET")
-    project_id = os.getenv("INFISICAL_PROJECT_ID")
-    environment = os.getenv("INFISICAL_ENVIRONMENT") or os.getenv("INFISICAL_ENV")
-    secret_path = os.getenv("INFISICAL_SECRET_PATH") or os.getenv("INFISICAL_PATH")
-    site_url = (
-        os.getenv("INFISICAL_SITE_URL")
-        or os.getenv("INFISICAL_HOST")
-        or DEFAULT_INFISICAL_SITE_URL
-    )
-
-    provided = (client_id, client_secret, project_id, environment, secret_path)
-    if not any(provided):
+    values = {key: os.getenv(key) for key in _REQUIRED_INFISICAL_KEYS}
+    if not any(values.values()):
         return
 
-    missing = []
-    if not client_id:
-        missing.append("INFISICAL_CLIENT_ID")
-    if not client_secret:
-        missing.append("INFISICAL_CLIENT_SECRET")
-    if not project_id:
-        missing.append("INFISICAL_PROJECT_ID")
-    if not environment:
-        missing.append("INFISICAL_ENVIRONMENT")
-    if not secret_path:
-        missing.append("INFISICAL_SECRET_PATH")
-
+    missing = [key for key, value in values.items() if not value]
     if missing:
         raise RuntimeError(
             "Configuração parcial do Infisical; faltando: " + ", ".join(missing)
         )
 
-    if environment not in {"prod", "dev"}:
-        raise RuntimeError("INFISICAL_ENVIRONMENT deve ser 'prod' ou 'dev'")
-
-    client = InfisicalSDKClient(host=site_url)
+    client = InfisicalSDKClient(
+        host=os.getenv("INFISICAL_SITE_URL", DEFAULT_INFISICAL_SITE_URL)
+    )
     client.auth.universal_auth.login(
-        client_id=client_id,
-        client_secret=client_secret,
+        client_id=values["INFISICAL_CLIENT_ID"],
+        client_secret=values["INFISICAL_CLIENT_SECRET"],
     )
 
     response = client.secrets.list_secrets(
-        project_id=project_id,
-        environment_slug=environment,
-        secret_path=secret_path,
+        project_id=values["INFISICAL_PROJECT_ID"],
+        environment_slug=values["INFISICAL_ENVIRONMENT"],
+        secret_path=values["INFISICAL_SECRET_PATH"],
         view_secret_value=True,
     )
 
