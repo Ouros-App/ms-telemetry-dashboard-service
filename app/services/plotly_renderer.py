@@ -41,6 +41,7 @@ def render_plotly_html(
     chart: UserChartDefinition,
     rows: list[dict[str, Any]],
     render_as: UserChartRenderType = "auto",
+    period_days: int | None = None,
 ) -> tuple[str, str]:
     nonce = secrets.token_urlsafe(18)
     resolved_render_as: UserChartRenderType = (
@@ -56,6 +57,7 @@ def render_plotly_html(
             "rows": rows,
             "tokens": OUROS_CHART_TOKENS,
             "render_as": resolved_render_as,
+            "period_days": period_days,
         }
     )
     title = escape(chart.title, quote=True)
@@ -568,16 +570,16 @@ def render_plotly_html(
       const legend = document.createElement("div");
       legend.className = "panel-legend";
       legend.setAttribute("aria-label", "Legenda");
-      appendLegendItem(legend, "Ano passado", comparisonPalette.previous);
       appendLegendItem(legend, "Este ano", comparisonPalette.current);
+      appendLegendItem(legend, "Ano passado", comparisonPalette.previous);
       panel.append(legend);
       return legend;
     }};
 
     const buildComparisonLegend = (legendElement) => {{
       legendElement.replaceChildren();
-      appendLegendItem(legendElement, "Ano passado", comparisonPalette.previous);
       appendLegendItem(legendElement, "Este ano", comparisonPalette.current);
+      appendLegendItem(legendElement, "Ano passado", comparisonPalette.previous);
       legendElement.hidden = false;
     }};
 
@@ -621,7 +623,16 @@ def render_plotly_html(
       const currentYear = latestDate.getUTCFullYear();
       const previousYear = currentYear - 1;
       const lastMonthIndex = latestDate.getUTCMonth();
-      const months = Array.from({{ length: lastMonthIndex + 1 }}, (_, index) => index);
+      const periodDays = nullableNumber(payload.period_days);
+      const startMonthIndex = periodDays !== null && periodDays <= 31
+        ? lastMonthIndex
+        : periodDays !== null && periodDays <= 95
+        ? Math.max(0, lastMonthIndex - 2)
+        : 0;
+      const months = Array.from(
+        {{ length: lastMonthIndex - startMonthIndex + 1 }},
+        (_, index) => startMonthIndex + index,
+      );
       const currentValues = new Map();
       const previousValues = new Map();
 
@@ -659,7 +670,8 @@ def render_plotly_html(
 
     const valueAxis = () => ({{
       showgrid: true,
-      gridcolor: tokens.grid,
+      gridcolor: tokens.border,
+      griddash: "dash",
       gridwidth: 1,
       zeroline: false,
       showline: false,
@@ -874,6 +886,13 @@ def render_plotly_html(
       layout.yaxis.tickfont = {{ color: tokens.muted, size: 12.2 }};
       if (unit) {{
         layout.yaxis.ticksuffix = unit;
+      }}
+      if (comparison) {{
+        layout.xaxis.categoryorder = "array";
+        layout.xaxis.categoryarray = comparison.x;
+        layout.xaxis.range = [-0.5, comparison.x.length - 0.5];
+        layout.yaxis.gridcolor = tokens.border;
+        layout.yaxis.griddash = "dash";
       }}
       if (renderType === "histogram") {{
         layout.xaxis.title = series.label;
@@ -1198,6 +1217,11 @@ def render_plotly_html(
             buildComparisonLegend(nativeLegend);
             layout.showlegend = false;
             layout.margin = {{ ...layout.margin, b: 34 }};
+            layout.xaxis.categoryorder = "array";
+            layout.xaxis.categoryarray = comparison.x;
+            layout.xaxis.range = [-0.5, comparison.x.length - 0.5];
+            layout.yaxis.gridcolor = tokens.border;
+            layout.yaxis.griddash = "dash";
 
             if (renderType === "bar") {{
               layout.barmode = "group";
