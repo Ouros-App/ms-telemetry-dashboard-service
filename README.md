@@ -76,8 +76,8 @@ Copie `.env.example` para `.env`. As variáveis disponíveis são:
 | Variável | Uso |
 | --- | --- |
 | `APP_PORT` | Porta configurada no ambiente de execução; o valor de exemplo é `8000`. |
-| `INFISICAL_CLIENT_ID` / `INFISICAL_CLIENT_SECRET` / `INFISICAL_PROJECT_ID` / `INFISICAL_ENVIRONMENT` / `INFISICAL_SECRET_PATH` | Bootstrap do Infisical via Universal Auth (Machine Identity). Configure em conjunto; `INFISICAL_ENVIRONMENT` aceita `prod` ou `dev`. |
-| `INFISICAL_SITE_URL` | Host do Infisical; padrão `https://app.infisical.com` (alias legado: `INFISICAL_HOST`). |
+| `INFISICAL_TOKEN` / `INFISICAL_PROJECT_ID` / `INFISICAL_ENV` / `INFISICAL_PATH` | Bootstrap opcional do Infisical. Configure as quatro juntas; `INFISICAL_ENV` aceita `prod` ou `dev`. |
+| `INFISICAL_HOST` | Host do Infisical; padrão `https://app.infisical.com`. |
 | `PROJECT_NAME` | Nome exibido pela aplicação. |
 | `LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING`, `ERROR` ou `CRITICAL`. |
 | `KEYCLOAK_ISSUER_URL` / `KEYCLOAK_AUDIENCE` / `KEYCLOAK_JWKS_URL` | Contrato do resource server; valida assinatura RS256, issuer, audience e expiração. |
@@ -106,7 +106,7 @@ Copie `.env.example` para `.env`. As variáveis disponíveis são:
 
 ### Infisical
 
-O serviço carrega os secrets do Infisical antes da criação de `Settings` via Universal Auth (Machine Identity). Para desenvolvimento local, deixe todas as variáveis de bootstrap vazias e use valores locais no `.env`. Em deploy, configure as variáveis de bootstrap juntas (`INFISICAL_CLIENT_ID`, `INFISICAL_CLIENT_SECRET`, `INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT`, `INFISICAL_SECRET_PATH`); configuração parcial ou `INFISICAL_ENVIRONMENT` diferente de `prod`/`dev` interrompe o startup para evitar fallback silencioso.
+O serviço carrega os secrets do Infisical antes da criação de `Settings`. Para desenvolvimento local, deixe todas as variáveis de bootstrap vazias e use valores locais no `.env`. Em deploy, configure as quatro variáveis de bootstrap juntas; configuração parcial ou `INFISICAL_ENV` diferente de `prod`/`dev` interrompe o startup para evitar fallback silencioso.
 
 Secrets de aplicação esperados no path `/ms-telemetry-dashboard-service`:
 

@@ -31,7 +31,7 @@ class AnalyticsScope:
 
 class AnalyticsDashboardProvider:
     MONTH_BUCKET_QUERIES: ClassVar[frozenset[str]] = frozenset(
-        {"monthly_consumption", "resource_efficiency", "relative_consumption"}
+        {"monthly_consumption", "resource_efficiency"}
     )
     PERIOD_COLUMNS: ClassVar[dict[str, str]] = {
         "lot_throughput": "delivery_date",
@@ -40,7 +40,6 @@ class AnalyticsDashboardProvider:
         "monthly_consumption": "month_start",
         "resource_efficiency": "month_start",
         "water_consumption_by_reading": "registration_date",
-        "relative_consumption": "month_start",
     }
     dashboards: ClassVar[tuple[UserDashboardRecord, ...]] = (
         UserDashboardRecord(
@@ -202,35 +201,6 @@ class AnalyticsDashboardProvider:
                 "violin",
                 "waterfall",
                 "funnel",
-            ],
-        ),
-        UserChartDefinition(
-            id="relative-consumption",
-            dashboard_id="consumption",
-            title="Consumo",
-            type="line",
-            query_name="relative_consumption",
-            x_field="month_start",
-            value_suffix="%",
-            series=[
-                UserChartSeries(
-                    field="relative_consumption_pct", label="Consumo (%)"
-                )
-            ],
-            render_options=[
-                "line",
-                "bar",
-                "area",
-                "scatter",
-                "scattergl",
-                "scatterpolar",
-                "barpolar",
-                "histogram",
-                "box",
-                "violin",
-                "waterfall",
-                "funnel",
-                "surface",
             ],
         ),
         UserChartDefinition(
@@ -482,7 +452,6 @@ class AnalyticsDashboardProvider:
         "resource_efficiency": "resource_efficiency",
         "goal_status": "goal_status",
         "goal_type": "goal_type",
-        "relative_consumption": "relative_consumption",
     }
 
     def __init__(self, repository: AnalyticsRepository | None) -> None:

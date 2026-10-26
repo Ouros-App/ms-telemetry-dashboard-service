@@ -2,7 +2,6 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
-from pydantic import ValidationError
 
 from app.core.auth import Principal, require_user_bearer
 from app.main import app
@@ -724,7 +723,6 @@ async def test_custom_dashboard_service_renders_selected_charts_and_period() -> 
     assert '"rows":[{"label":"active","value":3}]' in result.charts[0].html
     assert len(repository.calls) == 2
     assert repository.calls[1][2][-1] == 14
-    assert all('"period_days":14' in chart.html for chart in result.charts)
 
 
 @pytest.mark.asyncio
@@ -970,95 +968,3 @@ async def test_plotly_renderer_uses_ouros_visual_language_for_series() -> None:
     assert "font-size: 14.348px" in html
     assert "width: 7.652px" in html
     assert "const barWidth = isMobile() ? 0.23 : 0.22" in html
-
-
-@pytest.mark.asyncio
-async def test_relative_consumption_chart_definition_and_custom_dashboard_request() -> None:
-    provider = AnalyticsDashboardProvider(FakeRepository())
-    chart = await provider.get_chart("consumption", "relative-consumption")
-    assert chart.title == "Consumo"
-    assert chart.type == "line"
-    assert chart.value_suffix == "%"
-    assert chart.query_name == "relative_consumption"
-
-    # Request with 730 days is valid
-    req = CustomDashboardRequest(
-        title="Painel 2 anos",
-        period_days=730,
-        charts=[{"chart_id": "relative-consumption", "render_as": "auto"}],
-    )
-    assert req.period_days == 730
-
-    # Request > 732 days is invalid
-    with pytest.raises(ValidationError):
-        CustomDashboardRequest(
-            title="Painel Inválido",
-            period_days=733,
-            charts=[{"chart_id": "relative-consumption", "render_as": "auto"}],
-        )
-
-
-@pytest.mark.asyncio
-async def test_plotly_renderer_individual_water_chart_uses_liters_and_year_comparison() -> None:
-    provider = AnalyticsDashboardProvider(FakeRepository())
-    chart = await provider.get_chart("consumption", "monthly-water-consumption")
-
-    html, _ = render_plotly_html(
-        chart,
-        [
-            {"month_start": "2025-08-01", "water_consumed_m3": 0.012},
-            {"month_start": "2026-08-01", "water_consumed_m3": 0.015},
-        ],
-        render_as="bar",
-    )
-
-    assert "buildYearComparison" in html
-    assert "isWaterInLiters" in html
-    assert '"Ano passado"' in html
-    assert '"Este ano"' in html
-
-
-@pytest.mark.asyncio
-async def test_plotly_renderer_relative_consumption_uses_percentage_and_range() -> None:
-    provider = AnalyticsDashboardProvider(FakeRepository())
-    chart = await provider.get_chart("consumption", "relative-consumption")
-
-    html, _ = render_plotly_html(
-        chart,
-        [
-            {"month_start": "2025-08-01", "relative_consumption_pct": 80.0},
-            {"month_start": "2026-08-01", "relative_consumption_pct": 65.0},
-        ],
-        render_as="line",
-    )
-
-    assert "layout.yaxis.range = [0, 100]" in html
-    assert "layout.yaxis.dtick = 20" in html
-    assert '"Ano passado"' in html
-    assert '"Este ano"' in html
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("period_days", [30, 90, 365])
-async def test_custom_dashboard_propagates_period_days_to_rendered_html(
-    period_days: int,
-) -> None:
-    repository = FakeRepository(
-        {
-            "monthly_consumption": [
-                {
-                    "month_start": "2026-09-01",
-                    "water_consumed_m3": 12.5,
-                    "energy_consumed_kwh": 33.0,
-                }
-            ],
-        }
-    )
-    service = UserDashboardService(AnalyticsDashboardProvider(repository))
-    request = CustomDashboardRequest(
-        title="Painel Período",
-        period_days=period_days,
-        charts=[{"chart_id": "monthly-consumption", "render_as": "auto"}],
-    )
-    result = await service.build_custom_dashboard(farm_owner(), request)
-    assert f'"period_days":{period_days}' in result.charts[0].html

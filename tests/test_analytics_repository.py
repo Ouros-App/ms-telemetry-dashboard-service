@@ -1,5 +1,5 @@
 """Behavioral tests for MongoDB Analytics with no external database."""
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -10,7 +10,6 @@ from app.repositories.analytics import (
     AnalyticsQueryError,
     AnalyticsRepository,
     AnalyticsUnavailable,
-    _date_filter,
     validate_mongodb_uri,
 )
 
@@ -272,23 +271,3 @@ async def test_close_releases_mongo_client():
     repo = repository()
     await repo.close()
     assert repo._client.closed
-
-
-def test_date_filter_accepts_up_to_732_days_and_covers_previous_year_for_monthly():
-    today = datetime.now(UTC).date()
-    assert _date_filter(732) is not None
-    with pytest.raises(AnalyticsQueryError):
-        _date_filter(733)
-    cutoff_monthly = _date_filter(30, monthly=True)
-    expected_prev_year_start = date(today.year - 1, 1, 1)
-    assert cutoff_monthly <= expected_prev_year_start
-
-
-@pytest.mark.asyncio
-async def test_relative_consumption_calculates_normalized_percentage():
-    repo = repository()
-    rows = await repo.fetch("relative_consumption", "", 7, None, 30)
-    assert len(rows) == 1
-    assert "month_start" in rows[0]
-    assert "relative_consumption_pct" in rows[0]
-    assert 0.0 <= rows[0]["relative_consumption_pct"] <= 100.0

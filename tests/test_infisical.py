@@ -1,86 +1,63 @@
 import importlib
 import os
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from app.core.infisical import load_infisical_secrets
 
 
-def test_infisical_is_optional_when_bootstrap_is_absent() -> None:
-    with patch.dict(os.environ, {}, clear=True), patch(
-        "app.core.infisical.load_dotenv"
-    ), patch("app.core.infisical.InfisicalSDKClient") as client:
+@pytest.fixture(autouse=True)
+def disable_dotenv(monkeypatch) -> None:
+    monkeypatch.setattr("app.core.infisical.load_dotenv", lambda: False)
+
+
+def test_skips_when_infisical_is_not_configured() -> None:
+    with patch.dict(os.environ, {}, clear=True), patch("app.core.infisical.InfisicalSDKClient") as client:
         load_infisical_secrets()
 
     client.assert_not_called()
 
 
-def test_partial_infisical_configuration_fails_fast() -> None:
-    with patch.dict(
-        os.environ,
-        {"INFISICAL_CLIENT_ID": "client-id"},
-        clear=True,
-    ), patch("app.core.infisical.load_dotenv"), pytest.raises(
-        RuntimeError,
-        match="Configuração parcial do Infisical",
+def test_rejects_partial_configuration() -> None:
+    with patch.dict(os.environ, {"INFISICAL_TOKEN": "token"}, clear=True), pytest.raises(
+        RuntimeError, match="configurados em conjunto"
     ):
         load_infisical_secrets()
 
 
-def test_infisical_loads_runtime_secrets_into_environment() -> None:
-    bootstrap = {
-        "INFISICAL_SITE_URL": "https://app.infisical.com",
-        "INFISICAL_CLIENT_ID": "client-id",
-        "INFISICAL_CLIENT_SECRET": "client-secret",
-        "INFISICAL_PROJECT_ID": "project-id",
-        "INFISICAL_ENVIRONMENT": "prod",
-        "INFISICAL_SECRET_PATH": "/ms-telemetry-dashboard-service",
+def test_rejects_unknown_environment() -> None:
+    env = {
+        "INFISICAL_TOKEN": "token",
+        "INFISICAL_PROJECT_ID": "project",
+        "INFISICAL_ENV": "staging",
+        "INFISICAL_PATH": "/service",
     }
-    sdk = MagicMock()
-    sdk.secrets.list_secrets.return_value = SimpleNamespace(
-        secrets=[
-            SimpleNamespace(
-                secretKey="ANALYTICS_MONGODB_URI",
-                secretValue="mongodb+srv://atlas-user:pass@cluster.mongodb.net",
-            )
-        ]
-    )
-
-    with patch.dict(os.environ, bootstrap, clear=True), patch(
-        "app.core.infisical.load_dotenv"
-    ), patch(
-        "app.core.infisical.InfisicalSDKClient",
-        return_value=sdk,
-    ) as client:
+    with patch.dict(os.environ, env, clear=True), pytest.raises(RuntimeError, match="prod.*dev"):
         load_infisical_secrets()
-        assert (
-            os.environ["ANALYTICS_MONGODB_URI"]
-            == "mongodb+srv://atlas-user:pass@cluster.mongodb.net"
-        )
 
-    client.assert_called_once_with(host="https://app.infisical.com")
-    sdk.auth.universal_auth.login.assert_called_once_with(
-        client_id="client-id",
-        client_secret="client-secret",
-    )
-    sdk.secrets.list_secrets.assert_called_once_with(
-        project_id="project-id",
-        environment_slug="prod",
-        secret_path="/ms-telemetry-dashboard-service",
-        view_secret_value=True,
-    )
+
+def test_loads_secrets_from_infisical() -> None:
+    env = {
+        "INFISICAL_TOKEN": "token",
+        "INFISICAL_PROJECT_ID": "project",
+        "INFISICAL_ENV": "dev",
+        "INFISICAL_PATH": "/service",
+    }
+    response = SimpleNamespace(secrets=[SimpleNamespace(secretKey="APP_SECRET", secretValue="value")])
+    with patch.dict(os.environ, env, clear=True), patch("app.core.infisical.InfisicalSDKClient") as client:
+        client.return_value.secrets.list_secrets.return_value = response
+        load_infisical_secrets()
+        assert os.environ["APP_SECRET"] == "value"
 
 
 def test_loads_secrets_before_settings_initialization() -> None:
-    bootstrap = {
-        "INFISICAL_SITE_URL": "https://app.infisical.com",
-        "INFISICAL_CLIENT_ID": "client-id",
-        "INFISICAL_CLIENT_SECRET": "client-secret",
+    env = {
+        "INFISICAL_TOKEN": "token",
         "INFISICAL_PROJECT_ID": "project",
-        "INFISICAL_ENVIRONMENT": "dev",
-        "INFISICAL_SECRET_PATH": "/service",
+        "INFISICAL_ENV": "dev",
+        "INFISICAL_PATH": "/service",
     }
     response = SimpleNamespace(
         secrets=[
@@ -90,9 +67,7 @@ def test_loads_secrets_before_settings_initialization() -> None:
             )
         ]
     )
-    with patch.dict(os.environ, bootstrap, clear=True), patch(
-        "app.core.infisical.load_dotenv"
-    ), patch("app.core.infisical.InfisicalSDKClient") as client:
+    with patch.dict(os.environ, env, clear=True), patch("app.core.infisical.InfisicalSDKClient") as client:
         from app.core import config
 
         client.return_value.secrets.list_secrets.return_value = response
