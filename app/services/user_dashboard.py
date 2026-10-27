@@ -1,11 +1,15 @@
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
 
 from app.core.auth import Principal
 from app.providers.analytics import AnalyticsDashboardProvider, AnalyticsScope
 from app.repositories.analytics import AnalyticsQueryError, AnalyticsUnavailable
 from app.schemas.user_dashboards import (
+    CorporateFarmsTableResponse,
+    CorporateFilterOptionsResponse,
+    CorporateKpisResponse,
     CustomDashboardChart,
     CustomDashboardRequest,
     CustomDashboardResponse,
@@ -88,8 +92,10 @@ class UserDashboardService:
         self,
         principal: Principal,
     ) -> UserDashboardListResponse:
-        self.scope_for(principal)
+        scope = self.scope_for(principal)
         dashboards = await self.provider.list_dashboards()
+        if scope.account_type != "company_employee":
+            dashboards = [d for d in dashboards if d.id != "corporate"]
         return UserDashboardListResponse(
             items=[UserDashboardPublic.from_record(item) for item in dashboards]
         )
@@ -131,7 +137,9 @@ class UserDashboardService:
         principal: Principal,
         dashboard_id: str,
     ) -> UserDashboardPublic:
-        self.scope_for(principal)
+        scope = self.scope_for(principal)
+        if dashboard_id == "corporate" and scope.account_type != "company_employee":
+            raise UserScopeError("corporate dashboard requires company employee scope")
         try:
             dashboard = await self.provider.get_dashboard(dashboard_id)
         except KeyError as exc:
@@ -143,7 +151,9 @@ class UserDashboardService:
         principal: Principal,
         dashboard_id: str,
     ) -> UserChartListResponse:
-        self.scope_for(principal)
+        scope = self.scope_for(principal)
+        if dashboard_id == "corporate" and scope.account_type != "company_employee":
+            raise UserScopeError("corporate dashboard requires company employee scope")
         try:
             charts = await self.provider.list_charts(dashboard_id)
         except KeyError as exc:
@@ -163,6 +173,8 @@ class UserDashboardService:
 
     @staticmethod
     def _default_render_as(chart) -> UserChartRenderType:
+        if chart.id in {"trend-kwh-aves", "trend-liters-aves"}:
+            return "combo"
         return "donut" if chart.type == "pie" else chart.type
 
     @classmethod
@@ -178,6 +190,8 @@ class UserDashboardService:
         period_days: int | None = None,
     ) -> tuple[str, str]:
         scope = self.scope_for(principal)
+        if dashboard_id == "corporate" and scope.account_type != "company_employee":
+            raise UserScopeError("corporate dashboard requires company employee scope")
 
         try:
             chart = await self.provider.get_chart(dashboard_id, chart_id)
@@ -277,6 +291,102 @@ class UserDashboardService:
             )
 
         return CustomDashboardResponse(title=request.title.strip(), charts=rendered)
+
+    async def get_corporate_kpis(
+        self,
+        principal: Principal,
+        *,
+        month: str | None = None,
+        state: str | None = None,
+        management: str | None = None,
+    ) -> CorporateKpisResponse:
+        scope = self.scope_for(principal)
+        if scope.account_type != "company_employee" or scope.enterprise_id is None:
+            raise UserScopeError("corporate dashboard requires company employee scope")
+        if self.provider.repository is None:
+            raise AnalyticsUnavailable("Analytics database is not configured")
+
+        filters = {"month": month, "state": state, "management": management}
+        rows = await self.provider.repository.fetch(
+            "corporate_kpis", "corporate_kpis", None, scope.enterprise_id, filters
+        )
+        if not rows:
+            raise AnalyticsUnavailable("Unable to compute corporate KPIs")
+        return CorporateKpisResponse.model_validate(rows[0])
+
+    async def get_corporate_filters(
+        self,
+        principal: Principal,
+    ) -> CorporateFilterOptionsResponse:
+        scope = self.scope_for(principal)
+        if scope.account_type != "company_employee" or scope.enterprise_id is None:
+            raise UserScopeError("corporate dashboard requires company employee scope")
+        if self.provider.repository is None:
+            raise AnalyticsUnavailable("Analytics database is not configured")
+
+        rows = await self.provider.repository.fetch(
+            "corporate_filters", "corporate_filters", None, scope.enterprise_id
+        )
+        if not rows:
+            return CorporateFilterOptionsResponse(periods=[], states=[], regional_managements=[])
+        return CorporateFilterOptionsResponse.model_validate(rows[0])
+
+    async def get_corporate_chart_data(
+        self,
+        principal: Principal,
+        chart_id: str,
+        *,
+        month: str | None = None,
+        state: str | None = None,
+        management: str | None = None,
+    ) -> list[dict[str, Any]]:
+        scope = self.scope_for(principal)
+        if scope.account_type != "company_employee" or scope.enterprise_id is None:
+            raise UserScopeError("corporate dashboard requires company employee scope")
+        if self.provider.repository is None:
+            raise AnalyticsUnavailable("Analytics database is not configured")
+
+        try:
+            chart = await self.provider.get_chart("corporate", chart_id)
+        except KeyError as exc:
+            raise UserChartNotFound(chart_id) from exc
+
+        filters = {"month": month, "state": state, "management": management}
+        return await self.provider.repository.fetch(
+            chart.query_name, chart.query_name, None, scope.enterprise_id, filters
+        )
+
+    async def get_corporate_farms_table(
+        self,
+        principal: Principal,
+        *,
+        search: str | None = None,
+        sort_by: str = "farm_name",
+        order: str = "asc",
+        page: int = 1,
+        limit: int = 10,
+        state: str | None = None,
+    ) -> CorporateFarmsTableResponse:
+        scope = self.scope_for(principal)
+        if scope.account_type != "company_employee" or scope.enterprise_id is None:
+            raise UserScopeError("corporate dashboard requires company employee scope")
+        if self.provider.repository is None:
+            raise AnalyticsUnavailable("Analytics database is not configured")
+
+        filters = {
+            "search": search,
+            "sort_by": sort_by,
+            "order": order,
+            "page": page,
+            "limit": limit,
+            "state": state,
+        }
+        rows = await self.provider.repository.fetch(
+            "corporate_farms_table", "corporate_farms_table", None, scope.enterprise_id, filters
+        )
+        if not rows:
+            return CorporateFarmsTableResponse(total=0, page=page, limit=limit, items=[])
+        return CorporateFarmsTableResponse.model_validate(rows[0])
 
 
 __all__ = [

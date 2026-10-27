@@ -31,7 +31,14 @@ class AnalyticsScope:
 
 class AnalyticsDashboardProvider:
     MONTH_BUCKET_QUERIES: ClassVar[frozenset[str]] = frozenset(
-        {"monthly_consumption", "resource_efficiency", "relative_consumption"}
+        {
+            "monthly_consumption",
+            "resource_efficiency",
+            "relative_consumption",
+            "trend_kwh_aves",
+            "trend_liters_aves",
+            "monthly_cost",
+        }
     )
     PERIOD_COLUMNS: ClassVar[dict[str, str]] = {
         "lot_throughput": "delivery_date",
@@ -41,6 +48,9 @@ class AnalyticsDashboardProvider:
         "resource_efficiency": "month_start",
         "water_consumption_by_reading": "registration_date",
         "relative_consumption": "month_start",
+        "trend_kwh_aves": "month_start",
+        "trend_liters_aves": "month_start",
+        "monthly_cost": "month_start",
     }
     dashboards: ClassVar[tuple[UserDashboardRecord, ...]] = (
         UserDashboardRecord(
@@ -62,6 +72,11 @@ class AnalyticsDashboardProvider:
             id="goals",
             title="Metas",
             description="Distribuição das metas por status e tipo.",
+        ),
+        UserDashboardRecord(
+            id="corporate",
+            title="Painel Corporativo",
+            description="Visão executiva e consolidada de todas as granjas integradas da empresa.",
         ),
     )
 
@@ -465,6 +480,78 @@ class AnalyticsDashboardProvider:
                 "icicle",
             ],
         ),
+        UserChartDefinition(
+            id="trend-kwh-aves",
+            dashboard_id="corporate",
+            title="Evolução kWh e Aves",
+            type="bar",
+            query_name="trend_kwh_aves",
+            x_field="month_start",
+            series=[
+                UserChartSeries(field="chickens", label="Aves"),
+                UserChartSeries(field="energy_kwh", label="Energia (kWh)"),
+            ],
+            render_options=["bar", "line", "combo"],
+        ),
+        UserChartDefinition(
+            id="trend-liters-aves",
+            dashboard_id="corporate",
+            title="Evolução Litros e Aves",
+            type="bar",
+            query_name="trend_liters_aves",
+            x_field="month_start",
+            series=[
+                UserChartSeries(field="chickens", label="Aves"),
+                UserChartSeries(field="water_liters", label="Água (Litros)"),
+            ],
+            render_options=["bar", "line", "combo"],
+        ),
+        UserChartDefinition(
+            id="cost-distribution-buckets",
+            dashboard_id="corporate",
+            title="Distribuição de Custo dos Lotes",
+            type="bar",
+            query_name="cost_distribution_buckets",
+            x_field="bucket",
+            series=[UserChartSeries(field="count", label="Lotes")],
+            render_options=["bar", "pie", "donut"],
+        ),
+        UserChartDefinition(
+            id="cost-by-lot-size-cohort",
+            dashboard_id="corporate",
+            title="Custo por Porte do Lote",
+            type="bar",
+            query_name="cost_by_lot_size_cohort",
+            x_field="cohort",
+            series=[
+                UserChartSeries(field="previous_year_cost", label="Ano passado"),
+                UserChartSeries(field="current_year_cost", label="Este ano"),
+            ],
+            render_options=["bar", "line"],
+        ),
+        UserChartDefinition(
+            id="cost-by-region",
+            dashboard_id="corporate",
+            title="Custo por Macrorregião",
+            type="bar",
+            query_name="cost_by_region",
+            x_field="region",
+            series=[
+                UserChartSeries(field="previous_year_cost", label="Ano passado"),
+                UserChartSeries(field="current_year_cost", label="Este ano"),
+            ],
+            render_options=["bar", "pie", "donut"],
+        ),
+        UserChartDefinition(
+            id="monthly-cost",
+            dashboard_id="corporate",
+            title="Custo Mensal Consolidado",
+            type="line",
+            query_name="monthly_cost",
+            x_field="month_start",
+            series=[UserChartSeries(field="cost", label="Custo")],
+            render_options=["line", "bar", "area"],
+        ),
     )
 
     # Operations are allowlisted and interpreted by the MongoDB repository.
@@ -483,6 +570,12 @@ class AnalyticsDashboardProvider:
         "goal_status": "goal_status",
         "goal_type": "goal_type",
         "relative_consumption": "relative_consumption",
+        "trend_kwh_aves": "trend_kwh_aves",
+        "trend_liters_aves": "trend_liters_aves",
+        "cost_distribution_buckets": "cost_distribution_buckets",
+        "cost_by_lot_size_cohort": "cost_by_lot_size_cohort",
+        "cost_by_region": "cost_by_region",
+        "monthly_cost": "monthly_cost",
     }
 
     def __init__(self, repository: AnalyticsRepository | None) -> None:

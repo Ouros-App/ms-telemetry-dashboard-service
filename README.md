@@ -203,6 +203,10 @@ Rotas:
 - `GET /v1/user/dashboards/{dashboard_id}/charts`;
 - `GET /v1/user/dashboards/{dashboard_id}/charts/{chart_id}/plotly`.
 - `POST /v1/user/dashboards/custom` compõe um painel temporário com até quatro gráficos do catálogo permitido e retorna HTML Plotly por gráfico.
+- `GET /v1/user/dashboards/corporate/kpis`: KPIs executivos consolidados da empresa (`company_employee`). Suporta filtros por `month`, `state` e `management`.
+- `GET /v1/user/dashboards/corporate/filters`: Opções dinâmicas de filtros corporativos (períodos, estados e gerências regionais da empresa).
+- `GET /v1/user/dashboards/corporate/charts/{chart_id}/data`: Dados brutos em JSON estruturado para renderização nativa em React (Recharts / TanStack Table).
+- `GET /v1/user/dashboards/corporate/farms`: Listagem paginada, pesquisável e ordenável com métricas consolidadas das granjas da empresa.
 
 Exemplo:
 
