@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-UserChartType = Literal["indicator", "bar", "line", "pie"]
+UserChartType = Literal["indicator", "bar", "line", "pie", "box", "choropleth"]
 UserChartRenderType = str
 
 
@@ -147,3 +147,54 @@ class CorporateFarmsTableResponse(BaseModel):
     page: int
     limit: int
     items: list[FarmSummaryItem]
+
+
+class CorporateCostBucketItem(BaseModel):
+    bucket: str
+    label: str
+    low: float
+    high: float | None = None
+    count: int
+    value: int
+    total_cost: float
+    percentage: float
+    color: str | None = None
+    regions: list[str] = Field(default_factory=list)
+
+
+class CorporateCostByLotSizeCohortItem(BaseModel):
+    cohort: str
+    previous_year_cost: float
+    current_year_cost: float
+    previous_year_lots: int = 0
+    current_year_lots: int = 0
+
+
+class BoxPlotStats(BaseModel):
+    min: float = 0.0
+    q1: float = 0.0
+    median: float = 0.0
+    q3: float = 0.0
+    max: float = 0.0
+    avg: float = 0.0
+    total_cost: float = 0.0
+    lots_count: int = 0
+
+
+class CorporateCostByRegionItem(BaseModel):
+    region: str
+    previous_year_cost: float
+    current_year_cost: float
+    cost: float | None = None
+    color: str | None = None
+    bucket: str | None = None
+    previous_year: BoxPlotStats | None = None
+    current_year: BoxPlotStats | None = None
+
+
+class CorporateMonthlyCostItem(BaseModel):
+    month: int
+    month_label: str
+    previous_year_cost: float
+    current_year_cost: float
+    cost: float

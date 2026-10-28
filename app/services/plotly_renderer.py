@@ -447,6 +447,108 @@ def render_plotly_html(
         letter-spacing: -0.6px;
       }}
     }}
+
+    .choropleth-wrapper {{
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 36px;
+      width: 100%;
+      height: 100%;
+      min-height: 380px;
+      padding: 10px 24px;
+    }}
+
+    .choropleth-map {{
+      max-width: 380px;
+      max-height: 380px;
+      width: 100%;
+      height: auto;
+      filter: drop-shadow(0 4px 12px rgba(0,0,0,0.06));
+    }}
+
+    .choropleth-region {{
+      cursor: pointer;
+      transition: fill 0.2s ease, filter 0.2s ease, opacity 0.2s ease;
+    }}
+
+    .choropleth-region:hover {{
+      filter: brightness(1.2);
+      opacity: 0.95;
+    }}
+
+    .choropleth-legend {{
+      display: flex;
+      align-items: stretch;
+      gap: 12px;
+      height: 220px;
+    }}
+
+    .choropleth-legend-bar {{
+      display: flex;
+      flex-direction: column;
+      width: 20px;
+      height: 100%;
+    }}
+
+    .choropleth-bar-step {{
+      flex: 1 1 0;
+      width: 20px;
+    }}
+
+    .choropleth-legend-labels {{
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      color: var(--ouros-muted);
+      font-family: "Poppins", "Inter", sans-serif;
+      font-size: 12.2px;
+      font-weight: 400;
+      line-height: 1;
+    }}
+
+    .choropleth-tooltip {{
+      position: absolute;
+      background: var(--ouros-secondary);
+      color: var(--ouros-canvas);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-family: "Poppins", "Inter", sans-serif;
+      font-size: 12px;
+      font-weight: 500;
+      pointer-events: none;
+      z-index: 10;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }}
+
+    @media (max-width: 720px) {{
+      .choropleth-wrapper {{
+        flex-direction: column;
+        gap: 18px;
+        min-height: 240px;
+      }}
+      .choropleth-map {{
+        max-width: 240px;
+        max-height: 240px;
+      }}
+      .choropleth-legend {{
+        flex-direction: row;
+        height: auto;
+        width: 220px;
+      }}
+      .choropleth-legend-bar {{
+        flex-direction: row;
+        height: 20px;
+        width: 100%;
+      }}
+      .choropleth-bar-step {{
+        height: 20px;
+      }}
+      .choropleth-legend-labels {{
+        flex-direction: row;
+        width: 100%;
+      }}
+    }}
   </style>
 </head>
 <body>
@@ -949,7 +1051,75 @@ def render_plotly_html(
           layout.margin = {{ ...layout.margin, b: sourceSeries.length > 1 ? 34 : 48 }};
         }}
 
-        if (renderType === "indicator") {{
+        if (renderType === "choropleth") {{
+          plot.innerHTML = `
+            <div class="choropleth-wrapper">
+              <svg class="choropleth-map" viewBox="0 0 423 423" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Mapa do Brasil">
+                <path id="reg-norte" class="choropleth-region" data-region="Norte" d="M42.4162 38.9299H63.9148L67.9821 36.6058L70.3063 47.6456H90.6429L113.885 30.2143L110.979 26.728H105.75L99.9396 12.2019C99.9396 12.2019 109.91 14.4946 116.79 13.9451C128.742 12.9903 144.099 0 144.099 0L149.328 1.16209L148.166 5.81044L152.234 10.4588L148.166 24.9849L160.949 40.092L181.867 34.8626H195.231L193.488 30.2143L208.595 28.4712L216.729 30.2143L233.58 28.4712L244.62 9.2967L252.173 31.3764L263.213 38.3489L255.659 45.9025L257.402 56.3613L277.739 59.2665L266.699 73.7926L274.834 73.2115L286.455 64.4959L305.629 69.7253L290.522 101.102L278.901 110.398L290.522 116.209L285.874 133.64L292.265 142.937H299.238L290.522 153.977L304.467 170.246L296.913 180.124L300.4 196.393L288.779 199.879L275.996 201.041L268.442 195.231L260.308 198.136L257.984 192.907L252.173 195.812L251.011 173.151L256.24 161.53L187.096 157.463C187.096 157.463 183.768 155.529 181.867 153.977C179.878 152.353 177.218 149.328 177.218 149.328L171.989 136.545L167.341 152.234H134.802V176.056H151.652C151.652 176.056 149.448 182.76 151.071 186.515C151.721 188.017 153.396 190.001 153.396 190.001L144.68 204.527L105.75 191.745L94.7102 179.543V163.854L77.2788 166.76L60.4286 177.799L37.1868 178.962V162.111L19.7555 167.922L0 144.099L1.16209 138.87L8.71566 133.059V124.924L17.4313 111.56L41.2541 106.331L48.2267 69.7253L40.092 59.2665V52.875L51.1319 50.5508L50.5508 44.7404L42.4162 45.3214V38.9299Z" fill="#5A53FF" stroke="#FFFFFF" stroke-width="1.5" />
+                <path id="reg-centro-oeste" class="choropleth-region" data-region="Centro-Oeste" d="M134.802 152.233H167.34L171.989 136.545L177.218 149.328L182.447 154.557L187.677 157.463L256.24 161.53L251.011 173.151L252.173 195.811L257.983 192.906L260.307 198.136L268.442 195.23L275.995 201.041L288.778 199.879L300.399 196.392L301.561 220.796L293.427 220.215V228.931L286.454 231.836V252.754L282.387 257.402L257.983 260.307L248.686 269.604V277.158L217.31 309.696L214.986 319.574C214.986 319.574 210.457 316.188 208.013 315.506C205.817 314.894 202.203 314.925 202.203 314.925L196.392 299.237L176.637 296.913C176.637 296.913 175.015 283.456 175.475 274.833C175.978 265.409 179.542 251.011 179.542 251.011L170.245 244.038V232.998H150.49C150.49 232.998 151.626 217.681 147.585 209.756C146.612 207.849 144.68 204.527 144.68 204.527L153.395 190.001C153.395 190.001 151.143 187.972 150.49 185.934C149.374 182.449 151.461 176.637 151.461 176.637H134.802V152.233Z" fill="#110B95" stroke="#FFFFFF" stroke-width="1.5" />
+                <path id="reg-nordeste" class="choropleth-region" data-region="Nordeste" d="M305.629 69.7256L320.155 79.6033V90.6432L335.263 84.8327L354.437 90.6432H371.868L398.596 112.723L419.514 117.952L423 131.897V143.518L420.676 159.206L398.015 178.962L384.07 201.042L379.422 197.555L374.193 208.014V237.647L370.125 255.079L365.477 259.727C365.477 259.727 360.943 258.394 359.085 256.241C356.784 253.573 356.761 247.525 356.761 247.525L366.058 234.742C366.058 234.742 355.182 232.487 349.208 229.513C341.813 225.832 332.357 216.73 332.357 216.73L326.547 220.797L320.155 213.243L301.562 220.797L300.4 196.393L296.914 180.124L304.467 170.246L290.522 153.977L299.238 142.937H292.265L285.874 133.64L290.522 116.209L278.901 110.399L290.522 101.102L305.629 69.7256Z" fill="#1A12C3" stroke="#FFFFFF" stroke-width="1.5" />
+                <path id="reg-sudeste" class="choropleth-region" data-region="Sudeste" d="M293.427 220.216L301.562 220.797L320.155 213.243L326.547 220.797L332.357 216.729C332.357 216.729 341.803 225.852 349.208 229.512C355.384 232.565 366.058 234.742 366.058 234.742L356.761 247.525C356.761 247.525 356.784 253.573 359.085 256.24C360.943 258.393 365.477 259.727 365.477 259.727L362.572 274.253L349.208 290.522L347.465 300.4C347.465 300.4 342.906 301.609 340.492 303.305C337.994 305.06 335.263 309.115 335.263 309.115L310.278 307.953L307.373 312.602L292.846 318.412L275.415 330.614L262.632 324.223L257.984 305.629L225.445 300.981L248.687 277.158V269.604L257.984 260.308L282.388 257.403L286.455 252.754V231.837L293.427 228.931V220.216Z" fill="#0E0925" stroke="#FFFFFF" stroke-width="1.5" />
+                <path id="reg-sul" class="choropleth-region" data-region="Sul" d="M225.446 300.98L257.984 305.629L262.632 324.222L275.415 330.614L269.605 335.262L268.443 367.219C268.443 367.219 260.235 372.051 256.241 376.516C251.568 381.74 247.525 392.204 247.525 392.204C247.525 392.204 237.819 399.329 233.58 405.568C231.412 408.759 228.932 414.284 228.932 414.284L221.378 423V416.027L224.283 411.96C224.283 411.96 219.935 407.077 216.73 404.406C212.959 401.264 206.271 397.434 206.271 397.434L188.84 384.07L183.029 384.651C183.029 384.651 189.787 375.521 194.65 370.125C198.947 365.357 206.271 358.504 206.271 358.504L218.473 351.531C218.473 351.531 219.96 346.234 219.635 342.816C219.343 339.743 217.311 335.262 217.311 335.262L209.757 334.1L212.663 317.831L214.987 319.574L217.311 309.696L225.446 300.98Z" fill="#1E1354" stroke="#FFFFFF" stroke-width="1.5" />
+              </svg>
+              <div class="choropleth-legend" aria-label="Escala de Custo">
+                <div class="choropleth-legend-bar">
+                  <div class="choropleth-bar-step" style="background:#0E0925;border-radius:3.36px 3.36px 0 0;" title="3.0M+"></div>
+                  <div class="choropleth-bar-step" style="background:#1E1354;" title="2.5M"></div>
+                  <div class="choropleth-bar-step" style="background:#110B95;" title="2.0M"></div>
+                  <div class="choropleth-bar-step" style="background:#1A12C3;" title="1.5M"></div>
+                  <div class="choropleth-bar-step" style="background:#332BF2;" title="1.0M"></div>
+                  <div class="choropleth-bar-step" style="background:#5A53FF;border-radius:0 0 3.36px 3.36px;" title="1.0M-"></div>
+                </div>
+                <div class="choropleth-legend-labels">
+                  <span>3.0M+</span>
+                  <span>2.5M</span>
+                  <span>2.0M</span>
+                  <span>1.5M</span>
+                  <span>1.0M</span>
+                  <span>1.0M-</span>
+                </div>
+              </div>
+            </div>
+            <div id="choropleth-tooltip" class="choropleth-tooltip" style="display:none;"></div>
+          `;
+          const regionColors = {{}};
+          rows.forEach((r) => {{
+            if (r.color && r.regions && Array.isArray(r.regions)) {{
+              r.regions.forEach((reg) => {{ regionColors[reg] = r.color; }});
+            }} else if (r.region && r.color) {{
+              regionColors[r.region] = r.color;
+            }}
+          }});
+          const regionMapIds = {{
+            "Norte": "reg-norte",
+            "Centro-Oeste": "reg-centro-oeste",
+            "Nordeste": "reg-nordeste",
+            "Sudeste": "reg-sudeste",
+            "Sul": "reg-sul",
+          }};
+          Object.entries(regionColors).forEach(([reg, col]) => {{
+            const el = document.getElementById(regionMapIds[reg]);
+            if (el) el.setAttribute("fill", col);
+          }});
+          const tip = document.getElementById("choropleth-tooltip");
+          document.querySelectorAll(".choropleth-region").forEach((path) => {{
+            const regName = path.getAttribute("data-region");
+            path.addEventListener("mouseenter", () => {{
+              tip.textContent = regName;
+              tip.style.display = "block";
+            }});
+            path.addEventListener("mousemove", (e) => {{
+              const rect = shell.getBoundingClientRect();
+              tip.style.left = (e.clientX - rect.left + 12) + "px";
+              tip.style.top = (e.clientY - rect.top + 12) + "px";
+            }});
+            path.addEventListener("mouseleave", () => {{
+              tip.style.display = "none";
+            }});
+          }});
+          requestAnimationFrame(postHeight);
+          return;
+        }} else if (renderType === "indicator") {{
           const value = chart.value_field ? numberOrZero(rows[0][chart.value_field]) : 0;
           traces = [{{
             type: "indicator",
@@ -1317,6 +1487,48 @@ def render_plotly_html(
               return raw !== null && isWaterInLiters(series.field) ? raw * 1000 : raw;
             }});
 
+            if (renderType === "box") {{
+              const hasPrecomputed = rows.some((row) => {{
+                const s = series.field === "previous_year_cost" ? row.previous_year : row.current_year;
+                return s && typeof s === "object" && s.median !== undefined;
+              }});
+              if (hasPrecomputed) {{
+                return {{
+                  type: "box",
+                  name: series.label,
+                  x: xValues,
+                  q1: rows.map((r) => {{
+                    const s = series.field === "previous_year_cost" ? r.previous_year : r.current_year;
+                    return s ? s.q1 : 0;
+                  }}),
+                  median: rows.map((r) => {{
+                    const s = series.field === "previous_year_cost" ? r.previous_year : r.current_year;
+                    return s ? s.median : 0;
+                  }}),
+                  q3: rows.map((r) => {{
+                    const s = series.field === "previous_year_cost" ? r.previous_year : r.current_year;
+                    return s ? s.q3 : 0;
+                  }}),
+                  lowerfence: rows.map((r) => {{
+                    const s = series.field === "previous_year_cost" ? r.previous_year : r.current_year;
+                    return s ? s.min : 0;
+                  }}),
+                  upperfence: rows.map((r) => {{
+                    const s = series.field === "previous_year_cost" ? r.previous_year : r.current_year;
+                    return s ? s.max : 0;
+                  }}),
+                  mean: rows.map((r) => {{
+                    const s = series.field === "previous_year_cost" ? r.previous_year : r.current_year;
+                    return s ? s.avg : 0;
+                  }}),
+                  marker: {{ color }},
+                  line: {{ color, width: 1.5 }},
+                  fillcolor: color === tokens.chart_blue ? "rgba(17, 11, 149, 0.2)" : "rgba(216, 162, 58, 0.2)",
+                  hovertemplate: "<b>%{{x}}</b> · " + series.label + "<br>Máx: R$ %{{upperfence:,.2f}}<br>Q3: R$ %{{q3:,.2f}}<br>Mediana: R$ %{{median:,.2f}}<br>Q1: R$ %{{q1:,.2f}}<br>Mín: R$ %{{lowerfence:,.2f}}<extra></extra>",
+                }};
+              }}
+            }}
+
             const base = {{
               type: ["line", "area", "scatter"].includes(renderType)
                 ? "scatter"
@@ -1368,6 +1580,10 @@ def render_plotly_html(
             layout.barmode = "group";
             layout.bargap = 0.42;
             layout.bargroupgap = 0.08;
+          }} else if (renderType === "box") {{
+            layout.boxmode = "group";
+            layout.boxgap = 0.35;
+            layout.boxgroupgap = 0.12;
           }} else if (renderType === "funnel") {{
             layout.yaxis.autorange = "reversed";
           }} else if (renderType === "waterfall") {{
