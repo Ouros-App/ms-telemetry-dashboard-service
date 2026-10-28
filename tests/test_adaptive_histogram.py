@@ -2,9 +2,23 @@
 
 from app.repositories.analytics import (
     _format_cohort_label,
+    calcular_passo_amigavel,
     calcular_step_amigavel,
     gerar_histograma_adaptativo,
 )
+
+
+def test_calcular_passo_amigavel():
+    assert calcular_passo_amigavel(0) == 5000
+    assert calcular_passo_amigavel(-100) == 5000
+    # Micro-scales (e.g. 1500 to 7000: amplitude 5500, 5 bins -> raw 1100 -> step 2000)
+    assert calcular_passo_amigavel(5500, 5) == 2000
+    # Standard scale (11k to 44k: amplitude 33000, 5 bins -> raw 6600 -> step 10000)
+    assert calcular_passo_amigavel(33000, 5) == 10000
+    # Mega-scale (105k to 235k: amplitude 130000, 5 bins -> raw 26000 -> step 50000)
+    assert calcular_passo_amigavel(130000, 5) == 50000
+    # Financial million scale (amplitude 3.0M, 6 bins -> raw 500k -> step 500k)
+    assert calcular_passo_amigavel(3_000_000, 6) == 500000
 
 
 def test_calcular_step_amigavel():
@@ -31,6 +45,7 @@ def test_format_cohort_label():
     assert _format_cohort_label(0, 2500) == "0-2.5k"
     assert _format_cohort_label(2500, 5000) == "2.5k-5k"
     assert _format_cohort_label(50000, 75000) == "50k-75k"
+    assert _format_cohort_label(1_000_000, 2_000_000) == "1.0M-2.0M"
 
 
 def test_adaptive_histogram_empty():
@@ -38,7 +53,7 @@ def test_adaptive_histogram_empty():
 
 
 def test_adaptive_histogram_minimal_variation():
-    # Lots varying by less than 5000 birds
+    # Lots varying by small amounts (21k to 23k birds)
     curr = [
         {"chickens": 21000, "cost": 100000.0},
         {"chickens": 22500, "cost": 110000.0},
@@ -47,15 +62,17 @@ def test_adaptive_histogram_minimal_variation():
         {"chickens": 23000, "cost": 95000.0},
     ]
     result = gerar_histograma_adaptativo(curr, prev)
-    assert len(result) == 1
-    bucket = result[0]
-    assert bucket["cohort"] == "20k-30k"
-    assert bucket["min_birds"] == 20000
-    assert bucket["max_birds"] == 30000
-    assert bucket["current_year_cost"] == 210000.0
-    assert bucket["current_year_lots"] == 2
-    assert bucket["previous_year_cost"] == 95000.0
-    assert bucket["previous_year_lots"] == 1
+    assert len(result) == 2
+    cohort_names = [b["cohort"] for b in result]
+    assert cohort_names == ["21k-22k", "22k-23k"]
+    # 21k-22k has 21000 (curr=1, cost=100k)
+    assert result[0]["current_year_lots"] == 1
+    assert result[0]["current_year_cost"] == 100000.0
+    # 22k-23k has 22500 (curr=1, cost=110k) and 23000 (prev=1, cost=95k)
+    assert result[1]["current_year_lots"] == 1
+    assert result[1]["current_year_cost"] == 110000.0
+    assert result[1]["previous_year_lots"] == 1
+    assert result[1]["previous_year_cost"] == 95000.0
 
 
 def test_adaptive_histogram_small_producer_distribution():
@@ -97,6 +114,25 @@ def test_adaptive_histogram_small_producer_distribution():
     assert b40_50["previous_year_cost"] == 200000.0
 
 
+def test_adaptive_histogram_micro_producer_operation():
+    # Micro-scale operations: 1.500 to 7.000 birds
+    curr = [
+        {"received_chickens": 1500, "cost": 15000.0},
+        {"received_chickens": 3500, "cost": 35000.0},
+        {"received_chickens": 6800, "cost": 68000.0},
+    ]
+    prev = [
+        {"received_chickens": 2000, "cost": 20000.0},
+        {"received_chickens": 5000, "cost": 50000.0},
+    ]
+    result = gerar_histograma_adaptativo(curr, prev, num_baldes=5)
+    # Range: 1500 to 6800 (span 5300) -> step = 2000
+    # Does NOT condense into single 0-10k bucket
+    assert len(result) >= 3
+    for b in result:
+        assert b["max_birds"] - b["min_birds"] == 2000
+
+
 def test_adaptive_histogram_large_industrial_operation():
     # Megafarms with lots from 100k to 240k birds
     curr = [
@@ -117,3 +153,45 @@ def test_adaptive_histogram_large_industrial_operation():
     for b in result:
         assert b["previous_year_lots"] > 0 or b["current_year_lots"] > 0
         assert b["min_birds"] >= 100000
+
+
+def test_adaptive_histogram_ignores_zero_or_null_birds():
+    # Lots without chicken count must NOT pollute the histogram
+    curr = [
+        {"received_chickens": None, "cost": 500000.0},
+        {"received_chickens": 0, "cost": 300000.0},
+        {"received_chickens": 20000, "cost": 100000.0},
+    ]
+    prev = [
+        {"received_chickens": None, "cost": 400000.0},
+        {"received_chickens": 25000, "cost": 120000.0},
+    ]
+    result = gerar_histograma_adaptativo(curr, prev, num_baldes=5)
+    assert len(result) >= 1
+    # Check that 500k and 300k costs were NOT allocated to any bucket
+    total_curr_cost = sum(b["current_year_cost"] for b in result)
+    assert total_curr_cost == 100000.0
+    total_prev_cost = sum(b["previous_year_cost"] for b in result)
+    assert total_prev_cost == 120000.0
+
+
+def test_adaptive_histogram_continuous_axis_with_valleys():
+    # Lots in 10k-20k and 40k-50k; 20k-30k and 30k-40k must be kept with 0 lots/cost
+    curr = [
+        {"received_chickens": 15000, "cost": 75000.0},
+        {"received_chickens": 45000, "cost": 225000.0},
+    ]
+    prev = [
+        {"received_chickens": 12000, "cost": 60000.0},
+    ]
+    result = gerar_histograma_adaptativo(curr, prev, num_baldes=5)
+    # Step = 10000
+    cohort_names = [b["cohort"] for b in result]
+    assert cohort_names == ["10k-20k", "20k-30k", "30k-40k", "40k-50k"]
+    # Valleys have 0 lots and 0 cost
+    assert result[1]["cohort"] == "20k-30k"
+    assert result[1]["current_year_lots"] == 0
+    assert result[1]["current_year_cost"] == 0.0
+    assert result[2]["cohort"] == "30k-40k"
+    assert result[2]["current_year_lots"] == 0
+    assert result[2]["current_year_cost"] == 0.0

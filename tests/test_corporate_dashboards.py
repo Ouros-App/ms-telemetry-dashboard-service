@@ -356,8 +356,8 @@ def test_company_employee_get_corporate_chart_data():
     )
     assert res.status_code == 200
     rows = res.json()
-    assert len(rows) == 6
-    assert rows[0]["bucket"] == "1.0M-"
+    assert len(rows) == 4
+    assert rows[0]["bucket"] == "R$ 800k - 900k"
     assert rows[0]["count"] == 1
     assert rows[0]["value"] == 1
     assert rows[0]["total_cost"] == 800000.0
@@ -368,23 +368,26 @@ def test_company_employee_get_corporate_chart_data():
     for r in rows:
         CorporateCostBucketItem.model_validate(r)
 
-    # 4. cost-by-lot-size-cohort (Adaptive dynamic binning)
+    # 4. cost-by-lot-size-cohort (Adaptive dynamic binning with continuous axis)
     res = client.get(
         "/v1/user/dashboards/corporate/charts/cost-by-lot-size-cohort/data"
     )
     assert res.status_code == 200
     rows = res.json()
-    assert len(rows) == 3
+    assert len(rows) == 4
     cohort_map = {r["cohort"]: r for r in rows}
     assert "30k-35k" in cohort_map
+    assert "35k-40k" in cohort_map
+    assert "40k-45k" in cohort_map
     assert "45k-50k" in cohort_map
-    assert "50k-55k" in cohort_map
     assert cohort_map["30k-35k"]["current_year_cost"] == 800000.0
     assert cohort_map["30k-35k"]["current_year_lots"] == 1
+    assert cohort_map["35k-40k"]["current_year_lots"] == 0
+    assert cohort_map["40k-45k"]["current_year_lots"] == 0
     assert cohort_map["45k-50k"]["previous_year_cost"] == 1000000.0
     assert cohort_map["45k-50k"]["previous_year_lots"] == 1
-    assert cohort_map["50k-55k"]["current_year_cost"] == 1200000.0
-    assert cohort_map["50k-55k"]["current_year_lots"] == 1
+    assert cohort_map["45k-50k"]["current_year_cost"] == 1200000.0
+    assert cohort_map["45k-50k"]["current_year_lots"] == 1
     for r in rows:
         CorporateCostByLotSizeCohortItem.model_validate(r)
 
