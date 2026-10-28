@@ -1,4 +1,5 @@
 """Behavioral tests for MongoDB Analytics with no external database."""
+
 from datetime import UTC, date, datetime, timedelta
 from unittest.mock import patch
 
@@ -23,10 +24,13 @@ class Collection:
         self.filters = []
 
     def find_one(self, selector):
-        return next((d for d in self.documents if d.get("_id") == selector["_id"]), None)
+        return next(
+            (d for d in self.documents if d.get("_id") == selector["_id"]), None
+        )
 
     def find(self, selector):
         self.filters.append(selector)
+
         def matches(item):
             for key, expected in selector.items():
                 if isinstance(expected, dict) and "$in" in expected:
@@ -35,6 +39,7 @@ class Collection:
                 elif item.get(key) != expected:
                     return False
             return True
+
         return (d for d in self.documents if matches(d))
 
 
@@ -53,69 +58,173 @@ class Client:
 def repository(*, status="success", run=RUN, missing=False):
     now = datetime.now(UTC)
     rows = [
-        {"dataset": "dim_farm", "_sync_run": RUN, "farm_id": 7,
-         "enterprise_id": 3, "farm_name": "Alpha", "chickens_now": 800,
-         "poultry_capacity": 1000, "state": "SP", "regional_management": "Regional Sudeste"},
-        {"dataset": "dim_farm", "_sync_run": RUN, "farm_id": 9,
-         "enterprise_id": 3, "farm_name": "Beta", "chickens_now": 300,
-         "poultry_capacity": 500, "state": "GO", "regional_management": "Regional Centro"},
-        {"dataset": "dim_farm", "_sync_run": RUN, "farm_id": 11,
-         "enterprise_id": 4, "farm_name": "Hidden", "chickens_now": 9000,
-         "poultry_capacity": 10000, "state": "PR", "regional_management": "Regional Sul"},
-        {"dataset": "fact_lot", "_sync_run": RUN, "farm_id": 7,
-         "enterprise_id": 3, "delivery_date": now - timedelta(days=4),
-         "received_chickens": 100, "delivered_chickens": 80,
-         "lost_chickens": 10, "cost": Decimal128("12.50")},
-        {"dataset": "fact_lot", "_sync_run": RUN, "farm_id": 9,
-         "enterprise_id": 3, "delivery_date": now - timedelta(days=4),
-         "received_chickens": 50, "delivered_chickens": 40,
-         "lost_chickens": 5, "cost": Decimal128("7.50")},
-        {"dataset": "fact_lot", "_sync_run": RUN, "farm_id": 7,
-         "enterprise_id": 3, "delivery_date": datetime(now.year - 1, 5, 10, tzinfo=UTC),
-         "received_chickens": 120, "delivered_chickens": 108,
-         "lost_chickens": 12, "cost": Decimal128("15.00")},
-        {"dataset": "fact_lot", "_sync_run": RUN, "farm_id": 11,
-         "enterprise_id": 4, "delivery_date": now - timedelta(days=4),
-         "received_chickens": 1000, "delivered_chickens": 900,
-         "lost_chickens": 500, "cost": Decimal128("900")},
-        {"dataset": "fact_goal", "_sync_run": RUN, "farm_id": 7,
-         "goal_status": "active", "goal_type": "water"},
-        {"dataset": "fact_goal", "_sync_run": RUN, "farm_id": 9,
-         "goal_status": "completed", "goal_type": "energy"},
-        {"dataset": "fact_goal", "_sync_run": RUN, "farm_id": 11,
-         "goal_status": "completed", "goal_type": "water"},
-        {"dataset": "dim_farm", "_sync_run": "old-run", "farm_id": 400,
-         "enterprise_id": 3, "chickens_now": 100000},
+        {
+            "dataset": "dim_farm",
+            "_sync_run": RUN,
+            "farm_id": 7,
+            "enterprise_id": 3,
+            "farm_name": "Alpha",
+            "chickens_now": 800,
+            "poultry_capacity": 1000,
+            "state": "SP",
+            "regional_management": "Regional Sudeste",
+        },
+        {
+            "dataset": "dim_farm",
+            "_sync_run": RUN,
+            "farm_id": 9,
+            "enterprise_id": 3,
+            "farm_name": "Beta",
+            "chickens_now": 300,
+            "poultry_capacity": 500,
+            "state": "GO",
+            "regional_management": "Regional Centro",
+        },
+        {
+            "dataset": "dim_farm",
+            "_sync_run": RUN,
+            "farm_id": 11,
+            "enterprise_id": 4,
+            "farm_name": "Hidden",
+            "chickens_now": 9000,
+            "poultry_capacity": 10000,
+            "state": "PR",
+            "regional_management": "Regional Sul",
+        },
+        {
+            "dataset": "fact_lot",
+            "_sync_run": RUN,
+            "farm_id": 7,
+            "enterprise_id": 3,
+            "delivery_date": now - timedelta(days=4),
+            "received_chickens": 100,
+            "delivered_chickens": 80,
+            "lost_chickens": 10,
+            "cost": Decimal128("12.50"),
+        },
+        {
+            "dataset": "fact_lot",
+            "_sync_run": RUN,
+            "farm_id": 9,
+            "enterprise_id": 3,
+            "delivery_date": now - timedelta(days=4),
+            "received_chickens": 50,
+            "delivered_chickens": 40,
+            "lost_chickens": 5,
+            "cost": Decimal128("7.50"),
+        },
+        {
+            "dataset": "fact_lot",
+            "_sync_run": RUN,
+            "farm_id": 7,
+            "enterprise_id": 3,
+            "delivery_date": datetime(now.year - 1, 5, 10, tzinfo=UTC),
+            "received_chickens": 120,
+            "delivered_chickens": 108,
+            "lost_chickens": 12,
+            "cost": Decimal128("15.00"),
+        },
+        {
+            "dataset": "fact_lot",
+            "_sync_run": RUN,
+            "farm_id": 11,
+            "enterprise_id": 4,
+            "delivery_date": now - timedelta(days=4),
+            "received_chickens": 1000,
+            "delivered_chickens": 900,
+            "lost_chickens": 500,
+            "cost": Decimal128("900"),
+        },
+        {
+            "dataset": "fact_goal",
+            "_sync_run": RUN,
+            "farm_id": 7,
+            "goal_status": "active",
+            "goal_type": "water",
+        },
+        {
+            "dataset": "fact_goal",
+            "_sync_run": RUN,
+            "farm_id": 9,
+            "goal_status": "completed",
+            "goal_type": "energy",
+        },
+        {
+            "dataset": "fact_goal",
+            "_sync_run": RUN,
+            "farm_id": 11,
+            "goal_status": "completed",
+            "goal_type": "water",
+        },
+        {
+            "dataset": "dim_farm",
+            "_sync_run": "old-run",
+            "farm_id": 400,
+            "enterprise_id": 3,
+            "chickens_now": 100000,
+        },
     ]
     month = now.date().replace(day=1)
     monthly = [
-        {"_sync_run": RUN, "farm_id": 7, "enterprise_id": 3,
-         "month_start": datetime(month.year, month.month, 1),
-         "water_metrics": {"monthly_total_m3": Decimal128("30")},
-         "energy_metrics": {"monthly_total_kwh": Decimal128("100")},
-         "chickens_reference": 800},
-        {"_sync_run": RUN, "farm_id": 9, "enterprise_id": 3,
-         "month_start": datetime(month.year, month.month, 1),
-         "water_metrics": {"monthly_total_m3": Decimal128("20")},
-         "energy_metrics": {"monthly_total_kwh": Decimal128("50")},
-         "chickens_reference": 300},
-        {"_sync_run": RUN, "farm_id": 11, "enterprise_id": 4,
-         "month_start": datetime(month.year, month.month, 1),
-         "water_metrics": {"monthly_total_m3": Decimal128("500")},
-         "energy_metrics": {"monthly_total_kwh": Decimal128("500")},
-         "chickens_reference": 9000},
+        {
+            "_sync_run": RUN,
+            "farm_id": 7,
+            "enterprise_id": 3,
+            "month_start": datetime(month.year, month.month, 1),
+            "water_metrics": {"monthly_total_m3": Decimal128("30")},
+            "energy_metrics": {"monthly_total_kwh": Decimal128("100")},
+            "chickens_reference": 800,
+        },
+        {
+            "_sync_run": RUN,
+            "farm_id": 9,
+            "enterprise_id": 3,
+            "month_start": datetime(month.year, month.month, 1),
+            "water_metrics": {"monthly_total_m3": Decimal128("20")},
+            "energy_metrics": {"monthly_total_kwh": Decimal128("50")},
+            "chickens_reference": 300,
+        },
+        {
+            "_sync_run": RUN,
+            "farm_id": 11,
+            "enterprise_id": 4,
+            "month_start": datetime(month.year, month.month, 1),
+            "water_metrics": {"monthly_total_m3": Decimal128("500")},
+            "energy_metrics": {"monthly_total_kwh": Decimal128("500")},
+            "chickens_reference": 9000,
+        },
     ]
     buckets = [
-        {"_sync_run": RUN, "farm_id": 7, "enterprise_id": 3, "metric": "water",
-         "readings": [{"date": now - timedelta(days=2), "value": Decimal128("3.5")},
-                      {"date": now - timedelta(days=2), "value": Decimal128("2.5")}]},
-        {"_sync_run": RUN, "farm_id": 11, "enterprise_id": 4, "metric": "water",
-         "readings": [{"date": now, "value": Decimal128("999")}]},
+        {
+            "_sync_run": RUN,
+            "farm_id": 7,
+            "enterprise_id": 3,
+            "metric": "water",
+            "readings": [
+                {"date": now - timedelta(days=2), "value": Decimal128("3.5")},
+                {"date": now - timedelta(days=2), "value": Decimal128("2.5")},
+            ],
+        },
+        {
+            "_sync_run": RUN,
+            "farm_id": 11,
+            "enterprise_id": 4,
+            "metric": "water",
+            "readings": [{"date": now, "value": Decimal128("999")}],
+        },
     ]
-    state = [] if missing else [{
-        "_id": "production_to_mongodb_poc", "status": status,
-        "run_id": run, "last_success_at": now - timedelta(minutes=12),
-    }]
+    state = (
+        []
+        if missing
+        else [
+            {
+                "_id": "production_to_mongodb_poc",
+                "status": status,
+                "run_id": run,
+                "last_success_at": now - timedelta(minutes=12),
+            }
+        ]
+    )
     result = object.__new__(AnalyticsRepository)
     result._retry_after = 0.0
     result.retry_backoff_seconds = 0.0
@@ -129,13 +238,16 @@ def repository(*, status="success", run=RUN, missing=False):
     return result
 
 
-@pytest.mark.parametrize("uri", [
-    "postgresql://reader@host/analytics",
-    "mongodb://host/db?tlsInsecure=true",
-    "mongodb://host/db?tlsAllowInvalidCertificates=true",
-    "mongodb://host/db?tlsAllowInvalidHostnames=true",
-    "mongodb://host/db?tls=false",
-])
+@pytest.mark.parametrize(
+    "uri",
+    [
+        "postgresql://reader@host/analytics",
+        "mongodb://host/db?tlsInsecure=true",
+        "mongodb://host/db?tlsAllowInvalidCertificates=true",
+        "mongodb://host/db?tlsAllowInvalidHostnames=true",
+        "mongodb://host/db?tls=false",
+    ],
+)
 def test_insecure_or_wrong_backend_uri_rejected(uri):
     with pytest.raises(ValueError):
         validate_mongodb_uri(uri, "ouros_analytics_poc")
@@ -166,8 +278,9 @@ async def test_farm_owner_cannot_read_other_farms_or_enterprises():
     assert await repo.fetch("mortality_rate", "", 7, None) == [{"value": 10.0}]
     assert await repo.fetch("capacity_utilization", "", 7, None) == [{"value": 80.0}]
     for col in ("poc_analytics_rows",):
-        assert all(f.get("farm_id") == 7 for f in repo._database[col].filters
-                   if "farm_id" in f)
+        assert all(
+            f.get("farm_id") == 7 for f in repo._database[col].filters if "farm_id" in f
+        )
 
 
 @pytest.mark.asyncio
@@ -201,7 +314,9 @@ async def test_periodic_resource_totals_and_efficiency_use_atlas_nested_fields()
     efficiency = await repo.fetch("resource_efficiency", "", None, 3, 30)
     assert efficiency[0]["water_m3_per_chicken"] == 0.0455
     assert efficiency[0]["energy_kwh_per_chicken"] == 0.1364
-    assert (await repo.fetch("monthly-water-consumption", ""))[0]["water_consumed_m3"] == 550.0
+    assert (await repo.fetch("monthly-water-consumption", ""))[0][
+        "water_consumed_m3"
+    ] == 550.0
 
 
 @pytest.mark.asyncio
@@ -219,7 +334,9 @@ async def test_lot_trend_aggregates_without_cross_tenant_data():
     assert rows[0]["received_chickens"] == 150
     assert rows[0]["delivered_chickens"] == 120
     assert (await repo.fetch("lot_cost", "", None, 3, 30))[0]["cost"] == 20.0
-    assert (await repo.fetch("lot_mortality", "", None, 3, 30))[0]["mortality_rate_pct"] == 10.0
+    assert (await repo.fetch("lot_mortality", "", None, 3, 30))[0][
+        "mortality_rate_pct"
+    ] == 10.0
 
 
 @pytest.mark.asyncio
@@ -235,9 +352,12 @@ async def test_incomplete_snapshot_is_unavailable_and_status_is_stale():
 @pytest.mark.asyncio
 async def test_missing_or_old_checkpoint_does_not_expose_partial_data():
     repo = repository(missing=True)
-    assert await repo.fetch("sync_status", "") == [{
-        "last_updated_at": None, "has_error": False,
-    }]
+    assert await repo.fetch("sync_status", "") == [
+        {
+            "last_updated_at": None,
+            "has_error": False,
+        }
+    ]
     with pytest.raises(AnalyticsUnavailable):
         await repo.fetch("current_flock", "", 7, None)
 
@@ -246,7 +366,9 @@ async def test_missing_or_old_checkpoint_does_not_expose_partial_data():
 async def test_mongodb_transport_failure_is_reported_as_unavailable():
     repo = repository()
     with (
-        patch.object(repo, "_state", side_effect=ServerSelectionTimeoutError("offline")),
+        patch.object(
+            repo, "_state", side_effect=ServerSelectionTimeoutError("offline")
+        ),
         pytest.raises(AnalyticsUnavailable),
     ):
         await repo.fetch("current_flock", "", 7, None)
@@ -301,9 +423,13 @@ async def test_relative_consumption_calculates_normalized_percentage():
 @pytest.mark.asyncio
 async def test_corporate_operations_reject_farm_owner_or_missing_enterprise():
     repo = repository()
-    with pytest.raises(AnalyticsQueryError, match="Corporate operations require enterprise scope"):
+    with pytest.raises(
+        AnalyticsQueryError, match="Corporate operations require enterprise scope"
+    ):
         await repo.fetch("corporate_kpis", "", 7, None)
-    with pytest.raises(AnalyticsQueryError, match="Corporate operations require enterprise scope"):
+    with pytest.raises(
+        AnalyticsQueryError, match="Corporate operations require enterprise scope"
+    ):
         await repo.fetch("corporate_kpis", "", None, None)
     with pytest.raises(AnalyticsQueryError, match="Signed analytics scope is missing"):
         await repo.fetch("corporate_kpis", "")
@@ -353,9 +479,9 @@ async def test_corporate_charts_operations():
 
     # cost_by_lot_size_cohort (Dynamic cohorts)
     cohort_rows = await repo.fetch("cost_by_lot_size_cohort", "", None, 3)
-    assert len(cohort_rows) == 6
-    # 0-10k has all lots (received 100, 50, 120 < 10k)
-    assert cohort_rows[0]["cohort"] == "0-10k"
+    assert len(cohort_rows) == 7
+    # 0-50k has all lots (received 100, 50, 120 < 50k)
+    assert cohort_rows[0]["cohort"] == "0-50k"
     assert cohort_rows[0]["current_year_cost"] == 20.0
     assert cohort_rows[0]["previous_year_cost"] == 15.0
     assert cohort_rows[0]["current_year_lots"] == 2
@@ -368,6 +494,8 @@ async def test_corporate_charts_operations():
     assert region_map["Sudeste"]["current_year_cost"] == 12.50
     assert region_map["Sudeste"]["previous_year_cost"] == 15.00
     assert region_map["Centro-Oeste"]["current_year_cost"] == 7.50
+    assert "previous_year" in region_map["Sudeste"]
+    assert "current_year" in region_map["Sudeste"]
 
     # monthly_cost (12 calendar months Jan-Dez)
     monthly_rows = await repo.fetch("monthly_cost", "", None, 3)
@@ -382,14 +510,18 @@ async def test_corporate_charts_operations():
 @pytest.mark.asyncio
 async def test_corporate_farms_table_pagination_and_search():
     repo = repository()
-    table_rows = await repo.fetch("corporate_farms_table", "", None, 3, {"page": 1, "limit": 10})
+    table_rows = await repo.fetch(
+        "corporate_farms_table", "", None, 3, {"page": 1, "limit": 10}
+    )
     assert len(table_rows) == 1
     table = table_rows[0]
     assert table["total"] == 2  # Alpha (7) and Beta (9)
     assert len(table["items"]) == 2
 
     # Search for Alpha
-    search_rows = await repo.fetch("corporate_farms_table", "", None, 3, {"search": "Alpha"})
+    search_rows = await repo.fetch(
+        "corporate_farms_table", "", None, 3, {"search": "Alpha"}
+    )
     assert search_rows[0]["total"] == 1
     assert search_rows[0]["items"][0]["farm_name"] == "Alpha"
 
@@ -465,31 +597,49 @@ def test_calculate_dynamic_cost_buckets():
     ]
     buckets_m = _calculate_dynamic_cost_buckets(lots_million)
     assert len(buckets_m) == 6
-    assert buckets_m[0]["bucket"] == "Até 1.0M"
+    assert buckets_m[0]["bucket"] == "1.0M-"
     assert buckets_m[0]["count"] == 1
-    assert buckets_m[1]["bucket"] == "1.0M - 1.5M"
+    assert buckets_m[0]["color"] == "#5A53FF"
+    assert buckets_m[1]["bucket"] == "1.0M"
     assert buckets_m[1]["count"] == 1
-    assert buckets_m[3]["bucket"] == "2.0M - 2.5M"
+    assert buckets_m[1]["color"] == "#332BF2"
+    assert buckets_m[3]["bucket"] == "2.0M"
     assert buckets_m[3]["count"] == 1
+    assert buckets_m[3]["color"] == "#110B95"
 
 
-def test_calculate_dynamic_cohorts():
-    from app.repositories.analytics import _calculate_dynamic_cohorts
+def test_calc_box_stats_and_lot_cohort():
+    from decimal import Decimal
 
-    # Small flock (< 60k)
-    c_small = _calculate_dynamic_cohorts([{"received_chickens": 35000}])
-    assert len(c_small) == 6
-    assert c_small[0][0] == "0-10k"
-    assert c_small[-1][0] == "50k+"
+    from app.repositories.analytics import _calc_box_stats, _lot_cohort
 
-    # Medium flock (60k-120k)
-    c_med = _calculate_dynamic_cohorts([{"received_chickens": 90000}])
-    assert len(c_med) == 6
-    assert c_med[0][0] == "0-20k"
-    assert c_med[-1][0] == "100k+"
+    # 1. Box stats calculation
+    stats = _calc_box_stats(
+        [
+            Decimal("10.0"),
+            Decimal("20.0"),
+            Decimal("30.0"),
+            Decimal("40.0"),
+            Decimal("50.0"),
+        ]
+    )
+    assert stats["min"] == 10.0
+    assert stats["median"] == 30.0
+    assert stats["max"] == 50.0
+    assert stats["lots_count"] == 5
+    assert stats["total_cost"] == 150.0
 
-    # Large flock (> 120k)
-    c_large = _calculate_dynamic_cohorts([{"received_chickens": 150000}])
-    assert len(c_large) == 7
-    assert c_large[0][0] == "0-50k"
-    assert c_large[-1][0] == "175k+"
+    # Empty stats
+    empty = _calc_box_stats([])
+    assert empty["min"] == 0.0
+    assert empty["lots_count"] == 0
+
+    # 2. 7 Figma cohorts resolution
+    assert _lot_cohort(Decimal(30_000)) == "0-50k"
+    assert _lot_cohort(Decimal(50_000)) == "50k-75k"
+    assert _lot_cohort(Decimal(75_000)) == "75k-100k"
+    assert _lot_cohort(Decimal(100_000)) == "100k-125k"
+    assert _lot_cohort(Decimal(125_000)) == "125k-150k"
+    assert _lot_cohort(Decimal(150_000)) == "150k-175k"
+    assert _lot_cohort(Decimal(175_000)) == "175k+"
+    assert _lot_cohort(Decimal(200_000)) == "175k+"

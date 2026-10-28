@@ -228,9 +228,7 @@ class AnalyticsDashboardProvider:
             x_field="month_start",
             value_suffix="%",
             series=[
-                UserChartSeries(
-                    field="relative_consumption_pct", label="Consumo (%)"
-                )
+                UserChartSeries(field="relative_consumption_pct", label="Consumo (%)")
             ],
             render_options=[
                 "line",
@@ -385,9 +383,7 @@ class AnalyticsDashboardProvider:
             type="line",
             query_name="resource_efficiency",
             x_field="month_start",
-            series=[
-                UserChartSeries(field="water_m3_per_chicken", label="Água m³/ave")
-            ],
+            series=[UserChartSeries(field="water_m3_per_chicken", label="Água m³/ave")],
             render_options=[
                 "line",
                 "bar",
@@ -412,9 +408,7 @@ class AnalyticsDashboardProvider:
             query_name="resource_efficiency",
             x_field="month_start",
             series=[
-                UserChartSeries(
-                    field="energy_kwh_per_chicken", label="Energia kWh/ave"
-                )
+                UserChartSeries(field="energy_kwh_per_chicken", label="Energia kWh/ave")
             ],
             render_options=[
                 "line",
@@ -509,17 +503,17 @@ class AnalyticsDashboardProvider:
         UserChartDefinition(
             id="cost-distribution-buckets",
             dashboard_id="corporate",
-            title="Distribuição de Custo dos Lotes",
-            type="pie",
+            title="Custo",
+            type="choropleth",
             query_name="cost_distribution_buckets",
             x_field="bucket",
             series=[UserChartSeries(field="count", label="Lotes")],
-            render_options=["donut", "pie", "bar"],
+            render_options=["choropleth", "donut", "pie", "bar"],
         ),
         UserChartDefinition(
             id="cost-by-lot-size-cohort",
             dashboard_id="corporate",
-            title="Custo por Porte do Lote",
+            title="Custo por lote",
             type="bar",
             query_name="cost_by_lot_size_cohort",
             x_field="cohort",
@@ -532,20 +526,20 @@ class AnalyticsDashboardProvider:
         UserChartDefinition(
             id="cost-by-region",
             dashboard_id="corporate",
-            title="Custo por Macrorregião",
-            type="bar",
+            title="Custo por região",
+            type="box",
             query_name="cost_by_region",
             x_field="region",
             series=[
                 UserChartSeries(field="previous_year_cost", label="Ano passado"),
                 UserChartSeries(field="current_year_cost", label="Este ano"),
             ],
-            render_options=["bar", "pie", "donut"],
+            render_options=["box", "bar", "pie", "donut"],
         ),
         UserChartDefinition(
             id="monthly-cost",
             dashboard_id="corporate",
-            title="Custo Mensal Consolidado",
+            title="Custo mensal",
             type="line",
             query_name="monthly_cost",
             x_field="month_label",

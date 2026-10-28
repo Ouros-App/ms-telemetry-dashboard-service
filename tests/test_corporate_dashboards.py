@@ -1,4 +1,5 @@
 """Integration and authorization tests for corporate dashboards (company_employee)."""
+
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -23,7 +24,9 @@ class MockCollection:
         self.documents = documents
 
     def find_one(self, selector):
-        return next((d for d in self.documents if d.get("_id") == selector["_id"]), None)
+        return next(
+            (d for d in self.documents if d.get("_id") == selector["_id"]), None
+        )
 
     def find(self, selector):
         def matches(item):
@@ -34,6 +37,7 @@ class MockCollection:
                 elif item.get(key) != expected:
                     return False
             return True
+
         return (d for d in self.documents if matches(d))
 
 
@@ -54,80 +58,129 @@ def corporate_repository():
     run = "corporate-test-run"
     rows = [
         {
-            "dataset": "dim_farm", "_sync_run": run, "farm_id": 101,
-            "enterprise_id": 99, "farm_name": "Granja Primavera",
-            "manager_name": "Carlos Silva", "state": "GO", "city": "Rio Verde",
-            "regional_management": "Centro-Oeste 1", "chickens_now": 50000, "poultry_capacity": 60000,
+            "dataset": "dim_farm",
+            "_sync_run": run,
+            "farm_id": 101,
+            "enterprise_id": 99,
+            "farm_name": "Granja Primavera",
+            "manager_name": "Carlos Silva",
+            "state": "GO",
+            "city": "Rio Verde",
+            "regional_management": "Centro-Oeste 1",
+            "chickens_now": 50000,
+            "poultry_capacity": 60000,
         },
         {
-            "dataset": "dim_farm", "_sync_run": run, "farm_id": 102,
-            "enterprise_id": 99, "farm_name": "Granja Alvorada",
-            "manager_name": "Mariana Santos", "state": "SP", "city": "Campinas",
-            "regional_management": "Sudeste 1", "chickens_now": 30000, "poultry_capacity": 40000,
+            "dataset": "dim_farm",
+            "_sync_run": run,
+            "farm_id": 102,
+            "enterprise_id": 99,
+            "farm_name": "Granja Alvorada",
+            "manager_name": "Mariana Santos",
+            "state": "SP",
+            "city": "Campinas",
+            "regional_management": "Sudeste 1",
+            "chickens_now": 30000,
+            "poultry_capacity": 40000,
         },
         {
-            "dataset": "dim_farm", "_sync_run": run, "farm_id": 201,
-            "enterprise_id": 88, "farm_name": "Granja Outra Empresa",
-            "manager_name": "Outro Gestor", "state": "PR", "city": "Cascavel",
-            "regional_management": "Sul 1", "chickens_now": 10000, "poultry_capacity": 15000,
+            "dataset": "dim_farm",
+            "_sync_run": run,
+            "farm_id": 201,
+            "enterprise_id": 88,
+            "farm_name": "Granja Outra Empresa",
+            "manager_name": "Outro Gestor",
+            "state": "PR",
+            "city": "Cascavel",
+            "regional_management": "Sul 1",
+            "chickens_now": 10000,
+            "poultry_capacity": 15000,
         },
         # Lots for enterprise 99 (current year)
         {
-            "dataset": "fact_lot", "_sync_run": run, "farm_id": 101, "enterprise_id": 99,
+            "dataset": "fact_lot",
+            "_sync_run": run,
+            "farm_id": 101,
+            "enterprise_id": 99,
             "delivery_date": datetime(now.year, 4, 15, tzinfo=UTC),
-            "received_chickens": 50000, "delivered_chickens": 48000,
-            "lost_chickens": 2000, "cost": Decimal128("1200000.00"),
+            "received_chickens": 50000,
+            "delivered_chickens": 48000,
+            "lost_chickens": 2000,
+            "cost": Decimal128("1200000.00"),
         },
         {
-            "dataset": "fact_lot", "_sync_run": run, "farm_id": 102, "enterprise_id": 99,
+            "dataset": "fact_lot",
+            "_sync_run": run,
+            "farm_id": 102,
+            "enterprise_id": 99,
             "delivery_date": datetime(now.year, 5, 20, tzinfo=UTC),
-            "received_chickens": 30000, "delivered_chickens": 29000,
-            "lost_chickens": 1000, "cost": Decimal128("800000.00"),
+            "received_chickens": 30000,
+            "delivered_chickens": 29000,
+            "lost_chickens": 1000,
+            "cost": Decimal128("800000.00"),
         },
         # Lots for enterprise 99 (previous year)
         {
-            "dataset": "fact_lot", "_sync_run": run, "farm_id": 101, "enterprise_id": 99,
+            "dataset": "fact_lot",
+            "_sync_run": run,
+            "farm_id": 101,
+            "enterprise_id": 99,
             "delivery_date": datetime(now.year - 1, 4, 10, tzinfo=UTC),
-            "received_chickens": 45000, "delivered_chickens": 43000,
-            "lost_chickens": 2000, "cost": Decimal128("1000000.00"),
+            "received_chickens": 45000,
+            "delivered_chickens": 43000,
+            "lost_chickens": 2000,
+            "cost": Decimal128("1000000.00"),
         },
         # Lots for competitor enterprise 88
         {
-            "dataset": "fact_lot", "_sync_run": run, "farm_id": 201, "enterprise_id": 88,
+            "dataset": "fact_lot",
+            "_sync_run": run,
+            "farm_id": 201,
+            "enterprise_id": 88,
             "delivery_date": datetime(now.year, 4, 1, tzinfo=UTC),
-            "received_chickens": 10000, "delivered_chickens": 9500,
-            "lost_chickens": 500, "cost": Decimal128("5000000.00"),
+            "received_chickens": 10000,
+            "delivered_chickens": 9500,
+            "lost_chickens": 500,
+            "cost": Decimal128("5000000.00"),
         },
     ]
     monthly = [
         {
-            "_sync_run": run, "farm_id": 101, "enterprise_id": 99,
+            "_sync_run": run,
+            "farm_id": 101,
+            "enterprise_id": 99,
             "month_start": datetime(now.year, 4, 1, tzinfo=UTC),
             "water_metrics": {"monthly_total_m3": Decimal128("1500")},
             "energy_metrics": {"monthly_total_kwh": Decimal128("45000")},
             "chickens_reference": 50000,
         },
         {
-            "_sync_run": run, "farm_id": 102, "enterprise_id": 99,
+            "_sync_run": run,
+            "farm_id": 102,
+            "enterprise_id": 99,
             "month_start": datetime(now.year, 5, 1, tzinfo=UTC),
             "water_metrics": {"monthly_total_m3": Decimal128("1000")},
             "energy_metrics": {"monthly_total_kwh": Decimal128("30000")},
             "chickens_reference": 30000,
         },
         {
-            "_sync_run": run, "farm_id": 201, "enterprise_id": 88,
+            "_sync_run": run,
+            "farm_id": 201,
+            "enterprise_id": 88,
             "month_start": datetime(now.year, 4, 1, tzinfo=UTC),
             "water_metrics": {"monthly_total_m3": Decimal128("9999")},
             "energy_metrics": {"monthly_total_kwh": Decimal128("99999")},
             "chickens_reference": 10000,
         },
     ]
-    state = [{
-        "_id": "production_to_mongodb_poc",
-        "status": "success",
-        "run_id": run,
-        "last_success_at": now - timedelta(minutes=5),
-    }]
+    state = [
+        {
+            "_id": "production_to_mongodb_poc",
+            "status": "success",
+            "run_id": run,
+            "last_success_at": now - timedelta(minutes=5),
+        }
+    ]
 
     repo = object.__new__(AnalyticsRepository)
     repo._retry_after = 0.0
@@ -152,7 +205,9 @@ def setup_app_state():
     app.dependency_overrides.clear()
 
 
-def make_principal(account_type: str, farm_id: int | None = None, enterprise_id: int | None = None) -> Principal:
+def make_principal(
+    account_type: str, farm_id: int | None = None, enterprise_id: int | None = None
+) -> Principal:
     roles = {account_type}
     return Principal(
         subject=f"sub-{account_type}",
@@ -165,7 +220,9 @@ def make_principal(account_type: str, farm_id: int | None = None, enterprise_id:
 
 
 def test_farm_owner_cannot_access_corporate_endpoints():
-    app.dependency_overrides[require_user_bearer] = lambda: make_principal("farm_owner", farm_id=101)
+    app.dependency_overrides[require_user_bearer] = lambda: make_principal(
+        "farm_owner", farm_id=101
+    )
     client = TestClient(app)
 
     # 1. KPIs
@@ -199,7 +256,9 @@ def test_farm_owner_cannot_access_corporate_endpoints():
 
 
 def test_farm_owner_dashboard_list_does_not_contain_corporate():
-    app.dependency_overrides[require_user_bearer] = lambda: make_principal("farm_owner", farm_id=101)
+    app.dependency_overrides[require_user_bearer] = lambda: make_principal(
+        "farm_owner", farm_id=101
+    )
     client = TestClient(app)
 
     res = client.get("/v1/user/dashboards")
@@ -210,7 +269,9 @@ def test_farm_owner_dashboard_list_does_not_contain_corporate():
 
 
 def test_company_employee_dashboard_list_contains_corporate():
-    app.dependency_overrides[require_user_bearer] = lambda: make_principal("company_employee", enterprise_id=99)
+    app.dependency_overrides[require_user_bearer] = lambda: make_principal(
+        "company_employee", enterprise_id=99
+    )
     client = TestClient(app)
 
     res = client.get("/v1/user/dashboards")
@@ -220,7 +281,9 @@ def test_company_employee_dashboard_list_contains_corporate():
 
 
 def test_company_employee_get_corporate_kpis():
-    app.dependency_overrides[require_user_bearer] = lambda: make_principal("company_employee", enterprise_id=99)
+    app.dependency_overrides[require_user_bearer] = lambda: make_principal(
+        "company_employee", enterprise_id=99
+    )
     client = TestClient(app)
 
     res = client.get("/v1/user/dashboards/corporate/kpis")
@@ -249,7 +312,9 @@ def test_company_employee_get_corporate_kpis():
 
 
 def test_company_employee_get_corporate_filters():
-    app.dependency_overrides[require_user_bearer] = lambda: make_principal("company_employee", enterprise_id=99)
+    app.dependency_overrides[require_user_bearer] = lambda: make_principal(
+        "company_employee", enterprise_id=99
+    )
     client = TestClient(app)
 
     res = client.get("/v1/user/dashboards/corporate/filters")
@@ -264,7 +329,9 @@ def test_company_employee_get_corporate_filters():
 
 
 def test_company_employee_get_corporate_chart_data():
-    app.dependency_overrides[require_user_bearer] = lambda: make_principal("company_employee", enterprise_id=99)
+    app.dependency_overrides[require_user_bearer] = lambda: make_principal(
+        "company_employee", enterprise_id=99
+    )
     client = TestClient(app)
 
     # 1. trend-kwh-aves
@@ -284,38 +351,43 @@ def test_company_employee_get_corporate_chart_data():
     assert rows[0]["water_liters"] == 1500000.0  # 1500 m3 * 1000
 
     # 3. cost-distribution-buckets (Adaptive bucketing with million-scale lots)
-    res = client.get("/v1/user/dashboards/corporate/charts/cost-distribution-buckets/data")
+    res = client.get(
+        "/v1/user/dashboards/corporate/charts/cost-distribution-buckets/data"
+    )
     assert res.status_code == 200
     rows = res.json()
     assert len(rows) == 6
-    assert rows[0]["bucket"] == "Até 1.0M"
+    assert rows[0]["bucket"] == "1.0M-"
     assert rows[0]["count"] == 1
     assert rows[0]["value"] == 1
     assert rows[0]["total_cost"] == 800000.0
     assert rows[0]["percentage"] == 33.3
+    assert rows[0]["color"] == "#5A53FF"
     assert "low" in rows[0]
     assert "high" in rows[0]
     for r in rows:
         CorporateCostBucketItem.model_validate(r)
 
-    # 4. cost-by-lot-size-cohort (Dynamic cohorts: 0-10k, 10k-20k, ..., 50k+)
-    res = client.get("/v1/user/dashboards/corporate/charts/cost-by-lot-size-cohort/data")
+    # 4. cost-by-lot-size-cohort (7 Figma cohorts: 0-50k, 50k-75k, ..., 175k+)
+    res = client.get(
+        "/v1/user/dashboards/corporate/charts/cost-by-lot-size-cohort/data"
+    )
     assert res.status_code == 200
     rows = res.json()
-    assert len(rows) == 6
+    assert len(rows) == 7
     cohort_map = {r["cohort"]: r for r in rows}
-    assert "0-10k" in cohort_map
-    assert "30k-40k" in cohort_map
-    assert cohort_map["30k-40k"]["current_year_cost"] == 800000.0
-    assert cohort_map["30k-40k"]["current_year_lots"] == 1
-    assert cohort_map["40k-50k"]["previous_year_cost"] == 1000000.0
-    assert cohort_map["40k-50k"]["previous_year_lots"] == 1
-    assert cohort_map["50k+"]["current_year_cost"] == 1200000.0
-    assert cohort_map["50k+"]["current_year_lots"] == 1
+    assert "0-50k" in cohort_map
+    assert "50k-75k" in cohort_map
+    assert cohort_map["0-50k"]["current_year_cost"] == 800000.0
+    assert cohort_map["0-50k"]["current_year_lots"] == 1
+    assert cohort_map["0-50k"]["previous_year_cost"] == 1000000.0
+    assert cohort_map["0-50k"]["previous_year_lots"] == 1
+    assert cohort_map["50k-75k"]["current_year_cost"] == 1200000.0
+    assert cohort_map["50k-75k"]["current_year_lots"] == 1
     for r in rows:
         CorporateCostByLotSizeCohortItem.model_validate(r)
 
-    # 5. cost-by-region (Macroregions with normalized resolution)
+    # 5. cost-by-region (Macroregions with normalized resolution and BoxPlotStats)
     res = client.get("/v1/user/dashboards/corporate/charts/cost-by-region/data")
     assert res.status_code == 200
     rows = res.json()
@@ -324,6 +396,8 @@ def test_company_employee_get_corporate_chart_data():
     assert region_map["Centro-Oeste"]["current_year_cost"] == 1200000.0
     assert region_map["Centro-Oeste"]["previous_year_cost"] == 1000000.0
     assert region_map["Sudeste"]["current_year_cost"] == 800000.0
+    assert region_map["Centro-Oeste"]["current_year"]["median"] == 1200000.0
+    assert region_map["Centro-Oeste"]["previous_year"]["median"] == 1000000.0
     for r in rows:
         CorporateCostByRegionItem.model_validate(r)
 
@@ -351,7 +425,9 @@ def test_company_employee_get_corporate_chart_data():
 
 
 def test_company_employee_get_corporate_farms_table():
-    app.dependency_overrides[require_user_bearer] = lambda: make_principal("company_employee", enterprise_id=99)
+    app.dependency_overrides[require_user_bearer] = lambda: make_principal(
+        "company_employee", enterprise_id=99
+    )
     client = TestClient(app)
 
     res = client.get("/v1/user/dashboards/corporate/farms?page=1&limit=10")
@@ -378,7 +454,9 @@ def test_company_employee_get_corporate_farms_table():
 
 
 def test_company_employee_corporate_plotly_rendering():
-    app.dependency_overrides[require_user_bearer] = lambda: make_principal("company_employee", enterprise_id=99)
+    app.dependency_overrides[require_user_bearer] = lambda: make_principal(
+        "company_employee", enterprise_id=99
+    )
     client = TestClient(app)
 
     # 1. Combo chart with dual Y-axis
@@ -390,17 +468,23 @@ def test_company_employee_corporate_plotly_rendering():
     assert "overlaying" in html
 
     # 2. Cohort chart
-    res_cohort = client.get("/v1/user/dashboards/corporate/charts/cost-by-lot-size-cohort/plotly")
+    res_cohort = client.get(
+        "/v1/user/dashboards/corporate/charts/cost-by-lot-size-cohort/plotly"
+    )
     assert res_cohort.status_code == 200
     assert "Plotly.newPlot" in res_cohort.text
 
     # 3. Region chart
-    res_region = client.get("/v1/user/dashboards/corporate/charts/cost-by-region/plotly")
+    res_region = client.get(
+        "/v1/user/dashboards/corporate/charts/cost-by-region/plotly"
+    )
     assert res_region.status_code == 200
     assert "Plotly.newPlot" in res_region.text
 
     # 4. Donut chart (cost-distribution-buckets)
-    res_buckets = client.get("/v1/user/dashboards/corporate/charts/cost-distribution-buckets/plotly")
+    res_buckets = client.get(
+        "/v1/user/dashboards/corporate/charts/cost-distribution-buckets/plotly"
+    )
     assert res_buckets.status_code == 200
     assert "Plotly.newPlot" in res_buckets.text
 
