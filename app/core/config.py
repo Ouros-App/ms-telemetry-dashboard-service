@@ -46,7 +46,7 @@ class Settings(BaseSettings):
 
     project_name: str = "Telemetry Dashboard Service"
     description: str = "API for admin Databricks dashboards and scoped user analytics dashboards."
-    version: str = "0.2.1"
+    version: str = "0.2.2"
     app_port: int = 8000
     log_level: str = "INFO"
     keycloak_issuer_url: str | None = "https://ouros-keycloak.discloud.app/realms/ouros"
