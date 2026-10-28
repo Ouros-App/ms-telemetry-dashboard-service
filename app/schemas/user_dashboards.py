@@ -109,3 +109,41 @@ class CustomDashboardChart(BaseModel):
 class CustomDashboardResponse(BaseModel):
     title: str
     charts: list[CustomDashboardChart]
+
+
+class CorporateKpiItem(BaseModel):
+    value: float
+    formatted: str
+    unit: str | None = None
+    year: int | None = None
+
+
+class CorporateKpisResponse(BaseModel):
+    spend_previous_year: CorporateKpiItem
+    spend_current_year: CorporateKpiItem
+    avg_cost_per_bird: CorporateKpiItem
+    total_lots: CorporateKpiItem
+
+
+class CorporateFilterOptionsResponse(BaseModel):
+    periods: list[str]
+    states: list[str]
+    regional_managements: list[str]
+
+
+class FarmSummaryItem(BaseModel):
+    farm_id: int
+    farm_name: str
+    manager_name: str | None = None
+    location: str
+    total_consumption: str
+    lots_count: int
+    avg_lot_cost: float
+    avg_cost_per_bird: float
+
+
+class CorporateFarmsTableResponse(BaseModel):
+    total: int
+    page: int
+    limit: int
+    items: list[FarmSummaryItem]

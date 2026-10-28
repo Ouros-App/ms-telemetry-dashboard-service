@@ -557,10 +557,15 @@ def render_plotly_html(
         return;
       }}
       seriesList.forEach((series, index) => {{
+        const itemColor = series.label === "Ano passado"
+          ? comparisonPalette.previous
+          : series.label === "Este ano"
+          ? comparisonPalette.current
+          : palette[index % palette.length];
         appendLegendItem(
           nativeLegend,
           series.label,
-          palette[index % palette.length],
+          itemColor,
         );
       }});
       nativeLegend.hidden = false;
@@ -938,7 +943,7 @@ def render_plotly_html(
       }} else {{
         let traces = [];
         let layout = baseLayout();
-        if (["line", "bar", "histogram", "area", "scatter", "scattergl", "box", "violin", "waterfall", "funnel"].includes(renderType)) {{
+        if (["line", "bar", "histogram", "area", "scatter", "scattergl", "box", "violin", "waterfall", "funnel", "combo"].includes(renderType)) {{
           buildNativeLegend(sourceSeries);
           layout.showlegend = false;
           layout.margin = {{ ...layout.margin, b: sourceSeries.length > 1 ? 34 : 48 }};
@@ -1150,6 +1155,67 @@ def render_plotly_html(
           }}
           layout.margin = {{ l: 20, r: 20, t: 8, b: 52 }};
           layout.hovermode = "closest";
+        }} else if (renderType === "combo") {{
+          const xValues = rows.map((row) => formatCategory(row[xField], xField));
+          const chickensSeries = sourceSeries[0];
+          const metricSeries = sourceSeries[1] || sourceSeries[0];
+          const chickensValues = rows.map((row) => nullableNumber(row[chickensSeries.field]));
+          const metricValues = rows.map((row) => nullableNumber(row[metricSeries.field]));
+          const unit = seriesUnit(metricSeries);
+          const metricHoverSuffix = unit ? " " + unit : "";
+
+          traces = [
+            {{
+              type: "bar",
+              name: chickensSeries.label,
+              x: xValues,
+              y: chickensValues,
+              yaxis: "y",
+              width: isMobile() ? 0.35 : 0.3,
+              marker: {{
+                color: tokens.primary,
+                line: {{ width: 0 }},
+                cornerradius: 2,
+              }},
+              hovertemplate: "<b>%{{x}}</b><br>" + chickensSeries.label + ": %{{y:,.0f}} aves<extra></extra>",
+            }},
+            {{
+              type: "scatter",
+              mode: "lines+markers",
+              name: metricSeries.label,
+              x: xValues,
+              y: metricValues,
+              yaxis: "y2",
+              line: {{ color: tokens.chart_blue, width: 2.2, shape: "spline", smoothing: 0.32 }},
+              marker: {{
+                color: tokens.chart_blue,
+                size: isMobile() ? 8 : 10,
+                line: {{ color: tokens.surface, width: 1.5 }},
+              }},
+              hovertemplate: "<b>%{{x}}</b><br>" + metricSeries.label + ": %{{y:,.2f}}" + metricHoverSuffix + "<extra></extra>",
+            }},
+          ];
+
+          nativeLegend.replaceChildren();
+          appendLegendItem(nativeLegend, chickensSeries.label, tokens.primary);
+          appendLegendItem(nativeLegend, metricSeries.label, tokens.chart_blue);
+          nativeLegend.hidden = false;
+
+          layout.yaxis = {{
+            ...valueAxis(),
+            title: chickensSeries.label,
+            side: "left",
+          }};
+          layout.yaxis2 = {{
+            ...valueAxis(),
+            title: metricSeries.label,
+            overlaying: "y",
+            side: "right",
+            showgrid: false,
+          }};
+          layout.margin = isMobile()
+            ? {{ l: 45, r: 45, t: 18, b: 34 }}
+            : {{ l: 65, r: 65, t: 18, b: 34 }};
         }} else {{
           const comparison = (
             sourceSeries.length === 1
@@ -1238,7 +1304,11 @@ def render_plotly_html(
             }}
           }} else {{
           traces = sourceSeries.map((series, index) => {{
-            const color = palette[index % palette.length];
+            const color = series.label === "Ano passado"
+              ? comparisonPalette.previous
+              : series.label === "Este ano"
+              ? comparisonPalette.current
+              : palette[index % palette.length];
             const unit = seriesUnit(series);
             const hoverSuffix = unit ? " " + unit : "";
             const xValues = rows.map((row) => formatCategory(row[xField], xField));

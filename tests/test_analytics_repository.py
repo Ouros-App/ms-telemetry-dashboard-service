@@ -55,13 +55,13 @@ def repository(*, status="success", run=RUN, missing=False):
     rows = [
         {"dataset": "dim_farm", "_sync_run": RUN, "farm_id": 7,
          "enterprise_id": 3, "farm_name": "Alpha", "chickens_now": 800,
-         "poultry_capacity": 1000},
+         "poultry_capacity": 1000, "state": "SP", "regional_management": "Regional Sudeste"},
         {"dataset": "dim_farm", "_sync_run": RUN, "farm_id": 9,
          "enterprise_id": 3, "farm_name": "Beta", "chickens_now": 300,
-         "poultry_capacity": 500},
+         "poultry_capacity": 500, "state": "GO", "regional_management": "Regional Centro"},
         {"dataset": "dim_farm", "_sync_run": RUN, "farm_id": 11,
          "enterprise_id": 4, "farm_name": "Hidden", "chickens_now": 9000,
-         "poultry_capacity": 10000},
+         "poultry_capacity": 10000, "state": "PR", "regional_management": "Regional Sul"},
         {"dataset": "fact_lot", "_sync_run": RUN, "farm_id": 7,
          "enterprise_id": 3, "delivery_date": now - timedelta(days=4),
          "received_chickens": 100, "delivered_chickens": 80,
@@ -70,6 +70,10 @@ def repository(*, status="success", run=RUN, missing=False):
          "enterprise_id": 3, "delivery_date": now - timedelta(days=4),
          "received_chickens": 50, "delivered_chickens": 40,
          "lost_chickens": 5, "cost": Decimal128("7.50")},
+        {"dataset": "fact_lot", "_sync_run": RUN, "farm_id": 7,
+         "enterprise_id": 3, "delivery_date": datetime(now.year - 1, 5, 10, tzinfo=UTC),
+         "received_chickens": 120, "delivered_chickens": 108,
+         "lost_chickens": 12, "cost": Decimal128("15.00")},
         {"dataset": "fact_lot", "_sync_run": RUN, "farm_id": 11,
          "enterprise_id": 4, "delivery_date": now - timedelta(days=4),
          "received_chickens": 1000, "delivered_chickens": 900,
@@ -292,3 +296,104 @@ async def test_relative_consumption_calculates_normalized_percentage():
     assert "month_start" in rows[0]
     assert "relative_consumption_pct" in rows[0]
     assert 0.0 <= rows[0]["relative_consumption_pct"] <= 100.0
+
+
+@pytest.mark.asyncio
+async def test_corporate_operations_reject_farm_owner_or_missing_enterprise():
+    repo = repository()
+    with pytest.raises(AnalyticsQueryError, match="Corporate operations require enterprise scope"):
+        await repo.fetch("corporate_kpis", "", 7, None)
+    with pytest.raises(AnalyticsQueryError, match="Corporate operations require enterprise scope"):
+        await repo.fetch("corporate_kpis", "", None, None)
+    with pytest.raises(AnalyticsQueryError, match="Signed analytics scope is missing"):
+        await repo.fetch("corporate_kpis", "")
+
+
+@pytest.mark.asyncio
+async def test_corporate_kpis_aggregation_and_filters():
+    repo = repository()
+    rows = await repo.fetch("corporate_kpis", "", None, 3)
+    assert len(rows) == 1
+    kpis = rows[0]
+    assert kpis["spend_current_year"]["value"] == 20.0  # 12.50 + 7.50
+    assert kpis["spend_previous_year"]["value"] == 15.0  # 15.00
+    assert kpis["spend_current_year"]["unit"] == "R$"
+    assert kpis["total_lots"]["value"] == 2.0  # 2 lots in current year
+
+    # Filter by state
+    sp_rows = await repo.fetch("corporate_kpis", "", None, 3, {"state": "SP"})
+    assert sp_rows[0]["spend_current_year"]["value"] == 12.50
+    assert sp_rows[0]["spend_previous_year"]["value"] == 15.00
+
+
+@pytest.mark.asyncio
+async def test_corporate_charts_operations():
+    repo = repository()
+    # trend_kwh_aves
+    kwh_rows = await repo.fetch("trend_kwh_aves", "", None, 3)
+    assert len(kwh_rows) == 1
+    assert kwh_rows[0]["chickens"] == 1100
+    assert kwh_rows[0]["energy_kwh"] == 150.0
+
+    # trend_liters_aves
+    liters_rows = await repo.fetch("trend_liters_aves", "", None, 3)
+    assert len(liters_rows) == 1
+    assert liters_rows[0]["chickens"] == 1100
+    assert liters_rows[0]["water_liters"] == 50000.0  # (30 + 20) * 1000
+
+    # cost_distribution_buckets
+    bucket_rows = await repo.fetch("cost_distribution_buckets", "", None, 3)
+    assert len(bucket_rows) == 6
+    assert bucket_rows[0]["bucket"] == "< 1.0M"
+    assert bucket_rows[0]["count"] == 3  # all 3 lots are < 1M
+
+    # cost_by_lot_size_cohort
+    cohort_rows = await repo.fetch("cost_by_lot_size_cohort", "", None, 3)
+    assert len(cohort_rows) == 7
+    # 0-50k has all lots (received 100, 50, 120 < 50k)
+    assert cohort_rows[0]["cohort"] == "0-50k"
+    assert cohort_rows[0]["current_year_cost"] == 20.0
+    assert cohort_rows[0]["previous_year_cost"] == 15.0
+
+    # cost_by_region
+    region_rows = await repo.fetch("cost_by_region", "", None, 3)
+    assert len(region_rows) == 5
+    region_map = {r["region"]: r for r in region_rows}
+    assert region_map["Sudeste"]["current_year_cost"] == 12.50
+    assert region_map["Sudeste"]["previous_year_cost"] == 15.00
+    assert region_map["Centro-Oeste"]["current_year_cost"] == 7.50
+
+    # monthly_cost
+    monthly_rows = await repo.fetch("monthly_cost", "", None, 3)
+    assert len(monthly_rows) >= 1
+
+
+@pytest.mark.asyncio
+async def test_corporate_farms_table_pagination_and_search():
+    repo = repository()
+    table_rows = await repo.fetch("corporate_farms_table", "", None, 3, {"page": 1, "limit": 10})
+    assert len(table_rows) == 1
+    table = table_rows[0]
+    assert table["total"] == 2  # Alpha (7) and Beta (9)
+    assert len(table["items"]) == 2
+
+    # Search for Alpha
+    search_rows = await repo.fetch("corporate_farms_table", "", None, 3, {"search": "Alpha"})
+    assert search_rows[0]["total"] == 1
+    assert search_rows[0]["items"][0]["farm_name"] == "Alpha"
+
+    # Filter by state
+    go_rows = await repo.fetch("corporate_farms_table", "", None, 3, {"state": "GO"})
+    assert go_rows[0]["total"] == 1
+    assert go_rows[0]["items"][0]["farm_name"] == "Beta"
+
+
+@pytest.mark.asyncio
+async def test_corporate_filters_operation():
+    repo = repository()
+    filter_rows = await repo.fetch("corporate_filters", "", None, 3)
+    assert len(filter_rows) == 1
+    f = filter_rows[0]
+    assert "SP" in f["states"]
+    assert "GO" in f["states"]
+    assert "Regional Sudeste" in f["regional_managements"]

@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse
@@ -6,6 +6,9 @@ from fastapi.responses import HTMLResponse
 from app.core.auth import Principal, require_user_bearer
 from app.repositories.analytics import AnalyticsQueryError, AnalyticsUnavailable
 from app.schemas.user_dashboards import (
+    CorporateFarmsTableResponse,
+    CorporateFilterOptionsResponse,
+    CorporateKpisResponse,
     CustomDashboardRequest,
     CustomDashboardResponse,
     UserChartListResponse,
@@ -35,6 +38,124 @@ def _scope_forbidden(exc: UserScopeError) -> HTTPException:
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Authenticated account has no dashboard scope",
     )
+
+
+def _require_company_employee(principal: Principal) -> None:
+    if (
+        principal.account_type != "company_employee"
+        or "company_employee" not in principal.roles
+        or principal.enterprise_id is None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso restrito a colaboradores corporativos",
+        )
+
+
+@router.get(
+    "/corporate/kpis",
+    response_model=CorporateKpisResponse,
+    summary="Get aggregated corporate KPIs",
+    description="Returns high-level KPIs consolidated across all farms for company employees.",
+)
+async def get_corporate_kpis(
+    principal: Annotated[Principal, Depends(require_user_bearer)],
+    service: Annotated[UserDashboardService, Depends(get_user_dashboard_service)],
+    month: str | None = None,
+    state: str | None = None,
+    management: str | None = None,
+) -> CorporateKpisResponse:
+    _require_company_employee(principal)
+    try:
+        return await service.get_corporate_kpis(
+            principal, month=month, state=state, management=management
+        )
+    except (AnalyticsUnavailable, AnalyticsQueryError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=USER_ANALYTICS_UNAVAILABLE_DETAIL,
+        ) from exc
+
+
+@router.get(
+    "/corporate/filters",
+    response_model=CorporateFilterOptionsResponse,
+    summary="Get corporate filter options",
+    description="Returns available periods, states, and regional managements for filtering.",
+)
+async def get_corporate_filters(
+    principal: Annotated[Principal, Depends(require_user_bearer)],
+    service: Annotated[UserDashboardService, Depends(get_user_dashboard_service)],
+) -> CorporateFilterOptionsResponse:
+    _require_company_employee(principal)
+    try:
+        return await service.get_corporate_filters(principal)
+    except (AnalyticsUnavailable, AnalyticsQueryError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=USER_ANALYTICS_UNAVAILABLE_DETAIL,
+        ) from exc
+
+
+@router.get(
+    "/corporate/charts/{chart_id}/data",
+    summary="Get corporate chart data in structured JSON",
+    description="Returns raw JSON data for React charting libraries (Recharts / TanStack).",
+)
+async def get_corporate_chart_data(
+    chart_id: str,
+    principal: Annotated[Principal, Depends(require_user_bearer)],
+    service: Annotated[UserDashboardService, Depends(get_user_dashboard_service)],
+    month: str | None = None,
+    state: str | None = None,
+    management: str | None = None,
+) -> list[dict[str, Any]]:
+    _require_company_employee(principal)
+    try:
+        return await service.get_corporate_chart_data(
+            principal, chart_id, month=month, state=state, management=management
+        )
+    except (UserChartNotFound, UserDashboardNotFound) as exc:
+        raise HTTPException(status_code=404, detail="chart not found") from exc
+    except (AnalyticsUnavailable, AnalyticsQueryError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=USER_ANALYTICS_UNAVAILABLE_DETAIL,
+        ) from exc
+
+
+@router.get(
+    "/corporate/farms",
+    response_model=CorporateFarmsTableResponse,
+    summary="Get paginated summary table of corporate farms",
+    description="Returns consolidated farm statistics with search, filtering, and sorting.",
+)
+async def get_corporate_farms_table(
+    principal: Annotated[Principal, Depends(require_user_bearer)],
+    service: Annotated[UserDashboardService, Depends(get_user_dashboard_service)],
+    search: str | None = None,
+    sort_by: str = "farm_name",
+    order: str = "asc",
+    page: int = 1,
+    limit: int = 10,
+    state: str | None = None,
+) -> CorporateFarmsTableResponse:
+    _require_company_employee(principal)
+    try:
+        return await service.get_corporate_farms_table(
+            principal,
+            search=search,
+            sort_by=sort_by,
+            order=order,
+            page=page,
+            limit=limit,
+            state=state,
+        )
+    except (AnalyticsUnavailable, AnalyticsQueryError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=USER_ANALYTICS_UNAVAILABLE_DETAIL,
+        ) from exc
 
 
 @router.post(
@@ -116,6 +237,8 @@ async def get_user_dashboard(
     principal: Annotated[Principal, Depends(require_user_bearer)],
     service: Annotated[UserDashboardService, Depends(get_user_dashboard_service)],
 ) -> UserDashboardPublic:
+    if dashboard_id == "corporate":
+        _require_company_employee(principal)
     try:
         return await service.get_dashboard(principal, dashboard_id)
     except UserScopeError as exc:
@@ -130,6 +253,8 @@ async def list_user_charts(
     principal: Annotated[Principal, Depends(require_user_bearer)],
     service: Annotated[UserDashboardService, Depends(get_user_dashboard_service)],
 ) -> UserChartListResponse:
+    if dashboard_id == "corporate":
+        _require_company_employee(principal)
     try:
         return await service.list_charts(principal, dashboard_id)
     except UserScopeError as exc:
@@ -159,6 +284,8 @@ async def user_chart_plotly(
     service: Annotated[UserDashboardService, Depends(get_user_dashboard_service)],
     render_as: UserChartRenderType = "auto",
 ) -> HTMLResponse:
+    if dashboard_id == "corporate":
+        _require_company_employee(principal)
     try:
         html, nonce = await service.plotly_html(
             principal,
