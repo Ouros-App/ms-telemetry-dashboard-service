@@ -282,3 +282,176 @@ def test_farms_table_with_filters(client_with_data):
     go_farm = next((f for f in items if f["farm_name"] == "Granja Goiás"), None)
     assert sp_farm["lots_count"] == 1
     assert go_farm["lots_count"] == 0
+
+
+def test_corporate_filters_multi_year_history():
+    now = datetime.now(UTC)
+    run = "test-run-multi-year"
+    rows = [
+        {
+            "dataset": "dim_farm",
+            "_sync_run": run,
+            "farm_id": 1,
+            "enterprise_id": 99,
+            "farm_name": "Granja 1",
+            "state": "SP",
+            "regional_management": "Sudeste",
+        },
+        {
+            "dataset": "fact_lot",
+            "_sync_run": run,
+            "farm_id": 1,
+            "enterprise_id": 99,
+            "delivery_date": datetime(2023, 5, 10, tzinfo=UTC),
+            "cost": Decimal128("100000.0"),
+        },
+        {
+            "dataset": "fact_lot",
+            "_sync_run": run,
+            "farm_id": 1,
+            "enterprise_id": 99,
+            "delivery_date": datetime(2024, 7, 15, tzinfo=UTC),
+            "cost": Decimal128("150000.0"),
+        },
+        {
+            "dataset": "fact_lot",
+            "_sync_run": run,
+            "farm_id": 1,
+            "enterprise_id": 99,
+            "delivery_date": datetime(now.year, 3, 20, tzinfo=UTC),
+            "cost": Decimal128("200000.0"),
+        },
+    ]
+    state = [
+        {
+            "_id": "production_to_mongodb_poc",
+            "status": "success",
+            "run_id": run,
+            "last_success_at": now,
+        }
+    ]
+
+    repo = object.__new__(AnalyticsRepository)
+    repo._retry_after = 0.0
+    repo.retry_backoff_seconds = 0.0
+    repo._client = MockMongoClient()
+    repo._database = {
+        "poc_sync_state": MockCollection(state),
+        "poc_analytics_rows": MockCollection(rows),
+        "poc_farm_monthly": MockCollection([]),
+        "poc_metric_buckets": MockCollection([]),
+    }
+
+    provider = AnalyticsDashboardProvider(repo)
+    service = UserDashboardService(provider)
+    app.state.user_dashboard_service = service
+    app.dependency_overrides[require_user_bearer] = lambda: make_principal(99)
+
+    client = TestClient(app)
+    res = client.get("/v1/user/dashboards/corporate/filters")
+    assert res.status_code == 200
+    data = res.json()
+    assert "Ano 2024" in data["periods"]
+    assert "Ano 2023" in data["periods"]
+    assert f"Ano {now.year}" in data["periods"]
+
+
+def test_corporate_cost_by_region_gradient_contrast():
+    from app.repositories.analytics import FIGMA_GRADIENT
+
+    now = datetime.now(UTC)
+    run = "test-run-contrast"
+    rows = [
+        {
+            "dataset": "dim_farm",
+            "_sync_run": run,
+            "farm_id": 1,
+            "enterprise_id": 99,
+            "farm_name": "Granja Sul",
+            "state": "PR",
+            "region": "Sul",
+        },
+        {
+            "dataset": "dim_farm",
+            "_sync_run": run,
+            "farm_id": 2,
+            "enterprise_id": 99,
+            "farm_name": "Granja Centro",
+            "state": "MT",
+            "region": "Centro-Oeste",
+        },
+        {
+            "dataset": "dim_farm",
+            "_sync_run": run,
+            "farm_id": 3,
+            "enterprise_id": 99,
+            "farm_name": "Granja Sudeste",
+            "state": "SP",
+            "region": "Sudeste",
+        },
+        {
+            "dataset": "fact_lot",
+            "_sync_run": run,
+            "farm_id": 1,
+            "enterprise_id": 99,
+            "delivery_date": datetime(now.year, 2, 1, tzinfo=UTC),
+            "cost": Decimal128("200000.0"),
+        },
+        {
+            "dataset": "fact_lot",
+            "_sync_run": run,
+            "farm_id": 2,
+            "enterprise_id": 99,
+            "delivery_date": datetime(now.year, 2, 1, tzinfo=UTC),
+            "cost": Decimal128("100000.0"),
+        },
+        {
+            "dataset": "fact_lot",
+            "_sync_run": run,
+            "farm_id": 3,
+            "enterprise_id": 99,
+            "delivery_date": datetime(now.year, 2, 1, tzinfo=UTC),
+            "cost": Decimal128("50000.0"),
+        },
+    ]
+    state = [
+        {
+            "_id": "production_to_mongodb_poc",
+            "status": "success",
+            "run_id": run,
+            "last_success_at": now,
+        }
+    ]
+
+    repo = object.__new__(AnalyticsRepository)
+    repo._retry_after = 0.0
+    repo.retry_backoff_seconds = 0.0
+    repo._client = MockMongoClient()
+    repo._database = {
+        "poc_sync_state": MockCollection(state),
+        "poc_analytics_rows": MockCollection(rows),
+        "poc_farm_monthly": MockCollection([]),
+        "poc_metric_buckets": MockCollection([]),
+    }
+
+    provider = AnalyticsDashboardProvider(repo)
+    service = UserDashboardService(provider)
+    app.state.user_dashboard_service = service
+    app.dependency_overrides[require_user_bearer] = lambda: make_principal(99)
+
+    client = TestClient(app)
+    res = client.get("/v1/user/dashboards/corporate/charts/cost-by-region/data")
+    assert res.status_code == 200
+    resp_rows = res.json()
+    reg_map = {r["region"]: r for r in resp_rows}
+
+    # Regions with 50k, 100k, and 200k must have differentiated colors from FIGMA_GRADIENT
+    color_50k = reg_map["Sudeste"]["color"]
+    color_100k = reg_map["Centro-Oeste"]["color"]
+    color_200k = reg_map["Sul"]["color"]
+
+    assert color_50k in FIGMA_GRADIENT
+    assert color_100k in FIGMA_GRADIENT
+    assert color_200k in FIGMA_GRADIENT
+    # Colors must NOT all be identical (no monochromatic 1.0M- bug)
+    assert color_50k != color_200k

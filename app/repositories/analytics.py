@@ -369,8 +369,41 @@ def _lot_cohort(chickens: Decimal) -> str:
     return "175k+"
 
 
+FIGMA_GRADIENT = (
+    "#5A53FF",
+    "#332BF2",
+    "#1A12C3",
+    "#110B95",
+    "#1E1354",
+    "#0E0925",
+)
+
+
+def calcular_passo_amigavel(amplitude: float, num_baldes: int = 5) -> int:
+    """Calcula um step elegante para qualquer volume ou ordem de grandeza."""
+    if amplitude <= 0:
+        return 5000
+
+    passo_bruto = amplitude / num_baldes
+    ordem = 10 ** math.floor(math.log10(passo_bruto))
+    fracao = passo_bruto / ordem
+
+    if fracao <= 1.0:
+        fator = 1.0
+    elif fracao <= 2.0:
+        fator = 2.0
+    elif fracao <= 2.5:
+        fator = 2.5
+    elif fracao <= 5.0:
+        fator = 5.0
+    else:
+        fator = 10.0
+
+    return max(1000, int(fator * ordem))
+
+
 def calcular_step_amigavel(valor_bruto: float) -> int:
-    """Arredonda o step para múltiplos elegantes de 2.500, 5.000, 10.000, 20.000, 25.000 ou 50.000."""
+    """Compatibilidade retroativa: arredonda o step para multiplos de 2.5k a 50k."""
     if valor_bruto <= 2500:
         return 2500
     if valor_bruto <= 5000:
@@ -389,12 +422,17 @@ def calcular_step_amigavel(valor_bruto: float) -> int:
     return int(fator * expoente)
 
 
-def _format_k(val: int) -> str:
-    if val == 0:
+def _format_k(val: float) -> str:
+    val_num = float(val)
+    if val_num == 0:
         return "0"
-    if val % 1000 == 0:
-        return f"{val // 1000}k"
-    return f"{val / 1000:g}k"
+    if val_num >= 1_000_000:
+        if val_num % 1_000_000 == 0:
+            return f"{int(val_num // 1_000_000)}.0M"
+        return f"{val_num / 1_000_000:.1f}M"
+    if val_num % 1000 == 0:
+        return f"{int(val_num // 1000)}k"
+    return f"{val_num / 1000:g}k"
 
 
 def _format_cohort_label(piso: int, teto: int) -> str:
@@ -412,6 +450,8 @@ def _lot_cost(lot: dict[str, Any]) -> float:
 
 
 def _alocar_lote(bucket: dict[str, Any], birds: int, is_last: bool) -> bool:
+    if birds <= 0:
+        return False
     if bucket["min_birds"] <= birds < bucket["max_birds"]:
         return True
     return is_last and birds >= bucket["min_birds"]
@@ -423,12 +463,16 @@ def _acumular_lotes(
     *,
     is_current: bool,
 ) -> None:
+    if not resultado:
+        return
     cost_key = "current_year_cost" if is_current else "previous_year_cost"
     lots_key = "current_year_lots" if is_current else "previous_year_lots"
     last_idx = len(resultado) - 1
 
     for lote in lotes:
         birds = _lot_birds(lote)
+        if birds <= 0:
+            continue
         cost = _lot_cost(lote)
         for i, bucket in enumerate(resultado):
             if _alocar_lote(bucket, birds, i == last_idx):
@@ -437,27 +481,27 @@ def _acumular_lotes(
                 break
 
 
-def _construir_faixas(
-    min_size: int, max_size: int, num_baldes: int
-) -> list[tuple[int, int, str]]:
-    if max_size - min_size < 5000:
-        step = 10000
-        teto = max(step, math.ceil(max_size / step) * step)
-        piso = max(0, teto - step)
-        return [(piso, teto, _format_cohort_label(piso, teto))]
-
-    step_bruto = (max_size - min_size) / num_baldes
-    step = calcular_step_amigavel(step_bruto)
-    piso_inicial = (min_size // step) * step
-    teto_final = (math.ceil(max_size / step) + 1) * step
-
-    faixas = []
-    atual = piso_inicial
-    while atual < teto_final and len(faixas) < 7:
-        proximo = atual + step
-        faixas.append((atual, proximo, _format_cohort_label(atual, proximo)))
-        atual = proximo
-    return faixas
+def _aparar_pontas_vazias(resultado: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    primeiro = next(
+        (
+            i
+            for i, b in enumerate(resultado)
+            if b["current_year_lots"] > 0 or b["previous_year_lots"] > 0
+        ),
+        None,
+    )
+    ultimo = next(
+        (
+            i
+            for i in range(len(resultado) - 1, -1, -1)
+            if resultado[i]["current_year_lots"] > 0
+            or resultado[i]["previous_year_lots"] > 0
+        ),
+        None,
+    )
+    if primeiro is not None and ultimo is not None:
+        return resultado[primeiro : ultimo + 1]
+    return resultado
 
 
 def gerar_histograma_adaptativo(
@@ -465,39 +509,86 @@ def gerar_histograma_adaptativo(
     lotes_ano_passado: list[dict[str, Any]],
     num_baldes: int = 5,
 ) -> list[dict[str, Any]]:
-    todos = [
-        _lot_birds(l) for l in (lotes_este_ano + lotes_ano_passado) if _lot_birds(l) > 0
-    ]
+    validos_este_ano = [l for l in lotes_este_ano if _lot_birds(l) > 0]
+    validos_ano_passado = [l for l in lotes_ano_passado if _lot_birds(l) > 0]
+    todos = [_lot_birds(l) for l in (validos_este_ano + validos_ano_passado)]
+
     if not todos:
         return []
 
-    faixas = _construir_faixas(min(todos), max(todos), num_baldes)
+    min_size, max_size = min(todos), max(todos)
+    step = calcular_passo_amigavel(max_size - min_size, num_baldes)
+
+    piso_inicial = (min_size // step) * step
+    teto_final = math.ceil(max_size / step) * step
+    if teto_final == piso_inicial:
+        teto_final = piso_inicial + step
+
+    faixas = []
+    atual = piso_inicial
+    while atual < teto_final:
+        proximo = atual + step
+        faixas.append((atual, proximo, _format_cohort_label(atual, proximo)))
+        atual = proximo
+
     resultado = [
         {
             "cohort": rotulo,
-            "min_birds": piso,
-            "max_birds": teto,
+            "min_birds": p,
+            "max_birds": t,
             "previous_year_cost": 0.0,
             "current_year_cost": 0.0,
             "previous_year_lots": 0,
             "current_year_lots": 0,
         }
-        for piso, teto, rotulo in faixas
+        for p, t, rotulo in faixas
     ]
 
-    _acumular_lotes(resultado, lotes_ano_passado, is_current=False)
-    _acumular_lotes(resultado, lotes_este_ano, is_current=True)
+    _acumular_lotes(resultado, validos_ano_passado, is_current=False)
+    _acumular_lotes(resultado, validos_este_ano, is_current=True)
 
-    for bucket in resultado:
-        bucket["previous_year_cost"] = round(bucket["previous_year_cost"], 2)
-        bucket["current_year_cost"] = round(bucket["current_year_cost"], 2)
+    for b in resultado:
+        b["previous_year_cost"] = round(b["previous_year_cost"], 2)
+        b["current_year_cost"] = round(b["current_year_cost"], 2)
 
-    populated = [
-        b
-        for b in resultado
-        if b["previous_year_lots"] > 0 or b["current_year_lots"] > 0
-    ]
-    return populated or resultado
+    return _aparar_pontas_vazias(resultado)
+
+
+def _calcular_faixas_custo_dinamicas(
+    custos: list[float], num_baldes: int = 6
+) -> list[tuple[str, float, float | None, str]]:
+    custos_positivos = [c for c in custos if c > 0]
+    if not custos_positivos:
+        return [("Sem dados", 0.0, None, FIGMA_GRADIENT[0])]
+
+    min_val = min(custos_positivos)
+    max_val = max(custos_positivos)
+    amplitude = max_val - min_val if max_val > min_val else max_val
+
+    step = float(calcular_passo_amigavel(amplitude, num_baldes))
+    piso = math.floor(min_val / step) * step
+    teto = math.ceil(max_val / step) * step
+    if teto == piso:
+        teto = piso + step
+
+    faixas = []
+    atual = piso
+    idx_cor = 0
+    total_cores = len(FIGMA_GRADIENT)
+
+    while atual < teto:
+        proximo = atual + step
+        cor = FIGMA_GRADIENT[min(idx_cor, total_cores - 1)]
+        rotulo = (
+            f"R$ {_format_k(int(atual))} - {_format_k(int(proximo))}"
+            if atual > 0
+            else f"Ate R$ {_format_k(int(proximo))}"
+        )
+        faixas.append((rotulo, atual, proximo, cor))
+        atual = proximo
+        idx_cor += 1
+
+    return faixas
 
 
 def _calculate_dynamic_cost_buckets(
@@ -505,78 +596,10 @@ def _calculate_dynamic_cost_buckets(
     regional_costs: dict[str, float] | None = None,
 ) -> list[dict[str, Any]]:
     costs = [_number(lot.get("cost")) for lot in lots]
-    max_cost = max(costs, default=Decimal(0))
+    costs_f = [float(c) for c in costs if c > Decimal(0)]
     total_lots = len(costs)
 
-    if max_cost >= Decimal(1_000_000):
-        # Scale matching Figma: 1.0M-, 1.0M, 1.5M, 2.0M, 2.5M, 3.0M+
-        bucket_defs: list[tuple[str, float, float | None, str]] = [
-            ("1.0M-", 0.0, 1_000_000.0, "#5A53FF"),
-            ("1.0M", 1_000_000.0, 1_500_000.0, "#332BF2"),
-            ("1.5M", 1_500_000.0, 2_000_000.0, "#1A12C3"),
-            ("2.0M", 2_000_000.0, 2_500_000.0, "#110B95"),
-            ("2.5M", 2_500_000.0, 3_000_000.0, "#1E1354"),
-            ("3.0M+", 3_000_000.0, None, "#0E0925"),
-        ]
-    elif max_cost >= Decimal(150_000):
-        if max_cost >= Decimal(500_000):
-            bucket_defs = [
-                ("Até R$ 250k", 0.0, 250_000.0, "#5A53FF"),
-                ("R$ 250k - 500k", 250_000.0, 500_000.0, "#1A12C3"),
-                ("R$ 500k - 750k", 500_000.0, 750_000.0, "#110B95"),
-                ("R$ 750k - 1.0M", 750_000.0, 1_000_000.0, "#1E1354"),
-                ("R$ 1.0M+", 1_000_000.0, None, "#0E0925"),
-            ]
-        else:
-            bucket_defs = [
-                ("Até R$ 100k", 0.0, 100_000.0, "#5A53FF"),
-                ("R$ 100k - 200k", 100_000.0, 200_000.0, "#332BF2"),
-                ("R$ 200k - 300k", 200_000.0, 300_000.0, "#110B95"),
-                ("R$ 300k - 400k", 300_000.0, 400_000.0, "#1E1354"),
-                ("R$ 400k+", 400_000.0, None, "#0E0925"),
-            ]
-    elif max_cost >= Decimal(50_000):
-        bucket_defs = [
-            ("Até R$ 25k", 0.0, 25_000.0, "#5A53FF"),
-            ("R$ 25k - 50k", 25_000.0, 50_000.0, "#1A12C3"),
-            ("R$ 50k - 75k", 50_000.0, 75_000.0, "#110B95"),
-            ("R$ 75k - 100k", 75_000.0, 100_000.0, "#1E1354"),
-            ("R$ 100k+", 100_000.0, None, "#0E0925"),
-        ]
-    elif max_cost >= Decimal(25_000):
-        bucket_defs = [
-            ("Até R$ 10k", 0.0, 10_000.0, "#5A53FF"),
-            ("R$ 10k - 20k", 10_000.0, 20_000.0, "#332BF2"),
-            ("R$ 20k - 30k", 20_000.0, 30_000.0, "#1A12C3"),
-            ("R$ 30k - 40k", 30_000.0, 40_000.0, "#110B95"),
-            ("R$ 40k - 50k", 40_000.0, 50_000.0, "#1E1354"),
-            ("R$ 50k+", 50_000.0, None, "#0E0925"),
-        ]
-    elif max_cost >= Decimal(50):
-        bucket_defs = [
-            ("Até R$ 5k", 0.0, 5_000.0, "#5A53FF"),
-            ("R$ 5k - 10k", 5_000.0, 10_000.0, "#332BF2"),
-            ("R$ 10k - 15k", 10_000.0, 15_000.0, "#110B95"),
-            ("R$ 15k - 20k", 15_000.0, 20_000.0, "#1E1354"),
-            ("R$ 20k+", 20_000.0, None, "#0E0925"),
-        ]
-    elif max_cost > Decimal(0):
-        bucket_defs = [
-            ("Até R$ 5", 0.0, 5.0, "#5A53FF"),
-            ("R$ 5 - 10", 5.0, 10.0, "#332BF2"),
-            ("R$ 10 - 15", 10.0, 15.0, "#110B95"),
-            ("R$ 15 - 20", 15.0, 20.0, "#1E1354"),
-            ("R$ 20+", 20.0, None, "#0E0925"),
-        ]
-    else:
-        bucket_defs = [
-            ("1.0M-", 0.0, 1_000_000.0, "#5A53FF"),
-            ("1.0M", 1_000_000.0, 1_500_000.0, "#332BF2"),
-            ("1.5M", 1_500_000.0, 2_000_000.0, "#1A12C3"),
-            ("2.0M", 2_000_000.0, 2_500_000.0, "#110B95"),
-            ("2.5M", 2_500_000.0, 3_000_000.0, "#1E1354"),
-            ("3.0M+", 3_000_000.0, None, "#0E0925"),
-        ]
+    bucket_defs = _calcular_faixas_custo_dinamicas(costs_f, num_baldes=6)
 
     counts: dict[str, int] = defaultdict(int)
     totals: dict[str, Decimal] = defaultdict(Decimal)
@@ -584,8 +607,14 @@ def _calculate_dynamic_cost_buckets(
 
     for cost in costs:
         cost_f = float(cost)
-        for label, low, high, _color in bucket_defs:
-            if high is not None:
+        for i, (label, low, high, _color) in enumerate(bucket_defs):
+            is_first = i == 0
+            is_last = i == len(bucket_defs) - 1
+            if is_first and cost_f < low:
+                counts[label] += 1
+                totals[label] += cost
+                break
+            if high is not None and not is_last:
                 if low <= cost_f < high:
                     counts[label] += 1
                     totals[label] += cost
@@ -598,8 +627,13 @@ def _calculate_dynamic_cost_buckets(
 
     if regional_costs:
         for reg, r_cost in regional_costs.items():
-            for label, low, high, _color in bucket_defs:
-                if high is not None:
+            for i, (label, low, high, _color) in enumerate(bucket_defs):
+                is_first = i == 0
+                is_last = i == len(bucket_defs) - 1
+                if is_first and r_cost < low:
+                    bucket_regions[label].append(reg)
+                    break
+                if high is not None and not is_last:
                     if low <= r_cost < high:
                         bucket_regions[label].append(reg)
                         break
@@ -633,7 +667,24 @@ def _calculate_dynamic_cost_buckets(
     return result
 
 
-def _resolve_bucket_and_color(curr_total: float) -> tuple[str, str]:
+def _resolve_bucket_and_color(
+    curr_total: float,
+    faixas: list[tuple[str, float, float | None, str]] | None = None,
+) -> tuple[str, str]:
+    if faixas:
+        for i, (label, low, high, color) in enumerate(faixas):
+            is_first = i == 0
+            is_last = i == len(faixas) - 1
+            if is_first and curr_total < low:
+                return color, label
+            if high is not None and not is_last:
+                if low <= curr_total < high:
+                    return color, label
+            else:
+                if curr_total >= low:
+                    return color, label
+        return faixas[0][3], faixas[0][0]
+
     if curr_total >= 3_000_000:
         return "#0E0925", "3.0M+"
     if curr_total >= 2_500_000:
@@ -647,7 +698,10 @@ def _resolve_bucket_and_color(curr_total: float) -> tuple[str, str]:
     return "#5A53FF", "1.0M-"
 
 
-def _corporate_filters(all_farms: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _corporate_filters(
+    all_farms: list[dict[str, Any]],
+    records: Any | None = None,
+) -> list[dict[str, Any]]:
     states = sorted(
         {
             str(f.get("state") or f.get("uf"))
@@ -670,10 +724,22 @@ def _corporate_filters(all_farms: list[dict[str, Any]]) -> list[dict[str, Any]]:
             )
         }
     )
+    anos_encontrados: set[int] = set()
+    if records is not None:
+        try:
+            for l in records(ROWS, "fact_lot"):
+                dt_val = l.get("delivery_date") or l.get("date")
+                if dt_val:
+                    anos_encontrados.add(_day(dt_val).year)
+        except (AnalyticsQueryError, KeyError, ValueError, TypeError):
+            pass
+
     now_year = datetime.now(UTC).year
-    periods = [
-        f"Ano {now_year}",
-        f"Ano {now_year - 1}",
+    anos_encontrados.add(now_year)
+    anos_encontrados.add(now_year - 1)
+    anos_disponiveis = sorted(anos_encontrados, reverse=True)
+
+    periods = [f"Ano {ano}" for ano in anos_disponiveis] + [
         "Últimos 30 dias",
         "Últimos 90 dias",
     ]
@@ -694,8 +760,9 @@ def _corporate_kpis(
     filter_mgmt: str | None,
 ) -> list[dict[str, Any]]:
     now_year = datetime.now(UTC).year
-    prev_year = now_year - 1
     target_year, target_month = _parse_month_filter(extra_filters.get("month"))
+    effective_curr_year = target_year or now_year
+    effective_prev_year = effective_curr_year - 1
 
     lots = [
         lot
@@ -714,18 +781,22 @@ def _corporate_kpis(
         cost = _number(lot.get("cost"))
         chickens = _number(lot.get("received_chickens"))
 
-        if d.year == now_year and (target_month is None or d.month == target_month):
+        if d.year == effective_curr_year and (
+            target_month is None or d.month == target_month
+        ):
             spend_curr += cost
             curr_year_lots_count += 1
-        elif d.year == prev_year and (target_month is None or d.month == target_month):
+        elif d.year == effective_prev_year and (
+            target_month is None or d.month == target_month
+        ):
             spend_prev += cost
 
         if (
             target_month is not None
-            and d.year == (target_year or now_year)
+            and d.year == effective_curr_year
             and d.month == target_month
             or target_month is None
-            and d.year == now_year
+            and d.year == effective_curr_year
         ):
             total_cost_scope += cost
             total_chickens_scope += chickens
@@ -733,6 +804,7 @@ def _corporate_kpis(
     if (
         total_chickens_scope == Decimal(0)
         and target_month is None
+        and target_year is None
         and not filter_state
         and not filter_mgmt
     ):
@@ -748,36 +820,37 @@ def _corporate_kpis(
     has_active_filter = (
         curr_year_lots_count > 0
         or target_month is not None
-        or filter_state
-        or filter_mgmt
+        or target_year is not None
+        or bool(filter_state)
+        or bool(filter_mgmt)
     )
-    total_lots = curr_year_lots_count if has_active_filter else len(lots)
+    total_lots_val = curr_year_lots_count if has_active_filter else len(lots)
 
     return [
         {
             "spend_previous_year": {
-                "value": _rounded(spend_prev, 2),
-                "formatted": _format_currency_brl(_rounded(spend_prev, 2)),
+                "value": float(_rounded(spend_prev, 2)),
+                "formatted": _format_currency_brl(float(_rounded(spend_prev, 2))),
                 "unit": "R$",
-                "year": prev_year,
+                "year": effective_prev_year,
             },
             "spend_current_year": {
-                "value": _rounded(spend_curr, 2),
-                "formatted": _format_currency_brl(_rounded(spend_curr, 2)),
+                "value": float(_rounded(spend_curr, 2)),
+                "formatted": _format_currency_brl(float(_rounded(spend_curr, 2))),
                 "unit": "R$",
-                "year": now_year,
+                "year": effective_curr_year,
             },
             "avg_cost_per_bird": {
                 "value": avg_cost_per_bird,
-                "formatted": f"R$ {avg_cost_per_bird:.2f}".replace(".", ","),
+                "formatted": _format_currency_brl(avg_cost_per_bird),
                 "unit": "R$/ave",
-                "year": now_year,
+                "year": effective_curr_year,
             },
             "total_lots": {
-                "value": float(total_lots),
-                "formatted": str(total_lots),
+                "value": float(total_lots_val),
+                "formatted": str(total_lots_val),
                 "unit": "lotes",
-                "year": None,
+                "year": effective_curr_year,
             },
         }
     ]
@@ -828,6 +901,7 @@ def _corporate_trend(
 def _corporate_cost_distribution_buckets(
     scoped_farm_ids: set[Any],
     all_farms: list[dict[str, Any]],
+    target_year: int | None,
     target_month: int | None,
     records: Any,
 ) -> list[dict[str, Any]]:
@@ -837,7 +911,7 @@ def _corporate_cost_distribution_buckets(
         for lot in records(ROWS, "fact_lot")
         if lot.get("farm_id") in scoped_farm_ids
     ]
-    now_year = datetime.now(UTC).year
+    effective_curr_year = target_year or datetime.now(UTC).year
     regional_totals = defaultdict(float)
     filtered_lots = []
     for lot in lots:
@@ -845,7 +919,7 @@ def _corporate_cost_distribution_buckets(
         if target_month is not None and d.month != target_month:
             continue
         filtered_lots.append(lot)
-        if d.year == now_year:
+        if d.year == effective_curr_year:
             reg = _resolve_region(farm_by_id.get(lot.get("farm_id")), lot)
             regional_totals[reg] += float(_number(lot.get("cost")))
     return _calculate_dynamic_cost_buckets(filtered_lots, regional_totals)
@@ -853,11 +927,12 @@ def _corporate_cost_distribution_buckets(
 
 def _corporate_cost_by_lot_size_cohort(
     scoped_farm_ids: set[Any],
+    target_year: int | None,
     target_month: int | None,
     records: Any,
 ) -> list[dict[str, Any]]:
-    now_year = datetime.now(UTC).year
-    prev_year = now_year - 1
+    effective_curr_year = target_year or datetime.now(UTC).year
+    effective_prev_year = effective_curr_year - 1
     lots = [
         lot
         for lot in records(ROWS, "fact_lot")
@@ -871,9 +946,9 @@ def _corporate_cost_by_lot_size_cohort(
         d = _day(lot.get("delivery_date") or lot.get("date") or datetime.now(UTC))
         if target_month is not None and d.month != target_month:
             continue
-        if d.year == now_year:
+        if d.year == effective_curr_year:
             lotes_este_ano.append(lot)
-        elif d.year == prev_year:
+        elif d.year == effective_prev_year:
             lotes_ano_passado.append(lot)
 
     return gerar_histograma_adaptativo(lotes_este_ano, lotes_ano_passado)
@@ -882,11 +957,12 @@ def _corporate_cost_by_lot_size_cohort(
 def _corporate_cost_by_region(
     scoped_farm_ids: set[Any],
     all_farms: list[dict[str, Any]],
+    target_year: int | None,
     target_month: int | None,
     records: Any,
 ) -> list[dict[str, Any]]:
-    now_year = datetime.now(UTC).year
-    prev_year = now_year - 1
+    effective_curr_year = target_year or datetime.now(UTC).year
+    effective_prev_year = effective_curr_year - 1
     farm_by_id = {f["farm_id"]: f for f in all_farms if f.get("farm_id") is not None}
 
     curr_lots_costs: dict[str, list[Decimal]] = defaultdict(list)
@@ -902,18 +978,32 @@ def _corporate_cost_by_region(
         cost = _number(lot.get("cost"))
         farm_doc = farm_by_id.get(fid)
         region = _resolve_region(farm_doc, lot)
-        if d.year == now_year:
+        if d.year == effective_curr_year:
             curr_lots_costs[region].append(cost)
-        elif d.year == prev_year:
+        elif d.year == effective_prev_year:
             prev_lots_costs[region].append(cost)
 
-    result: list[dict[str, Any]] = []
+    reg_stats = {}
     for reg in REGIONS:
         curr_stats = _calc_box_stats(curr_lots_costs[reg])
         prev_stats = _calc_box_stats(prev_lots_costs[reg])
+        reg_stats[reg] = (curr_stats, prev_stats)
+
+    curr_totals = [
+        float(stats[0]["total_cost"])
+        for stats in reg_stats.values()
+        if stats[0]["total_cost"] > 0
+    ]
+    faixas = _calcular_faixas_custo_dinamicas(
+        curr_totals, num_baldes=len(FIGMA_GRADIENT)
+    )
+
+    result: list[dict[str, Any]] = []
+    for reg in REGIONS:
+        curr_stats, prev_stats = reg_stats[reg]
         curr_total = curr_stats["total_cost"]
         prev_total = prev_stats["total_cost"]
-        color, bucket_name = _resolve_bucket_and_color(curr_total)
+        color, bucket_name = _resolve_bucket_and_color(curr_total, faixas=faixas)
 
         result.append(
             {
@@ -932,10 +1022,11 @@ def _corporate_cost_by_region(
 
 def _corporate_monthly_cost(
     scoped_farm_ids: set[Any],
+    target_year: int | None,
     records: Any,
 ) -> list[dict[str, Any]]:
-    now_year = datetime.now(UTC).year
-    prev_year = now_year - 1
+    effective_curr_year = target_year or datetime.now(UTC).year
+    effective_prev_year = effective_curr_year - 1
     curr_by_month: dict[int, Decimal] = defaultdict(Decimal)
     prev_by_month: dict[int, Decimal] = defaultdict(Decimal)
 
@@ -944,9 +1035,9 @@ def _corporate_monthly_cost(
             continue
         d = _day(lot.get("delivery_date") or lot.get("date") or datetime.now(UTC))
         cost = _number(lot.get("cost"))
-        if d.year == now_year:
+        if d.year == effective_curr_year:
             curr_by_month[d.month] += cost
-        elif d.year == prev_year:
+        elif d.year == effective_prev_year:
             prev_by_month[d.month] += cost
 
     return [
@@ -959,6 +1050,34 @@ def _corporate_monthly_cost(
         }
         for m in range(1, 13)
     ]
+
+
+def _exec_corporate_charts(
+    operation: str,
+    scoped_farm_ids: set[Any],
+    all_farms: list[dict[str, Any]],
+    target_year: int | None,
+    target_month: int | None,
+    cutoff: datetime | None,
+    records: Any,
+) -> list[dict[str, Any]]:
+    if operation in {"trend_kwh_aves", "trend_liters_aves"}:
+        return _corporate_trend(operation, scoped_farm_ids, cutoff, records)
+    if operation == "cost_distribution_buckets":
+        return _corporate_cost_distribution_buckets(
+            scoped_farm_ids, all_farms, target_year, target_month, records
+        )
+    if operation == "cost_by_lot_size_cohort":
+        return _corporate_cost_by_lot_size_cohort(
+            scoped_farm_ids, target_year, target_month, records
+        )
+    if operation == "cost_by_region":
+        return _corporate_cost_by_region(
+            scoped_farm_ids, all_farms, target_year, target_month, records
+        )
+    if operation == "monthly_cost":
+        return _corporate_monthly_cost(scoped_farm_ids, target_year, records)
+    raise AnalyticsQueryError(f"Unknown corporate operation: {operation}")
 
 
 def _corporate_farms_table(
@@ -1197,27 +1316,11 @@ class AnalyticsRepository:
         }
 
         if operation == "corporate_filters":
-            return _corporate_filters(all_farms)
+            return _corporate_filters(all_farms, records)
         if operation == "corporate_kpis":
             return _corporate_kpis(
                 scoped_farm_ids, extra_filters, records, filter_state, filter_mgmt
             )
-        if operation in {"trend_kwh_aves", "trend_liters_aves"}:
-            return _corporate_trend(operation, scoped_farm_ids, cutoff, records)
-        if operation == "cost_distribution_buckets":
-            return _corporate_cost_distribution_buckets(
-                scoped_farm_ids, all_farms, target_month, records
-            )
-        if operation == "cost_by_lot_size_cohort":
-            return _corporate_cost_by_lot_size_cohort(
-                scoped_farm_ids, target_month, records
-            )
-        if operation == "cost_by_region":
-            return _corporate_cost_by_region(
-                scoped_farm_ids, all_farms, target_month, records
-            )
-        if operation == "monthly_cost":
-            return _corporate_monthly_cost(scoped_farm_ids, records)
         if operation == "corporate_farms_table":
             return _corporate_farms_table(
                 scoped_farms,
@@ -1227,7 +1330,15 @@ class AnalyticsRepository:
                 extra_filters,
                 records,
             )
-        raise AnalyticsQueryError(f"Unknown corporate operation: {operation}")
+        return _exec_corporate_charts(
+            operation,
+            scoped_farm_ids,
+            all_farms,
+            target_year,
+            target_month,
+            cutoff,
+            records,
+        )
 
     def _fetch_sync(
         self, operation: str, args: tuple[Any, ...]
