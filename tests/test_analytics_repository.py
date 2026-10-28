@@ -341,21 +341,27 @@ async def test_corporate_charts_operations():
     assert liters_rows[0]["chickens"] == 1100
     assert liters_rows[0]["water_liters"] == 50000.0  # (30 + 20) * 1000
 
-    # cost_distribution_buckets
+    # cost_distribution_buckets (Adaptive bucketing)
     bucket_rows = await repo.fetch("cost_distribution_buckets", "", None, 3)
-    assert len(bucket_rows) == 6
-    assert bucket_rows[0]["bucket"] == "< 1.0M"
-    assert bucket_rows[0]["count"] == 3  # all 3 lots are < 1M
+    assert len(bucket_rows) == 5
+    assert bucket_rows[0]["bucket"] == "Até R$ 5"
+    assert bucket_rows[0]["count"] == 0
+    assert bucket_rows[1]["bucket"] == "R$ 5 - 10"
+    assert bucket_rows[1]["count"] == 1
+    assert bucket_rows[1]["total_cost"] == 7.50
+    assert bucket_rows[1]["percentage"] == 33.3
 
-    # cost_by_lot_size_cohort
+    # cost_by_lot_size_cohort (Dynamic cohorts)
     cohort_rows = await repo.fetch("cost_by_lot_size_cohort", "", None, 3)
-    assert len(cohort_rows) == 7
-    # 0-50k has all lots (received 100, 50, 120 < 50k)
-    assert cohort_rows[0]["cohort"] == "0-50k"
+    assert len(cohort_rows) == 6
+    # 0-10k has all lots (received 100, 50, 120 < 10k)
+    assert cohort_rows[0]["cohort"] == "0-10k"
     assert cohort_rows[0]["current_year_cost"] == 20.0
     assert cohort_rows[0]["previous_year_cost"] == 15.0
+    assert cohort_rows[0]["current_year_lots"] == 2
+    assert cohort_rows[0]["previous_year_lots"] == 1
 
-    # cost_by_region
+    # cost_by_region (5 macroregions)
     region_rows = await repo.fetch("cost_by_region", "", None, 3)
     assert len(region_rows) == 5
     region_map = {r["region"]: r for r in region_rows}
@@ -363,9 +369,14 @@ async def test_corporate_charts_operations():
     assert region_map["Sudeste"]["previous_year_cost"] == 15.00
     assert region_map["Centro-Oeste"]["current_year_cost"] == 7.50
 
-    # monthly_cost
+    # monthly_cost (12 calendar months Jan-Dez)
     monthly_rows = await repo.fetch("monthly_cost", "", None, 3)
-    assert len(monthly_rows) >= 1
+    assert len(monthly_rows) == 12
+    assert monthly_rows[0]["month"] == 1
+    assert monthly_rows[0]["month_label"] == "Jan"
+    assert "previous_year_cost" in monthly_rows[0]
+    assert "current_year_cost" in monthly_rows[0]
+    assert "cost" in monthly_rows[0]
 
 
 @pytest.mark.asyncio
@@ -397,3 +408,88 @@ async def test_corporate_filters_operation():
     assert "SP" in f["states"]
     assert "GO" in f["states"]
     assert "Regional Sudeste" in f["regional_managements"]
+
+
+def test_resolve_region_hierarchical():
+    from app.repositories.analytics import _resolve_region
+
+    # 1. Direct region field takes priority
+    assert _resolve_region({"region": "sudeste"}) == "Sudeste"
+    assert _resolve_region({"region": "sul"}) == "Sul"
+    assert _resolve_region({}, {"region": "norte"}) == "Norte"
+    assert _resolve_region({"region": "centro-oeste"}) == "Centro-Oeste"
+
+    # 2. State / UF mapping
+    assert _resolve_region({"state": "SP"}) == "Sudeste"
+    assert _resolve_region({"uf": "PR"}) == "Sul"
+    assert _resolve_region({"state": "BA"}) == "Nordeste"
+    assert _resolve_region({"state": "MT"}) == "Centro-Oeste"
+    assert _resolve_region({"state": "PA"}) == "Norte"
+
+    # 3. Regional management text matching
+    assert _resolve_region({"regional_management": "Regional Sudeste 1"}) == "Sudeste"
+    assert _resolve_region({"management": "Gerencia Sul"}) == "Sul"
+
+    # 4. Fallback
+    assert _resolve_region({}) == "Centro-Oeste"
+
+
+def test_calculate_dynamic_cost_buckets():
+    from app.repositories.analytics import _calculate_dynamic_cost_buckets
+
+    # 1. Commercial poultry scale (max ~40k)
+    lots_commercial = [
+        {"cost": 8500.0},
+        {"cost": 15000.0},
+        {"cost": 22000.0},
+        {"cost": 38000.0},
+    ]
+    buckets = _calculate_dynamic_cost_buckets(lots_commercial)
+    assert len(buckets) == 6
+    assert buckets[0]["bucket"] == "Até R$ 10k"
+    assert buckets[0]["count"] == 1
+    assert buckets[1]["bucket"] == "R$ 10k - 20k"
+    assert buckets[1]["count"] == 1
+    assert buckets[2]["bucket"] == "R$ 20k - 30k"
+    assert buckets[2]["count"] == 1
+    assert buckets[3]["bucket"] == "R$ 30k - 40k"
+    assert buckets[3]["count"] == 1
+    assert buckets[4]["bucket"] == "R$ 40k - 50k"
+    assert buckets[4]["count"] == 0
+
+    # 2. Million scale (matching Figma mockup)
+    lots_million = [
+        {"cost": 800000.0},
+        {"cost": 1200000.0},
+        {"cost": 2100000.0},
+    ]
+    buckets_m = _calculate_dynamic_cost_buckets(lots_million)
+    assert len(buckets_m) == 6
+    assert buckets_m[0]["bucket"] == "Até 1.0M"
+    assert buckets_m[0]["count"] == 1
+    assert buckets_m[1]["bucket"] == "1.0M - 1.5M"
+    assert buckets_m[1]["count"] == 1
+    assert buckets_m[3]["bucket"] == "2.0M - 2.5M"
+    assert buckets_m[3]["count"] == 1
+
+
+def test_calculate_dynamic_cohorts():
+    from app.repositories.analytics import _calculate_dynamic_cohorts
+
+    # Small flock (< 60k)
+    c_small = _calculate_dynamic_cohorts([{"received_chickens": 35000}])
+    assert len(c_small) == 6
+    assert c_small[0][0] == "0-10k"
+    assert c_small[-1][0] == "50k+"
+
+    # Medium flock (60k-120k)
+    c_med = _calculate_dynamic_cohorts([{"received_chickens": 90000}])
+    assert len(c_med) == 6
+    assert c_med[0][0] == "0-20k"
+    assert c_med[-1][0] == "100k+"
+
+    # Large flock (> 120k)
+    c_large = _calculate_dynamic_cohorts([{"received_chickens": 150000}])
+    assert len(c_large) == 7
+    assert c_large[0][0] == "0-50k"
+    assert c_large[-1][0] == "175k+"

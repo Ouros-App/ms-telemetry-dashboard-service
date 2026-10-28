@@ -9,6 +9,12 @@ from app.core.auth import Principal, require_user_bearer
 from app.main import app
 from app.providers.analytics import AnalyticsDashboardProvider
 from app.repositories.analytics import AnalyticsRepository
+from app.schemas.user_dashboards import (
+    CorporateCostBucketItem,
+    CorporateCostByLotSizeCohortItem,
+    CorporateCostByRegionItem,
+    CorporateMonthlyCostItem,
+)
 from app.services.user_dashboard import UserDashboardService
 
 
@@ -277,25 +283,69 @@ def test_company_employee_get_corporate_chart_data():
     assert "water_liters" in rows[0]
     assert rows[0]["water_liters"] == 1500000.0  # 1500 m3 * 1000
 
-    # 3. cost-distribution-buckets
+    # 3. cost-distribution-buckets (Adaptive bucketing with million-scale lots)
     res = client.get("/v1/user/dashboards/corporate/charts/cost-distribution-buckets/data")
     assert res.status_code == 200
     rows = res.json()
     assert len(rows) == 6
+    assert rows[0]["bucket"] == "Até 1.0M"
+    assert rows[0]["count"] == 1
+    assert rows[0]["value"] == 1
+    assert rows[0]["total_cost"] == 800000.0
+    assert rows[0]["percentage"] == 33.3
+    assert "low" in rows[0]
+    assert "high" in rows[0]
+    for r in rows:
+        CorporateCostBucketItem.model_validate(r)
 
-    # 4. cost-by-lot-size-cohort
+    # 4. cost-by-lot-size-cohort (Dynamic cohorts: 0-10k, 10k-20k, ..., 50k+)
     res = client.get("/v1/user/dashboards/corporate/charts/cost-by-lot-size-cohort/data")
     assert res.status_code == 200
     rows = res.json()
-    assert len(rows) == 7
+    assert len(rows) == 6
+    cohort_map = {r["cohort"]: r for r in rows}
+    assert "0-10k" in cohort_map
+    assert "30k-40k" in cohort_map
+    assert cohort_map["30k-40k"]["current_year_cost"] == 800000.0
+    assert cohort_map["30k-40k"]["current_year_lots"] == 1
+    assert cohort_map["40k-50k"]["previous_year_cost"] == 1000000.0
+    assert cohort_map["40k-50k"]["previous_year_lots"] == 1
+    assert cohort_map["50k+"]["current_year_cost"] == 1200000.0
+    assert cohort_map["50k+"]["current_year_lots"] == 1
+    for r in rows:
+        CorporateCostByLotSizeCohortItem.model_validate(r)
 
-    # 5. cost-by-region
+    # 5. cost-by-region (Macroregions with normalized resolution)
     res = client.get("/v1/user/dashboards/corporate/charts/cost-by-region/data")
     assert res.status_code == 200
     rows = res.json()
     assert len(rows) == 5
+    region_map = {r["region"]: r for r in rows}
+    assert region_map["Centro-Oeste"]["current_year_cost"] == 1200000.0
+    assert region_map["Centro-Oeste"]["previous_year_cost"] == 1000000.0
+    assert region_map["Sudeste"]["current_year_cost"] == 800000.0
+    for r in rows:
+        CorporateCostByRegionItem.model_validate(r)
 
-    # 6. Nonexistent chart returns 404
+    # 6. monthly-cost (12 calendar months Jan-Dez comparative curve)
+    res = client.get("/v1/user/dashboards/corporate/charts/monthly-cost/data")
+    assert res.status_code == 200
+    rows = res.json()
+    assert len(rows) == 12
+    assert rows[0]["month"] == 1
+    assert rows[0]["month_label"] == "Jan"
+    assert rows[3]["month"] == 4
+    assert rows[3]["month_label"] == "Abr"
+    assert rows[3]["previous_year_cost"] == 1000000.0
+    assert rows[3]["current_year_cost"] == 1200000.0
+    assert rows[3]["cost"] == 1200000.0
+    assert rows[4]["month"] == 5
+    assert rows[4]["month_label"] == "Mai"
+    assert rows[4]["current_year_cost"] == 800000.0
+    for r in rows:
+        CorporateMonthlyCostItem.model_validate(r)
+
+    # 7. Nonexistent chart returns 404
     res = client.get("/v1/user/dashboards/corporate/charts/nonexistent/data")
     assert res.status_code == 404
 
@@ -348,3 +398,13 @@ def test_company_employee_corporate_plotly_rendering():
     res_region = client.get("/v1/user/dashboards/corporate/charts/cost-by-region/plotly")
     assert res_region.status_code == 200
     assert "Plotly.newPlot" in res_region.text
+
+    # 4. Donut chart (cost-distribution-buckets)
+    res_buckets = client.get("/v1/user/dashboards/corporate/charts/cost-distribution-buckets/plotly")
+    assert res_buckets.status_code == 200
+    assert "Plotly.newPlot" in res_buckets.text
+
+    # 5. Monthly cost line chart
+    res_monthly = client.get("/v1/user/dashboards/corporate/charts/monthly-cost/plotly")
+    assert res_monthly.status_code == 200
+    assert "Plotly.newPlot" in res_monthly.text

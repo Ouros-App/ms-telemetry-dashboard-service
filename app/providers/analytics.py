@@ -510,11 +510,11 @@ class AnalyticsDashboardProvider:
             id="cost-distribution-buckets",
             dashboard_id="corporate",
             title="Distribuição de Custo dos Lotes",
-            type="bar",
+            type="pie",
             query_name="cost_distribution_buckets",
             x_field="bucket",
             series=[UserChartSeries(field="count", label="Lotes")],
-            render_options=["bar", "pie", "donut"],
+            render_options=["donut", "pie", "bar"],
         ),
         UserChartDefinition(
             id="cost-by-lot-size-cohort",
@@ -548,8 +548,11 @@ class AnalyticsDashboardProvider:
             title="Custo Mensal Consolidado",
             type="line",
             query_name="monthly_cost",
-            x_field="month_start",
-            series=[UserChartSeries(field="cost", label="Custo")],
+            x_field="month_label",
+            series=[
+                UserChartSeries(field="previous_year_cost", label="Ano passado"),
+                UserChartSeries(field="current_year_cost", label="Este ano"),
+            ],
             render_options=["line", "bar", "area"],
         ),
     )

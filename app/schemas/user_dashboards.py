@@ -147,3 +147,36 @@ class CorporateFarmsTableResponse(BaseModel):
     page: int
     limit: int
     items: list[FarmSummaryItem]
+
+
+class CorporateCostBucketItem(BaseModel):
+    bucket: str
+    label: str
+    low: float
+    high: float | None = None
+    count: int
+    value: int
+    total_cost: float
+    percentage: float
+
+
+class CorporateCostByLotSizeCohortItem(BaseModel):
+    cohort: str
+    previous_year_cost: float
+    current_year_cost: float
+    previous_year_lots: int = 0
+    current_year_lots: int = 0
+
+
+class CorporateCostByRegionItem(BaseModel):
+    region: str
+    previous_year_cost: float
+    current_year_cost: float
+
+
+class CorporateMonthlyCostItem(BaseModel):
+    month: int
+    month_label: str
+    previous_year_cost: float
+    current_year_cost: float
+    cost: float

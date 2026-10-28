@@ -52,11 +52,11 @@ ADMIN_OPERATIONS = frozenset({
 DATED_OPERATIONS = frozenset({
     "lot_throughput", "lot_mortality", "lot_cost",
     "monthly_consumption", "water_consumption_by_reading", "resource_efficiency", "relative_consumption",
-    "trend_kwh_aves", "trend_liters_aves", "monthly_cost",
+    "trend_kwh_aves", "trend_liters_aves",
 })
 MONTHLY_OPERATIONS = frozenset({
     "monthly_consumption", "resource_efficiency", "relative_consumption",
-    "trend_kwh_aves", "trend_liters_aves", "monthly_cost",
+    "trend_kwh_aves", "trend_liters_aves",
 })
 
 STATE_TO_REGION: dict[str, str] = {
@@ -67,8 +67,21 @@ STATE_TO_REGION: dict[str, str] = {
     "ES": "Sudeste", "MG": "Sudeste", "RJ": "Sudeste", "SP": "Sudeste",
     "PR": "Sul", "RS": "Sul", "SC": "Sul",
 }
-COHORTS = ("0-50k", "50k-75k", "75k-100k", "100k-125k", "125k-150k", "150k-175k", "175k+")
+COHORTS = ("0-10k", "10k-20k", "20k-30k", "30k-40k", "40k-50k", "50k+")
 REGIONS = ("Norte", "Nordeste", "Centro-Oeste", "Sudeste", "Sul")
+MONTH_LABELS: dict[int, str] = {
+    1: "Jan", 2: "Fev", 3: "Mar", 4: "Abr", 5: "Mai", 6: "Jun",
+    7: "Jul", 8: "Ago", 9: "Set", 10: "Out", 11: "Nov", 12: "Dez",
+}
+REGION_NORMALIZE: dict[str, str] = {
+    "norte": "Norte",
+    "nordeste": "Nordeste",
+    "centro-oeste": "Centro-Oeste",
+    "centro oeste": "Centro-Oeste",
+    "centroeste": "Centro-Oeste",
+    "sudeste": "Sudeste",
+    "sul": "Sul",
+}
 COST_BUCKET_RANGES = (
     ("< 1.0M", Decimal(0), Decimal(1_000_000)),
     ("1.0M - 1.5M", Decimal(1_000_000), Decimal(1_500_000)),
@@ -159,21 +172,191 @@ def _parse_month_filter(val: Any) -> tuple[int | None, int | None]:
     return None, None
 
 
-def _lot_cohort(chickens: Decimal) -> str:
+def _resolve_region(farm: dict[str, Any] | None = None, lot: dict[str, Any] | None = None) -> str:
+    farm = farm or {}
+    lot = lot or {}
+
+    raw_region = farm.get("region") or lot.get("region")
+    if raw_region:
+        normalized = REGION_NORMALIZE.get(str(raw_region).casefold().strip())
+        if normalized:
+            return normalized
+
+    st = str(farm.get("state") or farm.get("uf") or lot.get("state") or lot.get("uf") or "").upper().strip()
+    if st in STATE_TO_REGION:
+        return STATE_TO_REGION[st]
+
+    mgmt = str(farm.get("regional_management") or farm.get("management") or "").casefold().strip()
+    for key, canonical in REGION_NORMALIZE.items():
+        if key in mgmt:
+            return canonical
+
+    return "Centro-Oeste"
+
+
+def _calculate_dynamic_cost_buckets(lots: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    costs = [_number(lot.get("cost")) for lot in lots]
+    max_cost = max(costs, default=Decimal(0))
+    total_lots = len(costs)
+
+    if max_cost >= Decimal(1_000_000):
+        bucket_defs: list[tuple[str, float, float | None]] = [
+            ("Até 1.0M", 0.0, 1_000_000.0),
+            ("1.0M - 1.5M", 1_000_000.0, 1_500_000.0),
+            ("1.5M - 2.0M", 1_500_000.0, 2_000_000.0),
+            ("2.0M - 2.5M", 2_000_000.0, 2_500_000.0),
+            ("2.5M - 3.0M", 2_500_000.0, 3_000_000.0),
+            ("> 3.0M", 3_000_000.0, None),
+        ]
+    elif max_cost >= Decimal(150_000):
+        if max_cost >= Decimal(500_000):
+            bucket_defs = [
+                ("Até R$ 250k", 0.0, 250_000.0),
+                ("R$ 250k - 500k", 250_000.0, 500_000.0),
+                ("R$ 500k - 750k", 500_000.0, 750_000.0),
+                ("R$ 750k - 1.0M", 750_000.0, 1_000_000.0),
+                ("R$ 1.0M+", 1_000_000.0, None),
+            ]
+        else:
+            bucket_defs = [
+                ("Até R$ 100k", 0.0, 100_000.0),
+                ("R$ 100k - 200k", 100_000.0, 200_000.0),
+                ("R$ 200k - 300k", 200_000.0, 300_000.0),
+                ("R$ 300k - 400k", 300_000.0, 400_000.0),
+                ("R$ 400k+", 400_000.0, None),
+            ]
+    elif max_cost >= Decimal(50_000):
+        bucket_defs = [
+            ("Até R$ 25k", 0.0, 25_000.0),
+            ("R$ 25k - 50k", 25_000.0, 50_000.0),
+            ("R$ 50k - 75k", 50_000.0, 75_000.0),
+            ("R$ 75k - 100k", 75_000.0, 100_000.0),
+            ("R$ 100k+", 100_000.0, None),
+        ]
+    elif max_cost >= Decimal(25_000):
+        bucket_defs = [
+            ("Até R$ 10k", 0.0, 10_000.0),
+            ("R$ 10k - 20k", 10_000.0, 20_000.0),
+            ("R$ 20k - 30k", 20_000.0, 30_000.0),
+            ("R$ 30k - 40k", 30_000.0, 40_000.0),
+            ("R$ 40k - 50k", 40_000.0, 50_000.0),
+            ("R$ 50k+", 50_000.0, None),
+        ]
+    elif max_cost >= Decimal(50):
+        bucket_defs = [
+            ("Até R$ 5k", 0.0, 5_000.0),
+            ("R$ 5k - 10k", 5_000.0, 10_000.0),
+            ("R$ 10k - 15k", 10_000.0, 15_000.0),
+            ("R$ 15k - 20k", 15_000.0, 20_000.0),
+            ("R$ 20k+", 20_000.0, None),
+        ]
+    elif max_cost > Decimal(0):
+        bucket_defs = [
+            ("Até R$ 5", 0.0, 5.0),
+            ("R$ 5 - 10", 5.0, 10.0),
+            ("R$ 10 - 15", 10.0, 15.0),
+            ("R$ 15 - 20", 15.0, 20.0),
+            ("R$ 20+", 20.0, None),
+        ]
+    else:
+        bucket_defs = [
+            ("Até R$ 10k", 0.0, 10_000.0),
+            ("R$ 10k - 20k", 10_000.0, 20_000.0),
+            ("R$ 20k - 30k", 20_000.0, 30_000.0),
+            ("R$ 30k - 40k", 30_000.0, 40_000.0),
+            ("R$ 40k - 50k", 40_000.0, 50_000.0),
+            ("R$ 50k+", 50_000.0, None),
+        ]
+
+    counts: dict[str, int] = defaultdict(int)
+    totals: dict[str, Decimal] = defaultdict(Decimal)
+
+    for cost in costs:
+        cost_f = float(cost)
+        for label, low, high in bucket_defs:
+            if high is not None:
+                if low <= cost_f < high:
+                    counts[label] += 1
+                    totals[label] += cost
+                    break
+            else:
+                if cost_f >= low:
+                    counts[label] += 1
+                    totals[label] += cost
+                    break
+
+    result: list[dict[str, Any]] = []
+    for label, low, high in bucket_defs:
+        cnt = counts[label]
+        pct = _rounded(Decimal(cnt * 100) / Decimal(total_lots), 1) if total_lots > 0 else 0.0
+        result.append({
+            "bucket": label,
+            "label": label,
+            "low": low,
+            "high": high,
+            "count": cnt,
+            "value": cnt,
+            "total_cost": _rounded(totals[label], 2),
+            "percentage": pct,
+        })
+    return result
+
+
+def _calculate_dynamic_cohorts(lots: list[dict[str, Any]]) -> list[tuple[str, int, int | None]]:
+    max_chickens = max(
+        (_number(lot.get("received_chickens")) for lot in lots),
+        default=Decimal(0),
+    )
+    if max_chickens > Decimal(120_000):
+        return [
+            ("0-50k", 0, 50_000),
+            ("50k-75k", 50_000, 75_000),
+            ("75k-100k", 75_000, 100_000),
+            ("100k-125k", 100_000, 125_000),
+            ("125k-150k", 125_000, 150_000),
+            ("150k-175k", 150_000, 175_000),
+            ("175k+", 175_000, None),
+        ]
+    if max_chickens > Decimal(60_000):
+        return [
+            ("0-20k", 0, 20_000),
+            ("20k-40k", 20_000, 40_000),
+            ("40k-60k", 40_000, 60_000),
+            ("60k-80k", 60_000, 80_000),
+            ("80k-100k", 80_000, 100_000),
+            ("100k+", 100_000, None),
+        ]
+    return [
+        ("0-10k", 0, 10_000),
+        ("10k-20k", 10_000, 20_000),
+        ("20k-30k", 20_000, 30_000),
+        ("30k-40k", 30_000, 40_000),
+        ("40k-50k", 40_000, 50_000),
+        ("50k+", 50_000, None),
+    ]
+
+
+def _cohort_for_birds(chickens: Decimal, cohorts: list[tuple[str, int, int | None]]) -> str:
     n = int(chickens)
-    if n < 50_000:
-        return "0-50k"
-    if n < 75_000:
-        return "50k-75k"
-    if n < 100_000:
-        return "75k-100k"
-    if n < 125_000:
-        return "100k-125k"
-    if n < 150_000:
-        return "125k-150k"
-    if n < 175_000:
-        return "150k-175k"
-    return "175k+"
+    for label, low, high in cohorts:
+        if high is not None:
+            if low <= n < high:
+                return label
+        else:
+            if n >= low:
+                return label
+    return cohorts[-1][0]
+
+
+def _lot_cohort(chickens: Decimal) -> str:
+    return _cohort_for_birds(chickens, [
+        ("0-10k", 0, 10_000),
+        ("10k-20k", 10_000, 20_000),
+        ("20k-30k", 20_000, 30_000),
+        ("30k-40k", 30_000, 40_000),
+        ("40k-50k", 40_000, 50_000),
+        ("50k+", 50_000, None),
+    ])
 
 
 class AnalyticsRepository:
@@ -539,60 +722,52 @@ class AnalyticsRepository:
             return result
 
         if operation == "cost_distribution_buckets":
-            bucket_counts = defaultdict(int)
-            for lot in records(ROWS, "fact_lot"):
-                if lot.get("farm_id") not in scoped_farm_ids:
-                    continue
-                cost = _number(lot.get("cost"))
-                for label, low, high in COST_BUCKET_RANGES:
-                    if low <= cost < high:
-                        bucket_counts[label] += 1
-                        break
-            return [
-                {
-                    "bucket": label,
-                    "label": label,
-                    "count": bucket_counts[label],
-                    "value": bucket_counts[label],
-                }
-                for label, _, _ in COST_BUCKET_RANGES
+            lots = [
+                lot for lot in records(ROWS, "fact_lot")
+                if lot.get("farm_id") in scoped_farm_ids
             ]
+            return _calculate_dynamic_cost_buckets(lots)
 
         if operation == "cost_by_lot_size_cohort":
             now_year = datetime.now(UTC).year
             prev_year = now_year - 1
+            lots = [
+                lot for lot in records(ROWS, "fact_lot")
+                if lot.get("farm_id") in scoped_farm_ids
+            ]
+            cohort_defs = _calculate_dynamic_cohorts(lots)
+
             curr_cost: dict[str, Decimal] = defaultdict(Decimal)
             prev_cost: dict[str, Decimal] = defaultdict(Decimal)
+            curr_lots: dict[str, int] = defaultdict(int)
+            prev_lots: dict[str, int] = defaultdict(int)
 
-            for lot in records(ROWS, "fact_lot"):
-                if lot.get("farm_id") not in scoped_farm_ids:
-                    continue
+            for lot in lots:
                 d = _day(lot.get("delivery_date") or lot.get("date") or datetime.now(UTC))
                 cost = _number(lot.get("cost"))
-                cohort = _lot_cohort(_number(lot.get("received_chickens")))
+                cohort = _cohort_for_birds(_number(lot.get("received_chickens")), cohort_defs)
                 if d.year == now_year:
                     curr_cost[cohort] += cost
+                    curr_lots[cohort] += 1
                 elif d.year == prev_year:
                     prev_cost[cohort] += cost
+                    prev_lots[cohort] += 1
 
             return [
                 {
-                    "cohort": cohort,
-                    "previous_year_cost": _rounded(prev_cost[cohort], 2),
-                    "current_year_cost": _rounded(curr_cost[cohort], 2),
+                    "cohort": label,
+                    "previous_year_cost": _rounded(prev_cost[label], 2),
+                    "current_year_cost": _rounded(curr_cost[label], 2),
+                    "previous_year_lots": prev_lots[label],
+                    "current_year_lots": curr_lots[label],
                 }
-                for cohort in COHORTS
+                for label, _, _ in cohort_defs
             ]
 
         if operation == "cost_by_region":
             now_year = datetime.now(UTC).year
             prev_year = now_year - 1
-            farm_region: dict[int, str] = {}
-            for f in all_farms:
-                fid = f.get("farm_id")
-                if fid is not None:
-                    st = str(f.get("state") or f.get("uf") or "").upper().strip()
-                    farm_region[fid] = STATE_TO_REGION.get(st, "Centro-Oeste")
+            farm_by_id = {f["farm_id"]: f for f in all_farms if f.get("farm_id") is not None}
 
             curr_cost = defaultdict(Decimal)
             prev_cost = defaultdict(Decimal)
@@ -603,7 +778,8 @@ class AnalyticsRepository:
                     continue
                 d = _day(lot.get("delivery_date") or lot.get("date") or datetime.now(UTC))
                 cost = _number(lot.get("cost"))
-                region = farm_region.get(fid, "Centro-Oeste")
+                farm_doc = farm_by_id.get(fid)
+                region = _resolve_region(farm_doc, lot)
                 if d.year == now_year:
                     curr_cost[region] += cost
                 elif d.year == prev_year:
@@ -619,19 +795,30 @@ class AnalyticsRepository:
             ]
 
         if operation == "monthly_cost":
-            monthly_costs = defaultdict(Decimal)
+            now_year = datetime.now(UTC).year
+            prev_year = now_year - 1
+            curr_by_month: dict[int, Decimal] = defaultdict(Decimal)
+            prev_by_month: dict[int, Decimal] = defaultdict(Decimal)
+
             for lot in records(ROWS, "fact_lot"):
                 if lot.get("farm_id") not in scoped_farm_ids:
                     continue
                 d = _day(lot.get("delivery_date") or lot.get("date") or datetime.now(UTC))
-                if cutoff and d < cutoff:
-                    continue
-                m_start = date(d.year, d.month, 1)
-                monthly_costs[m_start] += _number(lot.get("cost"))
+                cost = _number(lot.get("cost"))
+                if d.year == now_year:
+                    curr_by_month[d.month] += cost
+                elif d.year == prev_year:
+                    prev_by_month[d.month] += cost
 
             return [
-                {"month_start": m.isoformat(), "cost": _rounded(cost, 2)}
-                for m, cost in sorted(monthly_costs.items())
+                {
+                    "month": m,
+                    "month_label": MONTH_LABELS[m],
+                    "previous_year_cost": _rounded(prev_by_month[m], 2),
+                    "current_year_cost": _rounded(curr_by_month[m], 2),
+                    "cost": _rounded(curr_by_month[m], 2),
+                }
+                for m in range(1, 13)
             ]
 
         if operation == "corporate_farms_table":
