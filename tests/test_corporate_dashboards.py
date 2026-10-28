@@ -368,22 +368,23 @@ def test_company_employee_get_corporate_chart_data():
     for r in rows:
         CorporateCostBucketItem.model_validate(r)
 
-    # 4. cost-by-lot-size-cohort (7 Figma cohorts: 0-50k, 50k-75k, ..., 175k+)
+    # 4. cost-by-lot-size-cohort (Adaptive dynamic binning)
     res = client.get(
         "/v1/user/dashboards/corporate/charts/cost-by-lot-size-cohort/data"
     )
     assert res.status_code == 200
     rows = res.json()
-    assert len(rows) == 7
+    assert len(rows) == 3
     cohort_map = {r["cohort"]: r for r in rows}
-    assert "0-50k" in cohort_map
-    assert "50k-75k" in cohort_map
-    assert cohort_map["0-50k"]["current_year_cost"] == 800000.0
-    assert cohort_map["0-50k"]["current_year_lots"] == 1
-    assert cohort_map["0-50k"]["previous_year_cost"] == 1000000.0
-    assert cohort_map["0-50k"]["previous_year_lots"] == 1
-    assert cohort_map["50k-75k"]["current_year_cost"] == 1200000.0
-    assert cohort_map["50k-75k"]["current_year_lots"] == 1
+    assert "30k-35k" in cohort_map
+    assert "45k-50k" in cohort_map
+    assert "50k-55k" in cohort_map
+    assert cohort_map["30k-35k"]["current_year_cost"] == 800000.0
+    assert cohort_map["30k-35k"]["current_year_lots"] == 1
+    assert cohort_map["45k-50k"]["previous_year_cost"] == 1000000.0
+    assert cohort_map["45k-50k"]["previous_year_lots"] == 1
+    assert cohort_map["50k-55k"]["current_year_cost"] == 1200000.0
+    assert cohort_map["50k-55k"]["current_year_lots"] == 1
     for r in rows:
         CorporateCostByLotSizeCohortItem.model_validate(r)
 

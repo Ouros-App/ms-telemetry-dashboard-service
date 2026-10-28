@@ -477,11 +477,10 @@ async def test_corporate_charts_operations():
     assert bucket_rows[1]["total_cost"] == 7.50
     assert bucket_rows[1]["percentage"] == 33.3
 
-    # cost_by_lot_size_cohort (Dynamic cohorts)
+    # cost_by_lot_size_cohort (Adaptive binning)
     cohort_rows = await repo.fetch("cost_by_lot_size_cohort", "", None, 3)
-    assert len(cohort_rows) == 7
-    # 0-50k has all lots (received 100, 50, 120 < 50k)
-    assert cohort_rows[0]["cohort"] == "0-50k"
+    assert len(cohort_rows) == 1
+    assert cohort_rows[0]["cohort"] == "0-10k"
     assert cohort_rows[0]["current_year_cost"] == 20.0
     assert cohort_rows[0]["previous_year_cost"] == 15.0
     assert cohort_rows[0]["current_year_lots"] == 2

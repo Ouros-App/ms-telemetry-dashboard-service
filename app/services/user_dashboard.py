@@ -328,7 +328,9 @@ class UserDashboardService:
             "corporate_filters", "corporate_filters", None, scope.enterprise_id
         )
         if not rows:
-            return CorporateFilterOptionsResponse(periods=[], states=[], regional_managements=[])
+            return CorporateFilterOptionsResponse(
+                periods=[], states=[], regional_managements=[]
+            )
         return CorporateFilterOptionsResponse.model_validate(rows[0])
 
     async def get_corporate_chart_data(
@@ -366,6 +368,8 @@ class UserDashboardService:
         page: int = 1,
         limit: int = 10,
         state: str | None = None,
+        management: str | None = None,
+        month: str | None = None,
     ) -> CorporateFarmsTableResponse:
         scope = self.scope_for(principal)
         if scope.account_type != "company_employee" or scope.enterprise_id is None:
@@ -380,12 +384,20 @@ class UserDashboardService:
             "page": page,
             "limit": limit,
             "state": state,
+            "management": management,
+            "month": month,
         }
         rows = await self.provider.repository.fetch(
-            "corporate_farms_table", "corporate_farms_table", None, scope.enterprise_id, filters
+            "corporate_farms_table",
+            "corporate_farms_table",
+            None,
+            scope.enterprise_id,
+            filters,
         )
         if not rows:
-            return CorporateFarmsTableResponse(total=0, page=page, limit=limit, items=[])
+            return CorporateFarmsTableResponse(
+                total=0, page=page, limit=limit, items=[]
+            )
         return CorporateFarmsTableResponse.model_validate(rows[0])
 
 
