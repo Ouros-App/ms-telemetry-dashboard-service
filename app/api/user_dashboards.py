@@ -139,6 +139,8 @@ async def get_corporate_farms_table(
     page: int = 1,
     limit: int = 10,
     state: str | None = None,
+    management: str | None = None,
+    month: str | None = None,
 ) -> CorporateFarmsTableResponse:
     _require_company_employee(principal)
     try:
@@ -150,6 +152,8 @@ async def get_corporate_farms_table(
             page=page,
             limit=limit,
             state=state,
+            management=management,
+            month=month,
         )
     except (AnalyticsUnavailable, AnalyticsQueryError) as exc:
         raise HTTPException(

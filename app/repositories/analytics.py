@@ -8,6 +8,7 @@ to the JWT-derived farm or enterprise identifier supplied by the provider.
 from __future__ import annotations
 
 import asyncio
+import math
 import statistics
 import time
 from collections import defaultdict
@@ -235,6 +236,10 @@ def _parse_month_filter(val: Any) -> tuple[int | None, int | None]:
     if not val:
         return None, None
     s = str(val).strip()
+    if s.lower() in ("atual", "todos", "todas", "all", ""):
+        return None, None
+    if s.lower().startswith("ano ") and s[4:].strip().isdigit():
+        return int(s[4:].strip()), None
     if "-" in s:
         parts = s.split("-")
         try:
@@ -247,6 +252,13 @@ def _parse_month_filter(val: Any) -> tuple[int | None, int | None]:
             return int(parts[1]), int(parts[0])
         except (ValueError, IndexError):
             return None, None
+    if s.isdigit():
+        try:
+            m = int(s)
+            if 1 <= m <= 12:
+                return None, m
+        except ValueError:
+            pass
     return None, None
 
 
@@ -355,6 +367,137 @@ def _lot_cohort(chickens: Decimal) -> str:
     if n < 175_000:
         return "150k-175k"
     return "175k+"
+
+
+def calcular_step_amigavel(valor_bruto: float) -> int:
+    """Arredonda o step para múltiplos elegantes de 2.500, 5.000, 10.000, 20.000, 25.000 ou 50.000."""
+    if valor_bruto <= 2500:
+        return 2500
+    if valor_bruto <= 5000:
+        return 5000
+    if valor_bruto <= 10000:
+        return 10000
+    if valor_bruto <= 20000:
+        return 20000
+    if valor_bruto <= 25000:
+        return 25000
+    if valor_bruto <= 50000:
+        return 50000
+
+    expoente = 10 ** math.floor(math.log10(valor_bruto))
+    fator = math.ceil(valor_bruto / expoente)
+    return int(fator * expoente)
+
+
+def _format_k(val: int) -> str:
+    if val == 0:
+        return "0"
+    if val % 1000 == 0:
+        return f"{val // 1000}k"
+    return f"{val / 1000:g}k"
+
+
+def _format_cohort_label(piso: int, teto: int) -> str:
+    return f"{_format_k(piso)}-{_format_k(teto)}"
+
+
+def _lot_birds(lot: dict[str, Any]) -> int:
+    val = lot.get("received_chickens") or lot.get("chickens") or 0
+    return int(_number(val))
+
+
+def _lot_cost(lot: dict[str, Any]) -> float:
+    val = lot.get("cost") or 0
+    return float(_number(val))
+
+
+def _alocar_lote(bucket: dict[str, Any], birds: int, is_last: bool) -> bool:
+    if bucket["min_birds"] <= birds < bucket["max_birds"]:
+        return True
+    return is_last and birds >= bucket["min_birds"]
+
+
+def _acumular_lotes(
+    resultado: list[dict[str, Any]],
+    lotes: list[dict[str, Any]],
+    *,
+    is_current: bool,
+) -> None:
+    cost_key = "current_year_cost" if is_current else "previous_year_cost"
+    lots_key = "current_year_lots" if is_current else "previous_year_lots"
+    last_idx = len(resultado) - 1
+
+    for lote in lotes:
+        birds = _lot_birds(lote)
+        cost = _lot_cost(lote)
+        for i, bucket in enumerate(resultado):
+            if _alocar_lote(bucket, birds, i == last_idx):
+                bucket[cost_key] += cost
+                bucket[lots_key] += 1
+                break
+
+
+def _construir_faixas(
+    min_size: int, max_size: int, num_baldes: int
+) -> list[tuple[int, int, str]]:
+    if max_size - min_size < 5000:
+        step = 10000
+        teto = max(step, math.ceil(max_size / step) * step)
+        piso = max(0, teto - step)
+        return [(piso, teto, _format_cohort_label(piso, teto))]
+
+    step_bruto = (max_size - min_size) / num_baldes
+    step = calcular_step_amigavel(step_bruto)
+    piso_inicial = (min_size // step) * step
+    teto_final = (math.ceil(max_size / step) + 1) * step
+
+    faixas = []
+    atual = piso_inicial
+    while atual < teto_final and len(faixas) < 7:
+        proximo = atual + step
+        faixas.append((atual, proximo, _format_cohort_label(atual, proximo)))
+        atual = proximo
+    return faixas
+
+
+def gerar_histograma_adaptativo(
+    lotes_este_ano: list[dict[str, Any]],
+    lotes_ano_passado: list[dict[str, Any]],
+    num_baldes: int = 5,
+) -> list[dict[str, Any]]:
+    todos = [
+        _lot_birds(l) for l in (lotes_este_ano + lotes_ano_passado) if _lot_birds(l) > 0
+    ]
+    if not todos:
+        return []
+
+    faixas = _construir_faixas(min(todos), max(todos), num_baldes)
+    resultado = [
+        {
+            "cohort": rotulo,
+            "min_birds": piso,
+            "max_birds": teto,
+            "previous_year_cost": 0.0,
+            "current_year_cost": 0.0,
+            "previous_year_lots": 0,
+            "current_year_lots": 0,
+        }
+        for piso, teto, rotulo in faixas
+    ]
+
+    _acumular_lotes(resultado, lotes_ano_passado, is_current=False)
+    _acumular_lotes(resultado, lotes_este_ano, is_current=True)
+
+    for bucket in resultado:
+        bucket["previous_year_cost"] = round(bucket["previous_year_cost"], 2)
+        bucket["current_year_cost"] = round(bucket["current_year_cost"], 2)
+
+    populated = [
+        b
+        for b in resultado
+        if b["previous_year_lots"] > 0 or b["current_year_lots"] > 0
+    ]
+    return populated or resultado
 
 
 def _calculate_dynamic_cost_buckets(
@@ -490,6 +633,463 @@ def _calculate_dynamic_cost_buckets(
     return result
 
 
+def _resolve_bucket_and_color(curr_total: float) -> tuple[str, str]:
+    if curr_total >= 3_000_000:
+        return "#0E0925", "3.0M+"
+    if curr_total >= 2_500_000:
+        return "#1E1354", "2.5M"
+    if curr_total >= 2_000_000:
+        return "#110B95", "2.0M"
+    if curr_total >= 1_500_000:
+        return "#1A12C3", "1.5M"
+    if curr_total >= 1_000_000:
+        return "#332BF2", "1.0M"
+    return "#5A53FF", "1.0M-"
+
+
+def _corporate_filters(all_farms: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    states = sorted(
+        {
+            str(f.get("state") or f.get("uf"))
+            for f in all_farms
+            if (f.get("state") or f.get("uf"))
+        }
+    )
+    managements = sorted(
+        {
+            str(
+                f.get("regional_management")
+                or f.get("management")
+                or f.get("manager_name")
+            )
+            for f in all_farms
+            if (
+                f.get("regional_management")
+                or f.get("management")
+                or f.get("manager_name")
+            )
+        }
+    )
+    now_year = datetime.now(UTC).year
+    periods = [
+        f"Ano {now_year}",
+        f"Ano {now_year - 1}",
+        "Últimos 30 dias",
+        "Últimos 90 dias",
+    ]
+    return [
+        {
+            "periods": periods,
+            "states": states,
+            "regional_managements": managements,
+        }
+    ]
+
+
+def _corporate_kpis(
+    scoped_farm_ids: set[Any],
+    extra_filters: dict[str, Any],
+    records: Any,
+    filter_state: str | None,
+    filter_mgmt: str | None,
+) -> list[dict[str, Any]]:
+    now_year = datetime.now(UTC).year
+    prev_year = now_year - 1
+    target_year, target_month = _parse_month_filter(extra_filters.get("month"))
+
+    lots = [
+        lot
+        for lot in records(ROWS, "fact_lot")
+        if lot.get("farm_id") in scoped_farm_ids
+    ]
+
+    spend_curr = Decimal(0)
+    spend_prev = Decimal(0)
+    total_cost_scope = Decimal(0)
+    total_chickens_scope = Decimal(0)
+    curr_year_lots_count = 0
+
+    for lot in lots:
+        d = _day(lot.get("delivery_date") or lot.get("date") or datetime.now(UTC))
+        cost = _number(lot.get("cost"))
+        chickens = _number(lot.get("received_chickens"))
+
+        if d.year == now_year and (target_month is None or d.month == target_month):
+            spend_curr += cost
+            curr_year_lots_count += 1
+        elif d.year == prev_year and (target_month is None or d.month == target_month):
+            spend_prev += cost
+
+        if (
+            target_month is not None
+            and d.year == (target_year or now_year)
+            and d.month == target_month
+            or target_month is None
+            and d.year == now_year
+        ):
+            total_cost_scope += cost
+            total_chickens_scope += chickens
+
+    if (
+        total_chickens_scope == Decimal(0)
+        and target_month is None
+        and not filter_state
+        and not filter_mgmt
+    ):
+        for lot in lots:
+            total_cost_scope += _number(lot.get("cost"))
+            total_chickens_scope += _number(lot.get("received_chickens"))
+
+    avg_cost_per_bird = (
+        _rounded(total_cost_scope / total_chickens_scope, 2)
+        if total_chickens_scope > Decimal(0)
+        else 0.0
+    )
+    has_active_filter = (
+        curr_year_lots_count > 0
+        or target_month is not None
+        or filter_state
+        or filter_mgmt
+    )
+    total_lots = curr_year_lots_count if has_active_filter else len(lots)
+
+    return [
+        {
+            "spend_previous_year": {
+                "value": _rounded(spend_prev, 2),
+                "formatted": _format_currency_brl(_rounded(spend_prev, 2)),
+                "unit": "R$",
+                "year": prev_year,
+            },
+            "spend_current_year": {
+                "value": _rounded(spend_curr, 2),
+                "formatted": _format_currency_brl(_rounded(spend_curr, 2)),
+                "unit": "R$",
+                "year": now_year,
+            },
+            "avg_cost_per_bird": {
+                "value": avg_cost_per_bird,
+                "formatted": f"R$ {avg_cost_per_bird:.2f}".replace(".", ","),
+                "unit": "R$/ave",
+                "year": now_year,
+            },
+            "total_lots": {
+                "value": float(total_lots),
+                "formatted": str(total_lots),
+                "unit": "lotes",
+                "year": None,
+            },
+        }
+    ]
+
+
+def _corporate_trend(
+    operation: str, scoped_farm_ids: set[Any], cutoff: Any, records: Any
+) -> list[dict[str, Any]]:
+    monthly = defaultdict(lambda: [Decimal(0), Decimal(0)])
+    for item in records(MONTHLY):
+        if item.get("farm_id") not in scoped_farm_ids:
+            continue
+        month = _day(item["month_start"])
+        if cutoff and month < cutoff:
+            continue
+        monthly[month][0] += _number(item.get("chickens_reference"))
+        if operation == "trend_kwh_aves":
+            monthly[month][1] += _number(
+                (item.get("energy_metrics") or {}).get("monthly_total_kwh")
+            )
+        else:
+            water_m3 = _number(
+                (item.get("water_metrics") or {}).get("monthly_total_m3")
+            )
+            monthly[month][1] += water_m3 * Decimal(1000)
+
+    result = []
+    for m, (chickens, metric_val) in sorted(monthly.items()):
+        if operation == "trend_kwh_aves":
+            result.append(
+                {
+                    "month_start": m.isoformat(),
+                    "chickens": int(chickens),
+                    "energy_kwh": _rounded(metric_val, 2),
+                }
+            )
+        else:
+            result.append(
+                {
+                    "month_start": m.isoformat(),
+                    "chickens": int(chickens),
+                    "water_liters": _rounded(metric_val, 2),
+                }
+            )
+    return result
+
+
+def _corporate_cost_distribution_buckets(
+    scoped_farm_ids: set[Any],
+    all_farms: list[dict[str, Any]],
+    target_month: int | None,
+    records: Any,
+) -> list[dict[str, Any]]:
+    farm_by_id = {f["farm_id"]: f for f in all_farms if f.get("farm_id") is not None}
+    lots = [
+        lot
+        for lot in records(ROWS, "fact_lot")
+        if lot.get("farm_id") in scoped_farm_ids
+    ]
+    now_year = datetime.now(UTC).year
+    regional_totals = defaultdict(float)
+    filtered_lots = []
+    for lot in lots:
+        d = _day(lot.get("delivery_date") or lot.get("date") or datetime.now(UTC))
+        if target_month is not None and d.month != target_month:
+            continue
+        filtered_lots.append(lot)
+        if d.year == now_year:
+            reg = _resolve_region(farm_by_id.get(lot.get("farm_id")), lot)
+            regional_totals[reg] += float(_number(lot.get("cost")))
+    return _calculate_dynamic_cost_buckets(filtered_lots, regional_totals)
+
+
+def _corporate_cost_by_lot_size_cohort(
+    scoped_farm_ids: set[Any],
+    target_month: int | None,
+    records: Any,
+) -> list[dict[str, Any]]:
+    now_year = datetime.now(UTC).year
+    prev_year = now_year - 1
+    lots = [
+        lot
+        for lot in records(ROWS, "fact_lot")
+        if lot.get("farm_id") in scoped_farm_ids
+    ]
+
+    lotes_este_ano = []
+    lotes_ano_passado = []
+
+    for lot in lots:
+        d = _day(lot.get("delivery_date") or lot.get("date") or datetime.now(UTC))
+        if target_month is not None and d.month != target_month:
+            continue
+        if d.year == now_year:
+            lotes_este_ano.append(lot)
+        elif d.year == prev_year:
+            lotes_ano_passado.append(lot)
+
+    return gerar_histograma_adaptativo(lotes_este_ano, lotes_ano_passado)
+
+
+def _corporate_cost_by_region(
+    scoped_farm_ids: set[Any],
+    all_farms: list[dict[str, Any]],
+    target_month: int | None,
+    records: Any,
+) -> list[dict[str, Any]]:
+    now_year = datetime.now(UTC).year
+    prev_year = now_year - 1
+    farm_by_id = {f["farm_id"]: f for f in all_farms if f.get("farm_id") is not None}
+
+    curr_lots_costs: dict[str, list[Decimal]] = defaultdict(list)
+    prev_lots_costs: dict[str, list[Decimal]] = defaultdict(list)
+
+    for lot in records(ROWS, "fact_lot"):
+        fid = lot.get("farm_id")
+        if fid not in scoped_farm_ids:
+            continue
+        d = _day(lot.get("delivery_date") or lot.get("date") or datetime.now(UTC))
+        if target_month is not None and d.month != target_month:
+            continue
+        cost = _number(lot.get("cost"))
+        farm_doc = farm_by_id.get(fid)
+        region = _resolve_region(farm_doc, lot)
+        if d.year == now_year:
+            curr_lots_costs[region].append(cost)
+        elif d.year == prev_year:
+            prev_lots_costs[region].append(cost)
+
+    result: list[dict[str, Any]] = []
+    for reg in REGIONS:
+        curr_stats = _calc_box_stats(curr_lots_costs[reg])
+        prev_stats = _calc_box_stats(prev_lots_costs[reg])
+        curr_total = curr_stats["total_cost"]
+        prev_total = prev_stats["total_cost"]
+        color, bucket_name = _resolve_bucket_and_color(curr_total)
+
+        result.append(
+            {
+                "region": reg,
+                "previous_year_cost": prev_total,
+                "current_year_cost": curr_total,
+                "cost": curr_total,
+                "color": color,
+                "bucket": bucket_name,
+                "previous_year": prev_stats,
+                "current_year": curr_stats,
+            }
+        )
+    return result
+
+
+def _corporate_monthly_cost(
+    scoped_farm_ids: set[Any],
+    records: Any,
+) -> list[dict[str, Any]]:
+    now_year = datetime.now(UTC).year
+    prev_year = now_year - 1
+    curr_by_month: dict[int, Decimal] = defaultdict(Decimal)
+    prev_by_month: dict[int, Decimal] = defaultdict(Decimal)
+
+    for lot in records(ROWS, "fact_lot"):
+        if lot.get("farm_id") not in scoped_farm_ids:
+            continue
+        d = _day(lot.get("delivery_date") or lot.get("date") or datetime.now(UTC))
+        cost = _number(lot.get("cost"))
+        if d.year == now_year:
+            curr_by_month[d.month] += cost
+        elif d.year == prev_year:
+            prev_by_month[d.month] += cost
+
+    return [
+        {
+            "month": m,
+            "month_label": MONTH_LABELS[m],
+            "previous_year_cost": _rounded(prev_by_month[m], 2),
+            "current_year_cost": _rounded(curr_by_month[m], 2),
+            "cost": _rounded(curr_by_month[m], 2),
+        }
+        for m in range(1, 13)
+    ]
+
+
+def _corporate_farms_table(
+    scoped_farms: list[dict[str, Any]],
+    scoped_farm_ids: set[Any],
+    target_year: int | None,
+    target_month: int | None,
+    extra_filters: dict[str, Any],
+    records: Any,
+) -> list[dict[str, Any]]:
+    monthly_by_farm = defaultdict(lambda: [Decimal(0), Decimal(0)])
+    for item in records(MONTHLY):
+        fid = item.get("farm_id")
+        if fid not in scoped_farm_ids:
+            continue
+        d = _day(item.get("month_start"))
+        if target_month is not None and d.month != target_month:
+            continue
+        if target_year is not None and d.year != target_year:
+            continue
+        monthly_by_farm[fid][0] += _number(
+            (item.get("energy_metrics") or {}).get("monthly_total_kwh")
+        )
+        monthly_by_farm[fid][1] += _number(
+            (item.get("water_metrics") or {}).get("monthly_total_m3")
+        )
+
+    lots_by_farm = defaultdict(list)
+    for lot in records(ROWS, "fact_lot"):
+        fid = lot.get("farm_id")
+        if fid not in scoped_farm_ids:
+            continue
+        d = _day(lot.get("delivery_date") or lot.get("date") or datetime.now(UTC))
+        if target_month is not None and d.month != target_month:
+            continue
+        if target_year is not None and d.year != target_year:
+            continue
+        lots_by_farm[fid].append(lot)
+
+    items = []
+    for f in scoped_farms:
+        fid = f.get("farm_id")
+        if fid is None:
+            continue
+        farm_name = f.get("farm_name") or f"Granja {fid}"
+        manager_name = (
+            f.get("manager_name") or f.get("manager") or f.get("regional_management")
+        )
+        state = f.get("state") or f.get("uf") or ""
+        city = f.get("city") or ""
+        regional_management = f.get("regional_management") or ""
+        location = f"{city} - {state}".strip(" -") if (city or state) else "Brasil"
+
+        kwh, m3 = monthly_by_farm[fid]
+        total_consumption = f"{_rounded(kwh, 1)} kWh | {_rounded(m3, 1)} m³"
+
+        farm_lots = lots_by_farm[fid]
+        lots_count = len(farm_lots)
+        total_cost = sum((_number(l.get("cost")) for l in farm_lots), Decimal(0))
+        total_chickens = sum(
+            (
+                _number(l.get("received_chickens") or l.get("chickens"))
+                for l in farm_lots
+            ),
+            Decimal(0),
+        )
+
+        avg_lot_cost = (
+            _rounded(total_cost / Decimal(lots_count), 2) if lots_count > 0 else 0.0
+        )
+        avg_cost_per_bird = (
+            _rounded(total_cost / total_chickens, 2)
+            if total_chickens > Decimal(0)
+            else 0.0
+        )
+
+        items.append(
+            {
+                "farm_id": fid,
+                "farm_name": farm_name,
+                "manager_name": manager_name,
+                "location": location,
+                "state": state,
+                "regional_management": regional_management,
+                "total_consumption": total_consumption,
+                "lots_count": lots_count,
+                "avg_lot_cost": avg_lot_cost,
+                "avg_cost_per_bird": avg_cost_per_bird,
+            }
+        )
+
+    search = extra_filters.get("search")
+    if search:
+        q = search.casefold().strip()
+        items = [
+            it
+            for it in items
+            if q in it["farm_name"].casefold()
+            or (it["manager_name"] and q in it["manager_name"].casefold())
+            or q in it["location"].casefold()
+            or q in str(it["farm_id"])
+        ]
+
+    sort_by = extra_filters.get("sort_by") or "farm_name"
+    order = (extra_filters.get("order") or "asc").lower()
+    reverse = order == "desc"
+
+    def sort_key(it):
+        val = it.get(sort_by)
+        if val is None:
+            return "" if isinstance(sort_by, str) else 0
+        return val
+
+    items.sort(key=sort_key, reverse=reverse)
+
+    total = len(items)
+    page = max(1, int(extra_filters.get("page") or 1))
+    limit = max(1, int(extra_filters.get("limit") or 10))
+    offset = (page - 1) * limit
+    paged_items = items[offset : offset + limit]
+
+    return [
+        {
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "items": paged_items,
+        }
+    ]
+
+
 class AnalyticsRepository:
     """MongoDB reader using a pooled, TLS-verified PyMongo client.
 
@@ -538,6 +1138,96 @@ class AnalyticsRepository:
     def _docs(self, collection: str, filter_by: dict[str, Any]):
         """Stream server-filtered records without accumulating raw datasets."""
         return self._database[collection].find(filter_by)
+
+    def _fetch_corporate(
+        self,
+        operation: str,
+        records: Any,
+        extra_filters: dict[str, Any],
+        cutoff: Any,
+    ) -> list[dict[str, Any]]:
+        all_farms = list(records(ROWS, "dim_farm"))
+
+        raw_state = extra_filters.get("state")
+        filter_state: str | None = None
+        if raw_state and str(raw_state).strip().lower() not in (
+            "todos",
+            "todas",
+            "all",
+            "",
+        ):
+            filter_state = str(raw_state).strip().upper()
+
+        raw_mgmt = extra_filters.get("management")
+        filter_mgmt: str | None = None
+        if raw_mgmt and str(raw_mgmt).strip().lower() not in (
+            "todos",
+            "todas",
+            "all",
+            "",
+        ):
+            filter_mgmt = str(raw_mgmt).strip()
+
+        target_year, target_month = _parse_month_filter(extra_filters.get("month"))
+
+        scoped_farms = all_farms
+        if filter_state:
+            scoped_farms = [
+                f
+                for f in scoped_farms
+                if str(f.get("state") or f.get("uf") or "").strip().upper()
+                == filter_state
+            ]
+        if filter_mgmt:
+            scoped_farms = [
+                f
+                for f in scoped_farms
+                if str(
+                    f.get("regional_management")
+                    or f.get("management")
+                    or f.get("manager_name")
+                    or ""
+                )
+                .strip()
+                .casefold()
+                == filter_mgmt.casefold()
+            ]
+        scoped_farm_ids = {
+            f["farm_id"] for f in scoped_farms if f.get("farm_id") is not None
+        }
+
+        if operation == "corporate_filters":
+            return _corporate_filters(all_farms)
+        if operation == "corporate_kpis":
+            return _corporate_kpis(
+                scoped_farm_ids, extra_filters, records, filter_state, filter_mgmt
+            )
+        if operation in {"trend_kwh_aves", "trend_liters_aves"}:
+            return _corporate_trend(operation, scoped_farm_ids, cutoff, records)
+        if operation == "cost_distribution_buckets":
+            return _corporate_cost_distribution_buckets(
+                scoped_farm_ids, all_farms, target_month, records
+            )
+        if operation == "cost_by_lot_size_cohort":
+            return _corporate_cost_by_lot_size_cohort(
+                scoped_farm_ids, target_month, records
+            )
+        if operation == "cost_by_region":
+            return _corporate_cost_by_region(
+                scoped_farm_ids, all_farms, target_month, records
+            )
+        if operation == "monthly_cost":
+            return _corporate_monthly_cost(scoped_farm_ids, records)
+        if operation == "corporate_farms_table":
+            return _corporate_farms_table(
+                scoped_farms,
+                scoped_farm_ids,
+                target_year,
+                target_month,
+                extra_filters,
+                records,
+            )
+        raise AnalyticsQueryError(f"Unknown corporate operation: {operation}")
 
     def _fetch_sync(
         self, operation: str, args: tuple[Any, ...]
@@ -614,6 +1304,9 @@ class AnalyticsRepository:
             if dataset is not None:
                 criteria["dataset"] = dataset
             return self._docs(collection, criteria)
+
+        if operation in CORPORATE_OPERATIONS:
+            return self._fetch_corporate(operation, records, extra_filters, cutoff)
 
         if operation in {
             "current_flock",
@@ -801,455 +1494,6 @@ class AnalyticsRepository:
             return [
                 {"label": label, "value": count}
                 for label, count in sorted(counts.items(), key=lambda x: (-x[1], x[0]))
-            ]
-
-        # ==================== Corporate Operations ====================
-        all_farms = list(records(ROWS, "dim_farm"))
-        filter_state = extra_filters.get("state")
-        filter_mgmt = extra_filters.get("management")
-
-        scoped_farms = all_farms
-        if filter_state:
-            scoped_farms = [
-                f
-                for f in scoped_farms
-                if (f.get("state") or f.get("uf")) == filter_state
-            ]
-        if filter_mgmt:
-            scoped_farms = [
-                f
-                for f in scoped_farms
-                if (
-                    f.get("regional_management")
-                    or f.get("management")
-                    or f.get("manager_name")
-                )
-                == filter_mgmt
-            ]
-        scoped_farm_ids = {
-            f["farm_id"] for f in scoped_farms if f.get("farm_id") is not None
-        }
-
-        if operation == "corporate_filters":
-            states = sorted(
-                {
-                    str(f.get("state") or f.get("uf"))
-                    for f in all_farms
-                    if (f.get("state") or f.get("uf"))
-                }
-            )
-            managements = sorted(
-                {
-                    str(
-                        f.get("regional_management")
-                        or f.get("management")
-                        or f.get("manager_name")
-                    )
-                    for f in all_farms
-                    if (
-                        f.get("regional_management")
-                        or f.get("management")
-                        or f.get("manager_name")
-                    )
-                }
-            )
-            now_year = datetime.now(UTC).year
-            periods = [
-                f"Ano {now_year}",
-                f"Ano {now_year - 1}",
-                "Últimos 30 dias",
-                "Últimos 90 dias",
-            ]
-            return [
-                {
-                    "periods": periods,
-                    "states": states,
-                    "regional_managements": managements,
-                }
-            ]
-
-        if operation == "corporate_kpis":
-            now_year = datetime.now(UTC).year
-            prev_year = now_year - 1
-            target_year, target_month = _parse_month_filter(extra_filters.get("month"))
-
-            lots = [
-                lot
-                for lot in records(ROWS, "fact_lot")
-                if lot.get("farm_id") in scoped_farm_ids
-            ]
-
-            spend_curr = Decimal(0)
-            spend_prev = Decimal(0)
-            total_cost_scope = Decimal(0)
-            total_chickens_scope = Decimal(0)
-            curr_year_lots_count = 0
-
-            for lot in lots:
-                d = _day(
-                    lot.get("delivery_date") or lot.get("date") or datetime.now(UTC)
-                )
-                cost = _number(lot.get("cost"))
-                chickens = _number(lot.get("received_chickens"))
-
-                if d.year == now_year and (
-                    target_month is None or d.month == target_month
-                ):
-                    spend_curr += cost
-                    curr_year_lots_count += 1
-                elif d.year == prev_year and (
-                    target_month is None or d.month == target_month
-                ):
-                    spend_prev += cost
-
-                if (
-                    target_month is not None
-                    and d.year == (target_year or now_year)
-                    and d.month == target_month
-                    or target_month is None
-                    and d.year == now_year
-                ):
-                    total_cost_scope += cost
-                    total_chickens_scope += chickens
-
-            if total_chickens_scope == Decimal(0):
-                for lot in lots:
-                    total_cost_scope += _number(lot.get("cost"))
-                    total_chickens_scope += _number(lot.get("received_chickens"))
-
-            avg_cost_per_bird = (
-                _rounded(total_cost_scope / total_chickens_scope, 2)
-                if total_chickens_scope > Decimal(0)
-                else 0.0
-            )
-            total_lots = curr_year_lots_count if curr_year_lots_count > 0 else len(lots)
-
-            return [
-                {
-                    "spend_previous_year": {
-                        "value": _rounded(spend_prev, 2),
-                        "formatted": _format_currency_brl(_rounded(spend_prev, 2)),
-                        "unit": "R$",
-                        "year": prev_year,
-                    },
-                    "spend_current_year": {
-                        "value": _rounded(spend_curr, 2),
-                        "formatted": _format_currency_brl(_rounded(spend_curr, 2)),
-                        "unit": "R$",
-                        "year": now_year,
-                    },
-                    "avg_cost_per_bird": {
-                        "value": avg_cost_per_bird,
-                        "formatted": f"R$ {avg_cost_per_bird:.2f}".replace(".", ","),
-                        "unit": "R$/ave",
-                        "year": now_year,
-                    },
-                    "total_lots": {
-                        "value": float(total_lots),
-                        "formatted": str(total_lots),
-                        "unit": "lotes",
-                        "year": None,
-                    },
-                }
-            ]
-
-        if operation in {"trend_kwh_aves", "trend_liters_aves"}:
-            monthly = defaultdict(lambda: [Decimal(0), Decimal(0)])
-            for item in records(MONTHLY):
-                if item.get("farm_id") not in scoped_farm_ids:
-                    continue
-                month = _day(item["month_start"])
-                if cutoff and month < cutoff:
-                    continue
-                monthly[month][0] += _number(item.get("chickens_reference"))
-                if operation == "trend_kwh_aves":
-                    monthly[month][1] += _number(
-                        (item.get("energy_metrics") or {}).get("monthly_total_kwh")
-                    )
-                else:
-                    water_m3 = _number(
-                        (item.get("water_metrics") or {}).get("monthly_total_m3")
-                    )
-                    monthly[month][1] += water_m3 * Decimal(1000)
-
-            result = []
-            for m, (chickens, metric_val) in sorted(monthly.items()):
-                if operation == "trend_kwh_aves":
-                    result.append(
-                        {
-                            "month_start": m.isoformat(),
-                            "chickens": int(chickens),
-                            "energy_kwh": _rounded(metric_val, 2),
-                        }
-                    )
-                else:
-                    result.append(
-                        {
-                            "month_start": m.isoformat(),
-                            "chickens": int(chickens),
-                            "water_liters": _rounded(metric_val, 2),
-                        }
-                    )
-            return result
-
-        if operation == "cost_distribution_buckets":
-            farm_by_id = {
-                f["farm_id"]: f for f in all_farms if f.get("farm_id") is not None
-            }
-            lots = [
-                lot
-                for lot in records(ROWS, "fact_lot")
-                if lot.get("farm_id") in scoped_farm_ids
-            ]
-            now_year = datetime.now(UTC).year
-            regional_totals = defaultdict(float)
-            for lot in lots:
-                d = _day(
-                    lot.get("delivery_date") or lot.get("date") or datetime.now(UTC)
-                )
-                if d.year == now_year:
-                    reg = _resolve_region(farm_by_id.get(lot.get("farm_id")), lot)
-                    regional_totals[reg] += float(_number(lot.get("cost")))
-            return _calculate_dynamic_cost_buckets(lots, regional_totals)
-
-        if operation == "cost_by_lot_size_cohort":
-            now_year = datetime.now(UTC).year
-            prev_year = now_year - 1
-            lots = [
-                lot
-                for lot in records(ROWS, "fact_lot")
-                if lot.get("farm_id") in scoped_farm_ids
-            ]
-
-            curr_cost: dict[str, Decimal] = defaultdict(Decimal)
-            prev_cost: dict[str, Decimal] = defaultdict(Decimal)
-            curr_lots: dict[str, int] = defaultdict(int)
-            prev_lots: dict[str, int] = defaultdict(int)
-
-            for lot in lots:
-                d = _day(
-                    lot.get("delivery_date") or lot.get("date") or datetime.now(UTC)
-                )
-                cost = _number(lot.get("cost"))
-                cohort = _lot_cohort(_number(lot.get("received_chickens")))
-                if d.year == now_year:
-                    curr_cost[cohort] += cost
-                    curr_lots[cohort] += 1
-                elif d.year == prev_year:
-                    prev_cost[cohort] += cost
-                    prev_lots[cohort] += 1
-
-            return [
-                {
-                    "cohort": cohort,
-                    "previous_year_cost": _rounded(prev_cost[cohort], 2),
-                    "current_year_cost": _rounded(curr_cost[cohort], 2),
-                    "previous_year_lots": prev_lots[cohort],
-                    "current_year_lots": curr_lots[cohort],
-                }
-                for cohort in COHORTS
-            ]
-
-        if operation == "cost_by_region":
-            now_year = datetime.now(UTC).year
-            prev_year = now_year - 1
-            farm_by_id = {
-                f["farm_id"]: f for f in all_farms if f.get("farm_id") is not None
-            }
-
-            curr_lots_costs: dict[str, list[Decimal]] = defaultdict(list)
-            prev_lots_costs: dict[str, list[Decimal]] = defaultdict(list)
-
-            for lot in records(ROWS, "fact_lot"):
-                fid = lot.get("farm_id")
-                if fid not in scoped_farm_ids:
-                    continue
-                d = _day(
-                    lot.get("delivery_date") or lot.get("date") or datetime.now(UTC)
-                )
-                cost = _number(lot.get("cost"))
-                farm_doc = farm_by_id.get(fid)
-                region = _resolve_region(farm_doc, lot)
-                if d.year == now_year:
-                    curr_lots_costs[region].append(cost)
-                elif d.year == prev_year:
-                    prev_lots_costs[region].append(cost)
-
-            result: list[dict[str, Any]] = []
-            for reg in REGIONS:
-                curr_stats = _calc_box_stats(curr_lots_costs[reg])
-                prev_stats = _calc_box_stats(prev_lots_costs[reg])
-                curr_total = curr_stats["total_cost"]
-                prev_total = prev_stats["total_cost"]
-
-                # Color resolution for map / box
-                color = "#5A53FF"
-                bucket_name = "1.0M-"
-                if curr_total >= 3_000_000:
-                    color, bucket_name = "#0E0925", "3.0M+"
-                elif curr_total >= 2_500_000:
-                    color, bucket_name = "#1E1354", "2.5M"
-                elif curr_total >= 2_000_000:
-                    color, bucket_name = "#110B95", "2.0M"
-                elif curr_total >= 1_500_000:
-                    color, bucket_name = "#1A12C3", "1.5M"
-                elif curr_total >= 1_000_000:
-                    color, bucket_name = "#332BF2", "1.0M"
-
-                result.append(
-                    {
-                        "region": reg,
-                        "previous_year_cost": prev_total,
-                        "current_year_cost": curr_total,
-                        "cost": curr_total,
-                        "color": color,
-                        "bucket": bucket_name,
-                        "previous_year": prev_stats,
-                        "current_year": curr_stats,
-                    }
-                )
-            return result
-
-        if operation == "monthly_cost":
-            now_year = datetime.now(UTC).year
-            prev_year = now_year - 1
-            curr_by_month: dict[int, Decimal] = defaultdict(Decimal)
-            prev_by_month: dict[int, Decimal] = defaultdict(Decimal)
-
-            for lot in records(ROWS, "fact_lot"):
-                if lot.get("farm_id") not in scoped_farm_ids:
-                    continue
-                d = _day(
-                    lot.get("delivery_date") or lot.get("date") or datetime.now(UTC)
-                )
-                cost = _number(lot.get("cost"))
-                if d.year == now_year:
-                    curr_by_month[d.month] += cost
-                elif d.year == prev_year:
-                    prev_by_month[d.month] += cost
-
-            return [
-                {
-                    "month": m,
-                    "month_label": MONTH_LABELS[m],
-                    "previous_year_cost": _rounded(prev_by_month[m], 2),
-                    "current_year_cost": _rounded(curr_by_month[m], 2),
-                    "cost": _rounded(curr_by_month[m], 2),
-                }
-                for m in range(1, 13)
-            ]
-
-        if operation == "corporate_farms_table":
-            monthly_by_farm = defaultdict(lambda: [Decimal(0), Decimal(0)])
-            for item in records(MONTHLY):
-                fid = item.get("farm_id")
-                monthly_by_farm[fid][0] += _number(
-                    (item.get("energy_metrics") or {}).get("monthly_total_kwh")
-                )
-                monthly_by_farm[fid][1] += _number(
-                    (item.get("water_metrics") or {}).get("monthly_total_m3")
-                )
-
-            lots_by_farm = defaultdict(list)
-            for lot in records(ROWS, "fact_lot"):
-                fid = lot.get("farm_id")
-                lots_by_farm[fid].append(lot)
-
-            items = []
-            for f in all_farms:
-                fid = f.get("farm_id")
-                if fid is None:
-                    continue
-                farm_name = f.get("farm_name") or f"Granja {fid}"
-                manager_name = (
-                    f.get("manager_name")
-                    or f.get("manager")
-                    or f.get("regional_management")
-                )
-                state = f.get("state") or f.get("uf") or ""
-                city = f.get("city") or ""
-                location = (
-                    f"{city} - {state}".strip(" -") if (city or state) else "Brasil"
-                )
-
-                kwh, m3 = monthly_by_farm[fid]
-                total_consumption = f"{_rounded(kwh, 1)} kWh | {_rounded(m3, 1)} m³"
-
-                farm_lots = lots_by_farm[fid]
-                lots_count = len(farm_lots)
-                total_cost = sum(
-                    (_number(l.get("cost")) for l in farm_lots), Decimal(0)
-                )
-                total_chickens = sum(
-                    (_number(l.get("received_chickens")) for l in farm_lots), Decimal(0)
-                )
-
-                avg_lot_cost = (
-                    _rounded(total_cost / Decimal(lots_count), 2)
-                    if lots_count > 0
-                    else 0.0
-                )
-                avg_cost_per_bird = (
-                    _rounded(total_cost / total_chickens, 2)
-                    if total_chickens > Decimal(0)
-                    else 0.0
-                )
-
-                items.append(
-                    {
-                        "farm_id": fid,
-                        "farm_name": farm_name,
-                        "manager_name": manager_name,
-                        "location": location,
-                        "state": state,
-                        "total_consumption": total_consumption,
-                        "lots_count": lots_count,
-                        "avg_lot_cost": avg_lot_cost,
-                        "avg_cost_per_bird": avg_cost_per_bird,
-                    }
-                )
-
-            state_filter = extra_filters.get("state")
-            if state_filter:
-                items = [it for it in items if it.get("state") == state_filter]
-
-            search = extra_filters.get("search")
-            if search:
-                q = search.casefold().strip()
-                items = [
-                    it
-                    for it in items
-                    if q in it["farm_name"].casefold()
-                    or (it["manager_name"] and q in it["manager_name"].casefold())
-                    or q in it["location"].casefold()
-                    or q in str(it["farm_id"])
-                ]
-
-            sort_by = extra_filters.get("sort_by") or "farm_name"
-            order = (extra_filters.get("order") or "asc").lower()
-            reverse = order == "desc"
-
-            def sort_key(it):
-                val = it.get(sort_by)
-                if val is None:
-                    return "" if isinstance(sort_by, str) else 0
-                return val
-
-            items.sort(key=sort_key, reverse=reverse)
-
-            total = len(items)
-            page = max(1, int(extra_filters.get("page") or 1))
-            limit = max(1, int(extra_filters.get("limit") or 10))
-            offset = (page - 1) * limit
-            paged_items = items[offset : offset + limit]
-
-            return [
-                {
-                    "total": total,
-                    "page": page,
-                    "limit": limit,
-                    "items": paged_items,
-                }
             ]
 
         raise AnalyticsQueryError("Unsupported analytics operation")

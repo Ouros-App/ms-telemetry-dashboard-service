@@ -136,6 +136,8 @@ class FarmSummaryItem(BaseModel):
     farm_name: str
     manager_name: str | None = None
     location: str
+    state: str | None = None
+    regional_management: str | None = None
     total_consumption: str
     lots_count: int
     avg_lot_cost: float
@@ -168,6 +170,8 @@ class CorporateCostByLotSizeCohortItem(BaseModel):
     current_year_cost: float
     previous_year_lots: int = 0
     current_year_lots: int = 0
+    min_birds: int | None = None
+    max_birds: int | None = None
 
 
 class BoxPlotStats(BaseModel):
