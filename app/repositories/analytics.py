@@ -73,6 +73,14 @@ ADMIN_OPERATIONS = frozenset(
         "monthly-water-consumption",
     }
 )
+ADMIN_AI_OPERATIONS = frozenset(
+    {
+        "admin_ai_kpis",
+        "admin_ai_token_spend",
+        "admin_ai_latency_distribution",
+        "admin_ai_sessions",
+    }
+)
 DATED_OPERATIONS = frozenset(
     {
         "lot_throughput",
@@ -1379,6 +1387,47 @@ class AnalyticsRepository:
             records,
         )
 
+    def _fetch_admin_ai(
+        self,
+        operation: str,
+        records: Any,
+    ) -> list[dict[str, Any]]:
+        raw_sessions = list(records(ROWS, "fact_ai_session"))
+        if not raw_sessions:
+            return []
+        if operation == "admin_ai_kpis":
+            total_cost = sum(
+                (_number(s.get("cost_brl")) for s in raw_sessions), Decimal(0)
+            )
+            total_tokens = sum(
+                (_number(s.get("total_tokens")) for s in raw_sessions), Decimal(0)
+            )
+            active_users = len(
+                {s.get("user_id") for s in raw_sessions if s.get("user_id") is not None}
+            )
+            unit_cost = (
+                _rounded((total_cost * Decimal(1000)) / total_tokens, 2)
+                if total_tokens > 0
+                else 0.0
+            )
+            return [
+                {
+                    "total_cost_brl": _rounded(total_cost, 2),
+                    "unit_cost_brl": unit_cost,
+                    "active_users": active_users,
+                    "total_tokens": int(total_tokens),
+                }
+            ]
+        normalized: list[dict[str, Any]] = []
+        for s in raw_sessions:
+            item = dict(s)
+            if "cost_brl" in item:
+                item["cost_brl"] = _rounded(_number(item["cost_brl"]), 2)
+            if "accuracy_rate" in item:
+                item["accuracy_rate"] = _rounded(_number(item["accuracy_rate"]), 2)
+            normalized.append(item)
+        return normalized
+
     def _fetch_sync(
         self, operation: str, args: tuple[Any, ...]
     ) -> list[dict[str, Any]]:
@@ -1399,27 +1448,46 @@ class AnalyticsRepository:
 
         run_id = state["run_id"]
         extra_filters: dict[str, Any] = {}
+        period_days: int | None = None
         if operation in CORPORATE_OPERATIONS:
             if len(args) < 2:
                 raise AnalyticsQueryError("Signed analytics scope is missing")
             farm_id, enterprise_id = args[:2]
-            if farm_id is not None or enterprise_id is None:
+            is_global_admin = False
+            for extra_arg in args[2:]:
+                if isinstance(extra_arg, dict):
+                    if extra_arg.get("_global_admin"):
+                        is_global_admin = True
+                    extra_filters.update(
+                        {k: v for k, v in extra_arg.items() if k != "_global_admin"}
+                    )
+                elif isinstance(extra_arg, int):
+                    period_days = extra_arg
+            if farm_id is not None or (enterprise_id is None and not is_global_admin):
                 raise AnalyticsQueryError(
                     "Corporate operations require enterprise scope"
                 )
-            if (
-                isinstance(enterprise_id, bool)
-                or not isinstance(enterprise_id, int)
-                or enterprise_id < 1
-            ):
-                raise AnalyticsQueryError("Invalid analytics scope")
-            scope = {"enterprise_id": enterprise_id}
-            period_days = None
-            for extra_arg in args[2:]:
+            if enterprise_id is not None:
+                if (
+                    isinstance(enterprise_id, bool)
+                    or not isinstance(enterprise_id, int)
+                    or enterprise_id < 1
+                ):
+                    raise AnalyticsQueryError("Invalid analytics scope")
+                scope = {"enterprise_id": enterprise_id}
+            else:
+                scope = {}
+        elif operation in ADMIN_AI_OPERATIONS:
+            scope, period_days = {}, None
+            for extra_arg in args:
                 if isinstance(extra_arg, dict):
                     extra_filters.update(extra_arg)
-                elif isinstance(extra_arg, int):
-                    period_days = extra_arg
+                elif (
+                    isinstance(extra_arg, int)
+                    and not isinstance(extra_arg, bool)
+                    and extra_arg > 0
+                ):
+                    scope["enterprise_id"] = extra_arg
         elif operation in USER_OPERATIONS:
             if len(args) < 2:
                 raise AnalyticsQueryError("Signed analytics scope is missing")
@@ -1457,6 +1525,9 @@ class AnalyticsRepository:
 
         if operation in CORPORATE_OPERATIONS:
             return self._fetch_corporate(operation, records, extra_filters, cutoff)
+
+        if operation in ADMIN_AI_OPERATIONS:
+            return self._fetch_admin_ai(operation, records)
 
         if operation in {
             "current_flock",

@@ -6,7 +6,11 @@ import pytest
 from bson import Decimal128
 from fastapi.testclient import TestClient
 
-from app.core.auth import Principal, require_user_bearer
+from app.core.auth import (
+    Principal,
+    require_corporate_or_admin_bearer,
+    require_user_bearer,
+)
 from app.main import app
 from app.providers.analytics import AnalyticsDashboardProvider
 from app.repositories.analytics import AnalyticsRepository
@@ -174,6 +178,7 @@ def client_with_data():
     service = UserDashboardService(provider)
     app.state.user_dashboard_service = service
     app.dependency_overrides[require_user_bearer] = lambda: make_principal(99)
+    app.dependency_overrides[require_corporate_or_admin_bearer] = lambda: make_principal(99)
 
     yield TestClient(app)
     app.dependency_overrides.clear()
@@ -346,6 +351,7 @@ def test_corporate_filters_multi_year_history():
     service = UserDashboardService(provider)
     app.state.user_dashboard_service = service
     app.dependency_overrides[require_user_bearer] = lambda: make_principal(99)
+    app.dependency_overrides[require_corporate_or_admin_bearer] = lambda: make_principal(99)
 
     client = TestClient(app)
     res = client.get("/v1/user/dashboards/corporate/filters")
@@ -438,6 +444,7 @@ def test_corporate_cost_by_region_gradient_contrast():
     service = UserDashboardService(provider)
     app.state.user_dashboard_service = service
     app.dependency_overrides[require_user_bearer] = lambda: make_principal(99)
+    app.dependency_overrides[require_corporate_or_admin_bearer] = lambda: make_principal(99)
 
     client = TestClient(app)
     res = client.get("/v1/user/dashboards/corporate/charts/cost-by-region/data")

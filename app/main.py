@@ -7,6 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pymongo.errors import PyMongoError
 
+from app.api.admin_metrics import router as admin_metrics_router
 from app.api.routes import router
 from app.api.user_dashboards import router as user_dashboard_router
 from app.clients.databricks import DatabricksAuthClient, DatabricksHttpClient
@@ -26,6 +27,7 @@ from app.providers.prometheus import PrometheusDashboardProvider
 from app.providers.registry import DashboardProviderRegistry
 from app.repositories.analytics import AnalyticsRepository, AnalyticsUnavailable
 from app.repositories.catalog import CatalogError, DashboardCatalog
+from app.services.admin_metrics import AdminMetricsService
 from app.services.dashboard import DashboardService
 from app.services.user_dashboard import UserDashboardService
 
@@ -157,6 +159,7 @@ async def lifespan(app: FastAPI):
         AnalyticsDashboardProvider(analytics_repository),
         settings.chart_cache_ttl_seconds,
     )
+    app.state.admin_metrics_service = AdminMetricsService(analytics_repository)
 
     logger.info("service started", extra={"event": "service_started"})
     try:
@@ -232,3 +235,4 @@ async def request_context(request: Request, call_next):
 
 app.include_router(router)
 app.include_router(user_dashboard_router)
+app.include_router(admin_metrics_router)
