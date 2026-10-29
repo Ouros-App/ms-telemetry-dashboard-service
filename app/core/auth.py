@@ -193,6 +193,12 @@ def _require_user_identity(principal: Principal) -> None:
     )
 
 
+def _require_corporate_identity(principal: Principal) -> None:
+    if principal.account_type == "admin" and "admin" in principal.roles:
+        return
+    _require_user_identity(principal)
+
+
 async def _keycloak_principal(token: str) -> Principal:
     try:
         claims = await asyncio.to_thread(_decode_keycloak_token, token)
@@ -234,6 +240,44 @@ async def require_bearer(
 ) -> Principal:
     principal = await _authenticated_principal(credentials)
     _require_role(principal, settings.keycloak_required_role)
+    return principal
+
+
+def require_admin_principal(principal: Principal) -> Principal:
+    is_admin = (
+        principal.account_type == "admin"
+        or "admin" in principal.roles
+        or (
+            bool(settings.keycloak_required_role.strip())
+            and settings.keycloak_required_role.strip() in principal.roles
+        )
+    )
+    if not is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso restrito a administradores",
+        )
+    return principal
+
+
+async def require_admin_bearer(
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None,
+        Security(bearer_scheme),
+    ],
+) -> Principal:
+    principal = await _authenticated_principal(credentials)
+    return require_admin_principal(principal)
+
+
+async def require_corporate_or_admin_bearer(
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None,
+        Security(bearer_scheme),
+    ],
+) -> Principal:
+    principal = await _authenticated_principal(credentials)
+    _require_corporate_identity(principal)
     return principal
 
 

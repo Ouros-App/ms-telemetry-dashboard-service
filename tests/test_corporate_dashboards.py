@@ -6,7 +6,11 @@ import pytest
 from bson import Decimal128
 from fastapi.testclient import TestClient
 
-from app.core.auth import Principal, require_user_bearer
+from app.core.auth import (
+    Principal,
+    require_corporate_or_admin_bearer,
+    require_user_bearer,
+)
 from app.main import app
 from app.providers.analytics import AnalyticsDashboardProvider
 from app.repositories.analytics import AnalyticsRepository
@@ -219,10 +223,13 @@ def make_principal(
     )
 
 
+def override_user_auth(principal: Principal) -> None:
+    app.dependency_overrides[require_user_bearer] = lambda: principal
+    app.dependency_overrides[require_corporate_or_admin_bearer] = lambda: principal
+
+
 def test_farm_owner_cannot_access_corporate_endpoints():
-    app.dependency_overrides[require_user_bearer] = lambda: make_principal(
-        "farm_owner", farm_id=101
-    )
+    override_user_auth(make_principal("farm_owner", farm_id=101))
     client = TestClient(app)
 
     # 1. KPIs
@@ -281,9 +288,7 @@ def test_company_employee_dashboard_list_contains_corporate():
 
 
 def test_company_employee_get_corporate_kpis():
-    app.dependency_overrides[require_user_bearer] = lambda: make_principal(
-        "company_employee", enterprise_id=99
-    )
+    override_user_auth(make_principal("company_employee", enterprise_id=99))
     client = TestClient(app)
 
     res = client.get("/v1/user/dashboards/corporate/kpis")
@@ -312,9 +317,7 @@ def test_company_employee_get_corporate_kpis():
 
 
 def test_company_employee_get_corporate_filters():
-    app.dependency_overrides[require_user_bearer] = lambda: make_principal(
-        "company_employee", enterprise_id=99
-    )
+    override_user_auth(make_principal("company_employee", enterprise_id=99))
     client = TestClient(app)
 
     res = client.get("/v1/user/dashboards/corporate/filters")
@@ -329,9 +332,7 @@ def test_company_employee_get_corporate_filters():
 
 
 def test_company_employee_get_corporate_chart_data():
-    app.dependency_overrides[require_user_bearer] = lambda: make_principal(
-        "company_employee", enterprise_id=99
-    )
+    override_user_auth(make_principal("company_employee", enterprise_id=99))
     client = TestClient(app)
 
     # 1. trend-kwh-aves
@@ -429,9 +430,7 @@ def test_company_employee_get_corporate_chart_data():
 
 
 def test_company_employee_get_corporate_farms_table():
-    app.dependency_overrides[require_user_bearer] = lambda: make_principal(
-        "company_employee", enterprise_id=99
-    )
+    override_user_auth(make_principal("company_employee", enterprise_id=99))
     client = TestClient(app)
 
     res = client.get("/v1/user/dashboards/corporate/farms?page=1&limit=10")

@@ -3,7 +3,11 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse
 
-from app.core.auth import Principal, require_user_bearer
+from app.core.auth import (
+    Principal,
+    require_corporate_or_admin_bearer,
+    require_user_bearer,
+)
 from app.repositories.analytics import AnalyticsQueryError, AnalyticsUnavailable
 from app.schemas.user_dashboards import (
     CorporateFarmsTableResponse,
@@ -41,6 +45,8 @@ def _scope_forbidden(exc: UserScopeError) -> HTTPException:
 
 
 def _require_company_employee(principal: Principal) -> None:
+    if principal.account_type == "admin" and "admin" in principal.roles:
+        return
     if (
         principal.account_type != "company_employee"
         or "company_employee" not in principal.roles
@@ -59,16 +65,21 @@ def _require_company_employee(principal: Principal) -> None:
     description="Returns high-level KPIs consolidated across all farms for company employees.",
 )
 async def get_corporate_kpis(
-    principal: Annotated[Principal, Depends(require_user_bearer)],
+    principal: Annotated[Principal, Depends(require_corporate_or_admin_bearer)],
     service: Annotated[UserDashboardService, Depends(get_user_dashboard_service)],
     month: str | None = None,
     state: str | None = None,
     management: str | None = None,
+    enterprise_id: int | None = None,
 ) -> CorporateKpisResponse:
     _require_company_employee(principal)
     try:
         return await service.get_corporate_kpis(
-            principal, month=month, state=state, management=management
+            principal,
+            month=month,
+            state=state,
+            management=management,
+            enterprise_id=enterprise_id,
         )
     except (AnalyticsUnavailable, AnalyticsQueryError) as exc:
         raise HTTPException(
@@ -84,12 +95,15 @@ async def get_corporate_kpis(
     description="Returns available periods, states, and regional managements for filtering.",
 )
 async def get_corporate_filters(
-    principal: Annotated[Principal, Depends(require_user_bearer)],
+    principal: Annotated[Principal, Depends(require_corporate_or_admin_bearer)],
     service: Annotated[UserDashboardService, Depends(get_user_dashboard_service)],
+    enterprise_id: int | None = None,
 ) -> CorporateFilterOptionsResponse:
     _require_company_employee(principal)
     try:
-        return await service.get_corporate_filters(principal)
+        return await service.get_corporate_filters(
+            principal, enterprise_id=enterprise_id
+        )
     except (AnalyticsUnavailable, AnalyticsQueryError) as exc:
         raise HTTPException(
             status_code=503,
@@ -104,16 +118,22 @@ async def get_corporate_filters(
 )
 async def get_corporate_chart_data(
     chart_id: str,
-    principal: Annotated[Principal, Depends(require_user_bearer)],
+    principal: Annotated[Principal, Depends(require_corporate_or_admin_bearer)],
     service: Annotated[UserDashboardService, Depends(get_user_dashboard_service)],
     month: str | None = None,
     state: str | None = None,
     management: str | None = None,
+    enterprise_id: int | None = None,
 ) -> list[dict[str, Any]]:
     _require_company_employee(principal)
     try:
         return await service.get_corporate_chart_data(
-            principal, chart_id, month=month, state=state, management=management
+            principal,
+            chart_id,
+            month=month,
+            state=state,
+            management=management,
+            enterprise_id=enterprise_id,
         )
     except (UserChartNotFound, UserDashboardNotFound) as exc:
         raise HTTPException(status_code=404, detail="chart not found") from exc
@@ -131,7 +151,7 @@ async def get_corporate_chart_data(
     description="Returns consolidated farm statistics with search, filtering, and sorting.",
 )
 async def get_corporate_farms_table(
-    principal: Annotated[Principal, Depends(require_user_bearer)],
+    principal: Annotated[Principal, Depends(require_corporate_or_admin_bearer)],
     service: Annotated[UserDashboardService, Depends(get_user_dashboard_service)],
     search: str | None = None,
     sort_by: str = "farm_name",
@@ -141,6 +161,7 @@ async def get_corporate_farms_table(
     state: str | None = None,
     management: str | None = None,
     month: str | None = None,
+    enterprise_id: int | None = None,
 ) -> CorporateFarmsTableResponse:
     _require_company_employee(principal)
     try:
@@ -154,6 +175,7 @@ async def get_corporate_farms_table(
             state=state,
             management=management,
             month=month,
+            enterprise_id=enterprise_id,
         )
     except (AnalyticsUnavailable, AnalyticsQueryError) as exc:
         raise HTTPException(
