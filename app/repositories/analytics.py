@@ -443,7 +443,19 @@ def _format_k(val: float) -> str:
     return f"{val_num / 1000:g}k"
 
 
-def _format_cohort_label(piso: int, teto: int) -> str:
+def _calcular_percentil(valores: list[int], percentil: float = 0.95) -> float:
+    """Calcula o percentil especificado (0.0 a 1.0) utilizando o posto inferior (lower rank)."""
+    if not valores:
+        return 0.0
+    ordenados = sorted(valores)
+    idx = math.floor((len(ordenados) - 1) * percentil)
+    return float(ordenados[idx])
+
+
+def _format_cohort_label(piso: int, teto: int | None) -> str:
+    """Formata o rotulo do balde. Se teto for None, gera rotulo de cauda aberta (ex: '10k+')."""
+    if teto is None:
+        return f"{_format_k(piso)}+"
     return f"{_format_k(piso)}-{_format_k(teto)}"
 
 
@@ -460,9 +472,15 @@ def _lot_cost(lot: dict[str, Any]) -> float:
 def _alocar_lote(bucket: dict[str, Any], birds: int, is_last: bool) -> bool:
     if birds <= 0:
         return False
-    if bucket["min_birds"] <= birds < bucket["max_birds"]:
+    min_b = bucket["min_birds"]
+    max_b = bucket.get("max_birds")
+
+    if max_b is None:
+        return birds >= min_b
+
+    if min_b <= birds < max_b:
         return True
-    return is_last and birds >= bucket["min_birds"]
+    return is_last and birds >= min_b
 
 
 def _acumular_lotes(
@@ -512,6 +530,18 @@ def _aparar_pontas_vazias(resultado: list[dict[str, Any]]) -> list[dict[str, Any
     return resultado
 
 
+def _gerar_faixas_regulares(
+    piso: int, teto: int, step: int
+) -> list[tuple[int, int | None, str]]:
+    faixas: list[tuple[int, int | None, str]] = []
+    atual = piso
+    while atual < teto:
+        proximo = atual + step
+        faixas.append((atual, proximo, _format_cohort_label(atual, proximo)))
+        atual = proximo
+    return faixas
+
+
 def gerar_histograma_adaptativo(
     lotes_este_ano: list[dict[str, Any]],
     lotes_ano_passado: list[dict[str, Any]],
@@ -525,19 +555,28 @@ def gerar_histograma_adaptativo(
         return []
 
     min_size, max_size = min(todos), max(todos)
-    step = calcular_passo_amigavel(max_size - min_size, num_baldes)
+    p95 = _calcular_percentil(todos, 0.95)
 
-    piso_inicial = (min_size // step) * step
-    teto_final = math.ceil(max_size / step) * step
-    if teto_final == piso_inicial:
-        teto_final = piso_inicial + step
+    tem_outlier = len(todos) >= 4 and p95 > min_size and (max_size / p95) >= 1.5
 
-    faixas = []
-    atual = piso_inicial
-    while atual < teto_final:
-        proximo = atual + step
-        faixas.append((atual, proximo, _format_cohort_label(atual, proximo)))
-        atual = proximo
+    if tem_outlier:
+        baldes_regulares = max(3, num_baldes - 1)
+        step = calcular_passo_amigavel(p95 - min_size, baldes_regulares)
+        piso_inicial = (min_size // step) * step
+        teto_regular = math.ceil(p95 / step) * step
+        if teto_regular == piso_inicial:
+            teto_regular = piso_inicial + step
+
+        faixas = _gerar_faixas_regulares(piso_inicial, teto_regular, step)
+        faixas.append((teto_regular, None, _format_cohort_label(teto_regular, None)))
+    else:
+        step = calcular_passo_amigavel(max_size - min_size, num_baldes)
+        piso_inicial = (min_size // step) * step
+        teto_final = math.ceil(max_size / step) * step
+        if teto_final == piso_inicial:
+            teto_final = piso_inicial + step
+
+        faixas = _gerar_faixas_regulares(piso_inicial, teto_final, step)
 
     resultado = [
         {
