@@ -1,6 +1,8 @@
 """Unit tests for adaptive binning algorithm in corporate dashboard."""
 
 from app.repositories.analytics import (
+    _alocar_lote,
+    _calcular_percentil,
     _format_cohort_label,
     calcular_passo_amigavel,
     calcular_step_amigavel,
@@ -195,3 +197,122 @@ def test_adaptive_histogram_continuous_axis_with_valleys():
     assert result[2]["cohort"] == "30k-40k"
     assert result[2]["current_year_lots"] == 0
     assert result[2]["current_year_cost"] == 0.0
+
+
+def test_calcular_percentil():
+    assert _calcular_percentil([]) == 0.0
+    assert _calcular_percentil([1000]) == 1000.0
+    vals = [1000, 2000, 3000, 4000, 5000]
+    assert _calcular_percentil(vals, 0.95) == 4000.0
+    assert _calcular_percentil(vals, 0.50) == 3000.0
+    assert _calcular_percentil(vals, 0.0) == 1000.0
+
+
+def test_format_cohort_label_open_tail():
+    assert _format_cohort_label(0, 10000) == "0-10k"
+    assert _format_cohort_label(10000, 20000) == "10k-20k"
+    assert _format_cohort_label(8000, None) == "8k+"
+    assert _format_cohort_label(10000, None) == "10k+"
+    assert _format_cohort_label(0, None) == "0+"
+    assert _format_cohort_label(1_000_000, None) == "1.0M+"
+
+
+def test_alocar_lote_open_and_closed_buckets():
+    bucket_closed = {"min_birds": 6000, "max_birds": 8000}
+    bucket_open = {"min_birds": 8000, "max_birds": None}
+
+    # Closed bucket
+    assert _alocar_lote(bucket_closed, 5999, is_last=False) is False
+    assert _alocar_lote(bucket_closed, 6000, is_last=False) is True
+    assert _alocar_lote(bucket_closed, 7500, is_last=False) is True
+    assert _alocar_lote(bucket_closed, 8000, is_last=False) is False
+    # If closed bucket is marked is_last, upper boundary is inclusive
+    assert _alocar_lote(bucket_closed, 8000, is_last=True) is True
+
+    # Open tail bucket (max_birds is None)
+    assert _alocar_lote(bucket_open, 7999, is_last=True) is False
+    assert _alocar_lote(bucket_open, 8000, is_last=True) is True
+    assert _alocar_lote(bucket_open, 45000, is_last=True) is True
+    # Zero or negative birds must be rejected
+    assert _alocar_lote(bucket_open, 0, is_last=True) is False
+    assert _alocar_lote(bucket_open, -5, is_last=True) is False
+
+
+def test_adaptive_histogram_outlier_simulation_real_case():
+    # 15 normal lots from 1.200 to 6.800 birds (costs R$ 50k to R$ 200k)
+    # 1 outlier lot with 45.000 birds (cost R$ 12.500)
+    curr = [
+        {"received_chickens": 1500, "cost": 50000.0},
+        {"received_chickens": 2200, "cost": 70000.0},
+        {"received_chickens": 3100, "cost": 90000.0},
+        {"received_chickens": 3900, "cost": 110000.0},
+        {"received_chickens": 4800, "cost": 140000.0},
+        {"received_chickens": 5500, "cost": 160000.0},
+        {"received_chickens": 6200, "cost": 180000.0},
+        {"received_chickens": 6800, "cost": 200000.0},
+        {"received_chickens": 45000, "cost": 12500.0},  # Outlier
+    ]
+    prev = [
+        {"received_chickens": 1200, "cost": 45000.0},
+        {"received_chickens": 1800, "cost": 60000.0},
+        {"received_chickens": 2500, "cost": 80000.0},
+        {"received_chickens": 3400, "cost": 100000.0},
+        {"received_chickens": 4200, "cost": 125000.0},
+        {"received_chickens": 5100, "cost": 150000.0},
+        {"received_chickens": 6500, "cost": 190000.0},
+    ]
+
+    result = gerar_histograma_adaptativo(curr, prev, num_baldes=5)
+
+    # 4 regular bins covering 0-2k to 6k-8k, and 1 open bin 8k+
+    cohort_names = [b["cohort"] for b in result]
+    assert cohort_names == ["0-2k", "2k-4k", "4k-6k", "6k-8k", "8k+"]
+
+    # Normal lots are distributed in the 4 regular bins
+    assert result[0]["current_year_lots"] == 1
+    assert result[0]["previous_year_lots"] == 2
+    assert result[0]["current_year_cost"] == 50000.0
+    assert result[0]["previous_year_cost"] == 105000.0
+
+    assert result[1]["current_year_lots"] == 3
+    assert result[1]["previous_year_lots"] == 2
+
+    assert result[2]["current_year_lots"] == 2
+    assert result[2]["previous_year_lots"] == 2
+
+    assert result[3]["current_year_lots"] == 2
+    assert result[3]["previous_year_lots"] == 1
+
+    # Outlier falls in 8k+ with open tail (max_birds is None)
+    tail = result[4]
+    assert tail["cohort"] == "8k+"
+    assert tail["min_birds"] == 8000
+    assert tail["max_birds"] is None
+    assert tail["current_year_lots"] == 1
+    assert tail["current_year_cost"] == 12500.0
+    assert tail["previous_year_lots"] == 0
+    assert tail["previous_year_cost"] == 0.0
+
+    # Ensure the first bucket does NOT concentrate 100% of data anymore
+    total_curr_cost = sum(b["current_year_cost"] for b in result)
+    assert result[0]["current_year_cost"] < total_curr_cost * 0.15
+
+
+def test_adaptive_histogram_homogeneous_no_outliers():
+    # Regular lots: 10k, 20k, 30k, 40k, 50k birds
+    curr = [
+        {"received_chickens": 10000, "cost": 50000.0},
+        {"received_chickens": 20000, "cost": 100000.0},
+        {"received_chickens": 40000, "cost": 200000.0},
+    ]
+    prev = [
+        {"received_chickens": 30000, "cost": 150000.0},
+        {"received_chickens": 50000, "cost": 250000.0},
+    ]
+    result = gerar_histograma_adaptativo(curr, prev, num_baldes=5)
+
+    cohort_names = [b["cohort"] for b in result]
+    # No tail bucket with '+'
+    assert all("+" not in name for name in cohort_names)
+    assert all(b["max_birds"] is not None for b in result)
+    assert cohort_names == ["10k-20k", "20k-30k", "30k-40k", "40k-50k"]
