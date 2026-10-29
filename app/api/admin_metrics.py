@@ -14,6 +14,7 @@ from app.services.admin_metrics import AdminMetricsService
 
 router = APIRouter(prefix="/v1/admin/ai-metrics", tags=["admin-ai-metrics"])
 ADMIN_METRICS_UNAVAILABLE_DETAIL = "Admin AI metrics are temporarily unavailable"
+RESPONSES_503 = {503: {"description": ADMIN_METRICS_UNAVAILABLE_DETAIL}}
 
 
 def get_admin_metrics_service(request: Request) -> AdminMetricsService:
@@ -26,12 +27,12 @@ def get_admin_metrics_service(request: Request) -> AdminMetricsService:
 
 @router.get(
     "/kpis",
-    response_model=AdminAiMetricsKpisResponse,
     summary="Get Midas AI KPIs for Admin Dashboard",
     description=(
         "Returns token spend, unit cost per 1k tokens, and active connected users "
         "for the Admin AI & Tokens observability dashboard (Figma 6052:1721)."
     ),
+    responses=RESPONSES_503,
 )
 async def get_admin_ai_kpis(
     principal: Annotated[Principal, Depends(require_admin_bearer)],
@@ -51,9 +52,9 @@ async def get_admin_ai_kpis(
 
 @router.get(
     "/charts/token-spend",
-    response_model=AdminTokenSpendChartResponse,
     summary="Get token spend time series by AI model",
     description="Returns comparative token consumption and cost curves across periods/cohorts.",
+    responses=RESPONSES_503,
 )
 async def get_admin_token_spend_chart(
     principal: Annotated[Principal, Depends(require_admin_bearer)],
@@ -76,9 +77,9 @@ async def get_admin_token_spend_chart(
 
 @router.get(
     "/charts/latency-distribution",
-    response_model=AdminLatencyDistributionResponse,
     summary="Get prompt response latency distribution histogram",
     description="Returns latency distribution buckets and average prompt cost.",
+    responses=RESPONSES_503,
 )
 async def get_admin_latency_distribution_chart(
     principal: Annotated[Principal, Depends(require_admin_bearer)],
@@ -101,9 +102,9 @@ async def get_admin_latency_distribution_chart(
 
 @router.get(
     "/sessions",
-    response_model=AdminMidasSessionsResponse,
     summary="Get paginated Midas AI session audit table",
     description="Returns paginated audit records of Midas AI interactions, accuracy, and latency.",
+    responses=RESPONSES_503,
 )
 async def get_admin_midas_sessions(
     principal: Annotated[Principal, Depends(require_admin_bearer)],

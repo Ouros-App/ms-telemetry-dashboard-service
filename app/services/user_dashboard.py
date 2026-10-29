@@ -49,6 +49,8 @@ class CachedHtml:
     nonce: str
 
 
+CORPORATE_SCOPE_REQUIRED = "corporate dashboard requires company employee scope"
+
 class UserDashboardService:
     def __init__(
         self,
@@ -139,7 +141,7 @@ class UserDashboardService:
     ) -> UserDashboardPublic:
         scope = self.scope_for(principal)
         if dashboard_id == "corporate" and scope.account_type != "company_employee":
-            raise UserScopeError("corporate dashboard requires company employee scope")
+            raise UserScopeError(CORPORATE_SCOPE_REQUIRED)
         try:
             dashboard = await self.provider.get_dashboard(dashboard_id)
         except KeyError as exc:
@@ -153,7 +155,7 @@ class UserDashboardService:
     ) -> UserChartListResponse:
         scope = self.scope_for(principal)
         if dashboard_id == "corporate" and scope.account_type != "company_employee":
-            raise UserScopeError("corporate dashboard requires company employee scope")
+            raise UserScopeError(CORPORATE_SCOPE_REQUIRED)
         try:
             charts = await self.provider.list_charts(dashboard_id)
         except KeyError as exc:
@@ -191,7 +193,7 @@ class UserDashboardService:
     ) -> tuple[str, str]:
         scope = self.scope_for(principal)
         if dashboard_id == "corporate" and scope.account_type != "company_employee":
-            raise UserScopeError("corporate dashboard requires company employee scope")
+            raise UserScopeError(CORPORATE_SCOPE_REQUIRED)
 
         try:
             chart = await self.provider.get_chart(dashboard_id, chart_id)
@@ -299,7 +301,7 @@ class UserDashboardService:
             return enterprise_id or principal.enterprise_id, True
         scope = self.scope_for(principal)
         if scope.account_type != "company_employee" or scope.enterprise_id is None:
-            raise UserScopeError("corporate dashboard requires company employee scope")
+            raise UserScopeError(CORPORATE_SCOPE_REQUIRED)
         return scope.enterprise_id, False
 
     async def get_corporate_kpis(

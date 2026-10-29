@@ -1352,7 +1352,6 @@ class AnalyticsRepository:
         self,
         operation: str,
         records: Any,
-        extra_filters: dict[str, Any],
     ) -> list[dict[str, Any]]:
         raw_sessions = list(records(ROWS, "fact_ai_session"))
         if not raw_sessions:
@@ -1410,6 +1409,7 @@ class AnalyticsRepository:
 
         run_id = state["run_id"]
         extra_filters: dict[str, Any] = {}
+        period_days: int | None = None
         if operation in CORPORATE_OPERATIONS:
             if len(args) < 2:
                 raise AnalyticsQueryError("Signed analytics scope is missing")
@@ -1438,7 +1438,6 @@ class AnalyticsRepository:
                 scope = {"enterprise_id": enterprise_id}
             else:
                 scope = {}
-            period_days = locals().get("period_days")
         elif operation in ADMIN_AI_OPERATIONS:
             scope, period_days = {}, None
             for extra_arg in args:
@@ -1489,7 +1488,7 @@ class AnalyticsRepository:
             return self._fetch_corporate(operation, records, extra_filters, cutoff)
 
         if operation in ADMIN_AI_OPERATIONS:
-            return self._fetch_admin_ai(operation, records, extra_filters)
+            return self._fetch_admin_ai(operation, records)
 
         if operation in {
             "current_flock",

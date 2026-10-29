@@ -339,10 +339,10 @@ def test_admin_can_fetch_and_filter_midas_sessions() -> None:
     assert res_ent.json()["items"][0]["user_name"] == "Roberto Almeida"
 
 
-def test_admin_ai_metrics_populated_from_mongodb_snapshot() -> None:
+def test_admin_ai_metrics_populated_from_mongodb_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
     repo = build_repository(with_ai_sessions=True)
-    app.state.analytics_repository = repo
-    app.state.admin_metrics_service = AdminMetricsService(repo)
+    monkeypatch.setattr(app.state, "analytics_repository", repo)
+    monkeypatch.setattr(app.state, "admin_metrics_service", AdminMetricsService(repo))
     app.dependency_overrides[require_admin_bearer] = lambda: make_principal("admin")
     client = TestClient(app)
 
@@ -373,7 +373,7 @@ def test_admin_ai_metrics_populated_from_mongodb_snapshot() -> None:
         "/v1/admin/ai-metrics/sessions",
     ],
 )
-def test_admin_ai_metrics_routes_map_service_errors_to_503(endpoint: str) -> None:
+def test_admin_ai_metrics_routes_map_service_errors_to_503(endpoint: str, monkeypatch: pytest.MonkeyPatch) -> None:
     class FailingAdminService:
         async def get_kpis(self, **_kwargs):
             raise AnalyticsUnavailable("offline")
@@ -387,7 +387,7 @@ def test_admin_ai_metrics_routes_map_service_errors_to_503(endpoint: str) -> Non
         async def get_sessions(self, **_kwargs):
             raise AnalyticsQueryError("bad query")
 
-    app.state.admin_metrics_service = FailingAdminService()
+    monkeypatch.setattr(app.state, "admin_metrics_service", FailingAdminService())
     app.dependency_overrides[require_admin_bearer] = lambda: make_principal("admin")
     client = TestClient(app)
 

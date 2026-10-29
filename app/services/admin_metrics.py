@@ -19,6 +19,9 @@ from app.schemas.admin_metrics import (
     TokenSpendPoint,
 )
 
+BUCKET_175K_PLUS = "175k+"
+MODEL_GPT_OSS_120B = "openai/gpt-oss-120b"
+
 DEFAULT_TOKEN_SPEND_SERIES = (
     ("0-50k", 6800.0, 7500.0),
     ("50k-75k", 9100.0, 11000.0),
@@ -26,7 +29,7 @@ DEFAULT_TOKEN_SPEND_SERIES = (
     ("100k-125k", 22100.0, 24000.0),
     ("125k-150k", 14700.0, 15300.0),
     ("150k-175k", 9300.0, 10000.0),
-    ("175k+", 5600.0, 4900.0),
+    (BUCKET_175K_PLUS, 5600.0, 4900.0),
 )
 
 DEFAULT_LATENCY_BUCKETS = (
@@ -36,7 +39,7 @@ DEFAULT_LATENCY_BUCKETS = (
     ("100k-125k", "100-125ms", 100, 125, 22100, 24000, 0.94),
     ("125k-150k", "125-150ms", 125, 150, 14700, 15300, 1.12),
     ("150k-175k", "150-175ms", 150, 175, 9300, 10000, 1.28),
-    ("175k+", "175ms+", 175, None, 5600, 4900, 1.54),
+    (BUCKET_175K_PLUS, "175ms+", 175, None, 5600, 4900, 1.54),
 )
 
 DEFAULT_MIDAS_SESSIONS = (
@@ -47,7 +50,7 @@ DEFAULT_MIDAS_SESSIONS = (
         "account_type": "admin",
         "enterprise_id": 1,
         "farm_id": None,
-        "model": "openai/gpt-oss-120b",
+        "model": MODEL_GPT_OSS_120B,
         "prompt_tokens": 1240,
         "completion_tokens": 680,
         "total_tokens": 1920,
@@ -64,7 +67,7 @@ DEFAULT_MIDAS_SESSIONS = (
         "account_type": "company_employee",
         "enterprise_id": 1,
         "farm_id": 3,
-        "model": "openai/gpt-oss-120b",
+        "model": MODEL_GPT_OSS_120B,
         "prompt_tokens": 980,
         "completion_tokens": 520,
         "total_tokens": 1500,
@@ -123,6 +126,31 @@ def _format_thousands_dot(value: int) -> str:
     return f"{value:,}".replace(",", ".")
 
 
+def _matches_session_filter(
+    s: dict[str, Any],
+    enterprise_id: int | None,
+    model: str | None,
+    status: str | None,
+    search: str | None,
+) -> bool:
+    if (
+        enterprise_id is not None
+        and s.get("enterprise_id") is not None
+        and int(s["enterprise_id"]) != enterprise_id
+    ):
+        return False
+    if model and str(s.get("model", "")).casefold() != model.strip().casefold():
+        return False
+    if status and str(s.get("status", "")).casefold() != status.strip().casefold():
+        return False
+    if search:
+        q = search.strip().casefold()
+        haystack = f"{s.get('session_id', '')} {s.get('user_name', '')} {s.get('model', '')} {s.get('account_type', '')}".casefold()
+        if q not in haystack:
+            return False
+    return True
+
+
 class AdminMetricsService:
     """Service providing Midas AI financial and technical observability for ADM."""
 
@@ -148,6 +176,9 @@ class AdminMetricsService:
     ) -> AdminAiMetricsKpisResponse:
         now_year = datetime.now(UTC).year
         rows = await self._fetch_from_repo("admin_ai_kpis", enterprise_id)
+        if month and rows:
+            month_prefix = month.strip()
+            rows = [r for r in rows if str(r.get("created_at", "")).startswith(month_prefix)]
         if rows:
             row = rows[0]
             total_cost = float(row.get("total_cost_brl", 15_110_000.0))
@@ -203,6 +234,9 @@ class AdminMetricsService:
         enterprise_id: int | None = None,
     ) -> AdminTokenSpendChartResponse:
         sessions = await self._fetch_from_repo("admin_ai_token_spend", enterprise_id)
+        if month and sessions:
+            month_prefix = month.strip()
+            sessions = [s for s in sessions if str(s.get("created_at", "")).startswith(month_prefix)]
         if model:
             sessions = [
                 s
@@ -233,7 +267,7 @@ class AdminMetricsService:
                 )
             return AdminTokenSpendChartResponse(items=points)
 
-        resolved_model = model or "openai/gpt-oss-120b"
+        resolved_model = model or MODEL_GPT_OSS_120B
         items = [
             TokenSpendPoint(
                 period=cohort,
@@ -260,6 +294,9 @@ class AdminMetricsService:
         sessions = await self._fetch_from_repo(
             "admin_ai_latency_distribution", enterprise_id
         )
+        if month and sessions:
+            month_prefix = month.strip()
+            sessions = [s for s in sessions if str(s.get("created_at", "")).startswith(month_prefix)]
         if model:
             sessions = [
                 s
@@ -352,34 +389,10 @@ class AdminMetricsService:
         raw_sessions = await self._fetch_from_repo("admin_ai_sessions", enterprise_id)
         source = raw_sessions if raw_sessions else list(DEFAULT_MIDAS_SESSIONS)
 
-        filtered: list[dict[str, Any]] = []
-        for s in source:
-            if (
-                enterprise_id is not None
-                and s.get("enterprise_id") is not None
-                and int(s["enterprise_id"]) != enterprise_id
-            ):
-                continue
-            if model and str(s.get("model", "")).casefold() != model.strip().casefold():
-                continue
-            if (
-                status
-                and str(s.get("status", "")).casefold() != status.strip().casefold()
-            ):
-                continue
-            if search:
-                q = search.strip().casefold()
-                haystack = " ".join(
-                    [
-                        str(s.get("session_id", "")),
-                        str(s.get("user_name", "")),
-                        str(s.get("model", "")),
-                        str(s.get("account_type", "")),
-                    ]
-                ).casefold()
-                if q not in haystack:
-                    continue
-            filtered.append(s)
+        filtered = [
+            s for s in source
+            if _matches_session_filter(s, enterprise_id, model, status, search)
+        ]
 
         total = len(filtered)
         safe_page = max(1, page)
