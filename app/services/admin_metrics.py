@@ -151,6 +151,58 @@ def _matches_session_filter(
     return True
 
 
+def _matches_latency_bucket(latency: int, low: int, high: int | None) -> bool:
+    if high is not None:
+        return low <= latency < high
+    return latency >= low
+
+
+def _build_latency_bucket_items(
+    sessions: list[dict[str, Any]],
+) -> list[LatencyBucketItem]:
+    bucket_defs = [
+        ("0-50k", "0-50ms", 0, 50),
+        ("50k-75k", "50-75ms", 50, 75),
+        ("75k-100k", "75-100ms", 75, 100),
+        ("100k-125k", "100-125ms", 100, 125),
+        ("125k-150k", "125-150ms", 125, 150),
+        ("150k-175k", "150-175ms", 150, 175),
+        (BUCKET_175K_PLUS, "175ms+", 175, None),
+    ]
+    total = len(sessions)
+    items: list[LatencyBucketItem] = []
+    for bucket_code, label, low, high in bucket_defs:
+        matching = [
+            s
+            for s in sessions
+            if _matches_latency_bucket(int(s.get("latency_ms", 0)), low, high)
+        ]
+        cnt = len(matching)
+        avg_cost = (
+            round(
+                sum(float(m.get("cost_brl", 0.0)) for m in matching) / cnt,
+                2,
+            )
+            if cnt > 0
+            else 0.0
+        )
+        pct = round((cnt * 100.0) / total, 1) if total > 0 else 0.0
+        items.append(
+            LatencyBucketItem(
+                bucket=bucket_code,
+                label=label,
+                min_ms=low,
+                max_ms=high,
+                previous_year_count=max(0, cnt - 1),
+                current_year_count=cnt,
+                count=cnt,
+                percentage=pct,
+                avg_cost_brl=avg_cost,
+            )
+        )
+    return items
+
+
 class AdminMetricsService:
     """Service providing Midas AI financial and technical observability for ADM."""
 
@@ -305,51 +357,9 @@ class AdminMetricsService:
             ]
 
         if sessions and all("latency_ms" in s for s in sessions):
-            bucket_defs = [
-                ("0-50k", "0-50ms", 0, 50),
-                ("50k-75k", "50-75ms", 50, 75),
-                ("75k-100k", "75-100ms", 75, 100),
-                ("100k-125k", "100-125ms", 100, 125),
-                ("125k-150k", "125-150ms", 125, 150),
-                ("150k-175k", "150-175ms", 150, 175),
-                ("175k+", "175ms+", 175, None),
-            ]
-            total = len(sessions)
-            items: list[LatencyBucketItem] = []
-            for bucket_code, label, low, high in bucket_defs:
-                matching = [
-                    s
-                    for s in sessions
-                    if (
-                        low <= int(s.get("latency_ms", 0)) < high
-                        if high is not None
-                        else int(s.get("latency_ms", 0)) >= low
-                    )
-                ]
-                cnt = len(matching)
-                avg_cost = (
-                    round(
-                        sum(float(m.get("cost_brl", 0.0)) for m in matching) / cnt,
-                        2,
-                    )
-                    if cnt > 0
-                    else 0.0
-                )
-                pct = round((cnt * 100.0) / total, 1) if total > 0 else 0.0
-                items.append(
-                    LatencyBucketItem(
-                        bucket=bucket_code,
-                        label=label,
-                        min_ms=low,
-                        max_ms=high,
-                        previous_year_count=max(0, cnt - 1),
-                        current_year_count=cnt,
-                        count=cnt,
-                        percentage=pct,
-                        avg_cost_brl=avg_cost,
-                    )
-                )
-            return AdminLatencyDistributionResponse(items=items)
+            return AdminLatencyDistributionResponse(
+                items=_build_latency_bucket_items(sessions)
+            )
 
         total_curr = sum(b[5] for b in DEFAULT_LATENCY_BUCKETS)
         items = [
