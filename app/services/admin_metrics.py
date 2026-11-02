@@ -26,127 +26,6 @@ from app.schemas.admin_metrics import (
 )
 
 BUCKET_175K_PLUS = "175k+"
-MODEL_GPT_OSS_120B = "openai/gpt-oss-120b"
-
-DEFAULT_TOKEN_SPEND_SERIES = (
-    ("0-50k", 6800.0, 7500.0),
-    ("50k-75k", 9100.0, 11000.0),
-    ("75k-100k", 17400.0, 15800.0),
-    ("100k-125k", 22100.0, 24000.0),
-    ("125k-150k", 14700.0, 15300.0),
-    ("150k-175k", 9300.0, 10000.0),
-    (BUCKET_175K_PLUS, 5600.0, 4900.0),
-)
-
-DEFAULT_REQUEST_SPEND_SERIES = (
-    ("0-50k", 14700.0, 10200.0, 1470, 1020),
-    ("50k-75k", 19200.0, 14700.0, 1920, 1470),
-    ("75k-100k", 23200.0, 18400.0, 2320, 1840),
-    ("100k-125k", 31793.0, 25000.0, 3180, 2500),
-    ("125k-150k", 20400.0, 15300.0, 2040, 1530),
-    ("150k-175k", 13300.0, 10000.0, 1330, 1000),
-    (BUCKET_175K_PLUS, 7547.0, 4900.0, 755, 490),
-)
-
-DEFAULT_AI_COST_BY_REGION = (
-    ("Norte", 88000.0, 65000.0),
-    ("Nordeste", 99000.0, 85000.0),
-    ("Centro-Oeste", 87000.0, 110000.0),
-    ("Sudeste", 114000.0, 195000.0),
-    ("Sul", 100000.0, 140000.0),
-)
-
-DEFAULT_AI_MONTHLY_COST = (
-    ("Jan", 1100000.0, 1590000.0),
-    ("Fev", 1170000.0, 1790000.0),
-    ("Mar", 520000.0, 1360000.0),
-    ("Abr", 550000.0, 1440000.0),
-    ("Mai", 710000.0, 1140000.0),
-    ("Jun", 520000.0, 930000.0),
-    ("Jul", 730000.0, 270000.0),
-    ("Ago", 1270000.0, 740000.0),
-)
-
-DEFAULT_LATENCY_BUCKETS = (
-    ("0-50k", "0-50ms", 0, 50, 6800, 7500, 0.42),
-    ("50k-75k", "50-75ms", 50, 75, 9100, 11000, 0.58),
-    ("75k-100k", "75-100ms", 75, 100, 17400, 15800, 0.79),
-    ("100k-125k", "100-125ms", 100, 125, 22100, 24000, 0.94),
-    ("125k-150k", "125-150ms", 125, 150, 14700, 15300, 1.12),
-    ("150k-175k", "150-175ms", 150, 175, 9300, 10000, 1.28),
-    (BUCKET_175K_PLUS, "175ms+", 175, None, 5600, 4900, 1.54),
-)
-
-DEFAULT_MIDAS_SESSIONS = (
-    {
-        "session_id": "midas-sess-001",
-        "user_id": 101,
-        "user_name": "Vera Marcelinha",
-        "account_type": "admin",
-        "enterprise_id": 1,
-        "farm_id": None,
-        "model": MODEL_GPT_OSS_120B,
-        "prompt_tokens": 1240,
-        "completion_tokens": 680,
-        "total_tokens": 1920,
-        "cost_brl": 1.80,
-        "latency_ms": 112,
-        "accuracy_rate": 98.5,
-        "status": "success",
-        "created_at": "2026-10-28T14:20:00Z",
-    },
-    {
-        "session_id": "midas-sess-002",
-        "user_id": 204,
-        "user_name": "Carlos Eduardo",
-        "account_type": "company_employee",
-        "enterprise_id": 1,
-        "farm_id": 3,
-        "model": MODEL_GPT_OSS_120B,
-        "prompt_tokens": 980,
-        "completion_tokens": 520,
-        "total_tokens": 1500,
-        "cost_brl": 1.41,
-        "latency_ms": 95,
-        "accuracy_rate": 96.0,
-        "status": "success",
-        "created_at": "2026-10-28T13:45:00Z",
-    },
-    {
-        "session_id": "midas-sess-003",
-        "user_id": 312,
-        "user_name": "Mariana Santos",
-        "account_type": "farm_owner",
-        "enterprise_id": 1,
-        "farm_id": 102,
-        "model": "openai/gpt-oss-20b",
-        "prompt_tokens": 640,
-        "completion_tokens": 360,
-        "total_tokens": 1000,
-        "cost_brl": 0.94,
-        "latency_ms": 68,
-        "accuracy_rate": 99.0,
-        "status": "success",
-        "created_at": "2026-10-28T12:10:00Z",
-    },
-    {
-        "session_id": "midas-sess-004",
-        "user_id": 415,
-        "user_name": "Roberto Almeida",
-        "account_type": "farm_owner",
-        "enterprise_id": 2,
-        "farm_id": 201,
-        "model": "nvidia/nemotron-3-super-120b-a12b",
-        "prompt_tokens": 1450,
-        "completion_tokens": 890,
-        "total_tokens": 2340,
-        "cost_brl": 2.20,
-        "latency_ms": 142,
-        "accuracy_rate": 95.2,
-        "status": "success",
-        "created_at": "2026-10-28T10:30:00Z",
-    },
-)
 
 
 def _format_compact_brl(value: float) -> str:
@@ -266,50 +145,50 @@ class AdminMetricsService:
         if month and rows:
             month_prefix = month.strip()
             rows = [r for r in rows if str(r.get("created_at", "")).startswith(month_prefix)]
-        if rows:
-            row = rows[0]
-            total_cost = float(row.get("total_cost_brl", 15_110_000.0))
-            unit_cost = float(row.get("unit_cost_brl", 0.94))
-            active_users = int(row.get("active_users", 104_728))
-            return AdminAiMetricsKpisResponse(
-                token_spend=AdminAiMetricKpiItem(
-                    value=total_cost,
-                    formatted=_format_compact_brl(total_cost),
-                    unit="R$",
-                    year=now_year - 1,
-                ),
-                unit_cost=AdminAiMetricKpiItem(
-                    value=unit_cost,
-                    formatted=f"R$ {unit_cost:.2f}",
-                    unit="R$/1k tokens",
-                    year=now_year,
-                ),
-                active_users=AdminAiMetricKpiItem(
-                    value=float(active_users),
-                    formatted=_format_thousands_dot(active_users),
-                    unit="usuários",
-                    year=now_year,
-                ),
-            )
-
+        row = rows[0] if rows else {}
+        total_cost = (
+            float(row["total_cost_brl"])
+            if row.get("total_cost_brl") is not None
+            else None
+        )
+        unit_cost = (
+            float(row["unit_cost_brl"])
+            if row.get("unit_cost_brl") is not None
+            else None
+        )
+        active_users = (
+            int(row["active_users"])
+            if row.get("active_users") is not None
+            else None
+        )
         return AdminAiMetricsKpisResponse(
             token_spend=AdminAiMetricKpiItem(
-                value=15_110_000.0,
-                formatted="R$ 15.11M",
+                value=total_cost,
+                formatted=(
+                    _format_compact_brl(total_cost)
+                    if total_cost is not None
+                    else "Sem dados"
+                ),
                 unit="R$",
-                year=2025,
+                year=now_year - 1 if total_cost is not None else None,
             ),
             unit_cost=AdminAiMetricKpiItem(
-                value=0.94,
-                formatted="R$ 0.94",
+                value=unit_cost,
+                formatted=(
+                    f"R$ {unit_cost:.2f}" if unit_cost is not None else "Sem dados"
+                ),
                 unit="R$/1k tokens",
-                year=now_year,
+                year=now_year if unit_cost is not None else None,
             ),
             active_users=AdminAiMetricKpiItem(
-                value=104_728.0,
-                formatted="104.728",
+                value=float(active_users) if active_users is not None else None,
+                formatted=(
+                    _format_thousands_dot(active_users)
+                    if active_users is not None
+                    else "Sem dados"
+                ),
                 unit="usuários",
-                year=now_year,
+                year=now_year if active_users is not None else None,
             ),
         )
 
@@ -355,23 +234,7 @@ class AdminMetricsService:
                 )
             return AdminTokenSpendChartResponse(items=points)
 
-        resolved_model = model or MODEL_GPT_OSS_120B
-        items = [
-            TokenSpendPoint(
-                period=cohort,
-                label=cohort,
-                cohort=cohort,
-                model=resolved_model,
-                previous_year_tokens=int(prev_cost * 1000),
-                current_year_tokens=int(curr_cost * 1000),
-                previous_year_cost_brl=prev_cost,
-                current_year_cost_brl=curr_cost,
-                tokens=int(curr_cost * 1000),
-                cost_brl=curr_cost,
-            )
-            for cohort, prev_cost, curr_cost in DEFAULT_TOKEN_SPEND_SERIES
-        ]
-        return AdminTokenSpendChartResponse(items=items)
+        return AdminTokenSpendChartResponse()
 
     async def get_request_spend_chart(
         self,
@@ -411,18 +274,7 @@ class AdminMetricsService:
                 )
             return AdminRequestSpendChartResponse(items=points)
 
-        items = [
-            RequestSpendPoint(
-                cohort=cohort,
-                label=cohort,
-                previous_year_cost_brl=prev_cost,
-                current_year_cost_brl=curr_cost,
-                previous_year_requests=prev_req,
-                current_year_requests=curr_req,
-            )
-            for cohort, prev_cost, curr_cost, prev_req, curr_req in DEFAULT_REQUEST_SPEND_SERIES
-        ]
-        return AdminRequestSpendChartResponse(items=items)
+        return AdminRequestSpendChartResponse()
 
     async def get_cost_by_region_chart(
         self,
@@ -448,15 +300,7 @@ class AdminMetricsService:
             if items:
                 return AdminAiCostByRegionResponse(items=items)
 
-        items = [
-            AiCostByRegionPoint(
-                region=region,
-                previous_year_cost_brl=prev_cost,
-                current_year_cost_brl=curr_cost,
-            )
-            for region, prev_cost, curr_cost in DEFAULT_AI_COST_BY_REGION
-        ]
-        return AdminAiCostByRegionResponse(items=items)
+        return AdminAiCostByRegionResponse()
 
     async def get_monthly_cost_chart(
         self,
@@ -477,15 +321,7 @@ class AdminMetricsService:
             if items:
                 return AdminAiMonthlyCostResponse(items=items)
 
-        items = [
-            AiMonthlyCostPoint(
-                month=month,
-                previous_year_cost_brl=prev_cost,
-                current_year_cost_brl=curr_cost,
-            )
-            for month, prev_cost, curr_cost in DEFAULT_AI_MONTHLY_COST
-        ]
-        return AdminAiMonthlyCostResponse(items=items)
+        return AdminAiMonthlyCostResponse()
 
     async def get_latency_distribution_chart(
         self,
@@ -512,30 +348,7 @@ class AdminMetricsService:
                 items=_build_latency_bucket_items(sessions)
             )
 
-        total_curr = sum(b[5] for b in DEFAULT_LATENCY_BUCKETS)
-        items = [
-            LatencyBucketItem(
-                bucket=bucket,
-                label=label,
-                min_ms=min_ms,
-                max_ms=max_ms,
-                previous_year_count=prev_cnt,
-                current_year_count=curr_cnt,
-                count=curr_cnt,
-                percentage=round((curr_cnt * 100.0) / total_curr, 1),
-                avg_cost_brl=avg_cost,
-            )
-            for (
-                bucket,
-                label,
-                min_ms,
-                max_ms,
-                prev_cnt,
-                curr_cnt,
-                avg_cost,
-            ) in DEFAULT_LATENCY_BUCKETS
-        ]
-        return AdminLatencyDistributionResponse(items=items)
+        return AdminLatencyDistributionResponse()
 
     async def get_sessions(
         self,
@@ -548,8 +361,7 @@ class AdminMetricsService:
         enterprise_id: int | None = None,
     ) -> AdminMidasSessionsResponse:
         raw_sessions = await self._fetch_from_repo("admin_ai_sessions", enterprise_id)
-        source = raw_sessions if raw_sessions else list(DEFAULT_MIDAS_SESSIONS)
-
+        source = raw_sessions
         filtered = [
             s for s in source
             if _matches_session_filter(s, enterprise_id, model, status, search)
