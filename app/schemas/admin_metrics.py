@@ -19,6 +19,7 @@ class AdminAiMetricsKpisResponse(BaseModel):
 class TokenSpendPoint(BaseModel):
     period: str
     label: str
+    cohort: str = ""
     model: str = "Midas LLM"
     previous_year_tokens: int = 0
     current_year_tokens: int = 0
@@ -30,6 +31,39 @@ class TokenSpendPoint(BaseModel):
 
 class AdminTokenSpendChartResponse(BaseModel):
     items: list[TokenSpendPoint] = Field(default_factory=list)
+
+
+class RequestSpendPoint(BaseModel):
+    cohort: str
+    label: str = ""
+    previous_year_cost_brl: float = 0.0
+    current_year_cost_brl: float = 0.0
+    previous_year_requests: int = 0
+    current_year_requests: int = 0
+
+
+class AdminRequestSpendChartResponse(BaseModel):
+    items: list[RequestSpendPoint] = Field(default_factory=list)
+
+
+class AiCostByRegionPoint(BaseModel):
+    region: str
+    previous_year_cost_brl: float = 0.0
+    current_year_cost_brl: float = 0.0
+
+
+class AdminAiCostByRegionResponse(BaseModel):
+    items: list[AiCostByRegionPoint] = Field(default_factory=list)
+
+
+class AiMonthlyCostPoint(BaseModel):
+    month: str
+    previous_year_cost_brl: float = 0.0
+    current_year_cost_brl: float = 0.0
+
+
+class AdminAiMonthlyCostResponse(BaseModel):
+    items: list[AiMonthlyCostPoint] = Field(default_factory=list)
 
 
 class LatencyBucketItem(BaseModel):

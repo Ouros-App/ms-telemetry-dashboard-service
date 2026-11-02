@@ -370,6 +370,9 @@ def test_admin_ai_metrics_populated_from_mongodb_snapshot(monkeypatch: pytest.Mo
         "/v1/admin/ai-metrics/kpis",
         "/v1/admin/ai-metrics/charts/token-spend",
         "/v1/admin/ai-metrics/charts/latency-distribution",
+        "/v1/admin/ai-metrics/charts/request-spend",
+        "/v1/admin/ai-metrics/charts/cost-by-region",
+        "/v1/admin/ai-metrics/charts/monthly-cost",
         "/v1/admin/ai-metrics/sessions",
     ],
 )
@@ -384,6 +387,15 @@ def test_admin_ai_metrics_routes_map_service_errors_to_503(endpoint: str, monkey
         async def get_latency_distribution_chart(self, **_kwargs):
             raise AnalyticsUnavailable("offline")
 
+        async def get_request_spend_chart(self, **_kwargs):
+            raise AnalyticsQueryError("bad query")
+
+        async def get_cost_by_region_chart(self, **_kwargs):
+            raise AnalyticsUnavailable("offline")
+
+        async def get_monthly_cost_chart(self, **_kwargs):
+            raise AnalyticsQueryError("bad query")
+
         async def get_sessions(self, **_kwargs):
             raise AnalyticsQueryError("bad query")
 
@@ -393,6 +405,105 @@ def test_admin_ai_metrics_routes_map_service_errors_to_503(endpoint: str, monkey
 
     res = client.get(endpoint)
     assert res.status_code == 503
+
+
+def test_admin_can_fetch_new_figma_ai_metrics_charts() -> None:
+    app.dependency_overrides[require_admin_bearer] = lambda: make_principal("admin")
+    client = TestClient(app)
+
+    # 1. Request spend chart (fallback contract and filters)
+    req_res = client.get("/v1/admin/ai-metrics/charts/request-spend")
+    assert req_res.status_code == 200
+    req_data = req_res.json()
+    assert len(req_data["items"]) == 7
+    assert req_data["items"][0]["cohort"] == "0-50k"
+
+    req_filtered = client.get("/v1/admin/ai-metrics/charts/request-spend?enterprise_id=99&month=2026-10&model=openai/gpt-oss-120b")
+    assert req_filtered.status_code == 200
+
+    # 2. Cost by region chart (fallback contract and filters)
+    reg_res = client.get("/v1/admin/ai-metrics/charts/cost-by-region")
+    assert reg_res.status_code == 200
+    reg_data = reg_res.json()
+    assert len(reg_data["items"]) == 5
+    assert reg_data["items"][0]["region"] == "Norte"
+
+    reg_filtered = client.get("/v1/admin/ai-metrics/charts/cost-by-region?enterprise_id=88&month=2026-10")
+    assert reg_filtered.status_code == 200
+
+    # 3. Monthly cost chart (fallback contract and filter)
+    mon_res = client.get("/v1/admin/ai-metrics/charts/monthly-cost")
+    assert mon_res.status_code == 200
+    mon_data = mon_res.json()
+    assert len(mon_data["items"]) == 8
+    assert mon_data["items"][0]["month"] == "Jan"
+
+    mon_filtered = client.get("/v1/admin/ai-metrics/charts/monthly-cost?enterprise_id=99")
+    assert mon_filtered.status_code == 200
+
+
+def test_admin_metrics_service_new_methods_with_custom_repo_data() -> None:
+    import asyncio
+    service = AdminMetricsService(None)
+
+    async def _run():
+        # 1. request spend with data and filters
+        fake_spend = [
+            {
+                "cohort": "0-50k",
+                "cost_brl": 1500.0,
+                "previous_year_cost_brl": 2000.0,
+                "current_year_requests": 300,
+                "previous_year_requests": 250,
+                "created_at": "2026-10-01T12:00:00Z",
+                "model": "openai/gpt-oss-120b",
+            },
+            {
+                "cohort": "50k-75k",
+                "cost_brl": 2500.0,
+                "created_at": "2026-09-01T12:00:00Z",
+                "model": "other-model",
+            },
+        ]
+        with patch.object(service, "_fetch_from_repo", return_value=fake_spend):
+            res_spend = await service.get_request_spend_chart(month="2026-10", model="openai/gpt-oss-120b", enterprise_id=99)
+            assert len(res_spend.items) == 1
+            assert res_spend.items[0].cohort == "0-50k"
+
+        # 2. cost by region with data and filters
+        fake_regions = [
+            {
+                "region": "Sudeste",
+                "previous_year_cost_brl": 50000.0,
+                "current_year_cost_brl": 60000.0,
+                "created_at": "2026-10-01T12:00:00Z",
+            },
+            {
+                "region": "Sul",
+                "previous_year_cost_brl": 40000.0,
+                "current_year_cost_brl": 45000.0,
+                "created_at": "2026-09-01T12:00:00Z",
+            },
+        ]
+        with patch.object(service, "_fetch_from_repo", return_value=fake_regions):
+            res_reg = await service.get_cost_by_region_chart(month="2026-10", enterprise_id=88)
+            assert len(res_reg.items) == 1
+            assert res_reg.items[0].region == "Sudeste"
+
+        # 3. monthly cost with data
+        fake_monthly = [
+            {
+                "month": "Jan",
+                "previous_year_cost_brl": 100000.0,
+                "current_year_cost_brl": 120000.0,
+            }
+        ]
+        with patch.object(service, "_fetch_from_repo", return_value=fake_monthly):
+            res_mon = await service.get_monthly_cost_chart(enterprise_id=99)
+            assert len(res_mon.items) == 1
+            assert res_mon.items[0].month == "Jan"
+
+    asyncio.run(_run())
 
 
 def test_admin_can_access_corporate_farms_globally_and_by_enterprise() -> None:
