@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 from datetime import UTC, datetime
 from typing import Any
 
@@ -135,11 +136,13 @@ class AdminMetricsService:
         now = datetime.now(UTC)
         selected_month = month or f"{now.year:04}-{now.month:02}"
         start = datetime.strptime(selected_month, "%Y-%m").replace(tzinfo=UTC)
+        if start > now:
+            return start, start, selected_month
         if start.month == 12:
             next_month = datetime(start.year + 1, 1, 1, tzinfo=UTC)
         else:
             next_month = datetime(start.year, start.month + 1, 1, tzinfo=UTC)
-        return start, min(next_month, now), selected_month
+        return start, next_month, selected_month
 
     async def _prometheus_increase(
         self,
@@ -164,9 +167,12 @@ class AdminMetricsService:
             if not isinstance(sample, list) or len(sample) < 2:
                 continue
             try:
-                total += float(sample[1])
+                sample_value = float(sample[1])
             except (TypeError, ValueError):
                 continue
+            if not math.isfinite(sample_value):
+                continue
+            total += sample_value
             found = True
         return total if found else None
 
@@ -209,18 +215,16 @@ class AdminMetricsService:
                 prom_tokens = input_tokens + output_tokens
 
         rows = await self._fetch_from_repo("admin_ai_kpis", enterprise_id)
-        if month and rows:
-            month_prefix = month.strip()
-            rows = [r for r in rows if str(r.get("created_at", "")).startswith(month_prefix)]
         row = rows[0] if rows else {}
+        can_use_analytics_totals = month is None
         db_cost = (
             float(row["total_cost_brl"])
-            if row.get("total_cost_brl") is not None
+            if can_use_analytics_totals and row.get("total_cost_brl") is not None
             else None
         )
         db_unit_cost = (
             float(row["unit_cost_brl"])
-            if row.get("unit_cost_brl") is not None
+            if can_use_analytics_totals and row.get("unit_cost_brl") is not None
             else None
         )
         active_users = (
@@ -228,7 +232,7 @@ class AdminMetricsService:
             if row.get("active_users") is not None
             else None
         )
-        uses_prometheus_cost = prom_cost is not None
+        uses_prometheus_cost = self.prometheus is not None and enterprise_id is None
         total_cost = prom_cost if uses_prometheus_cost else db_cost
         if uses_prometheus_cost:
             cost_unit = "US$"

@@ -50,11 +50,17 @@ async def get_admin_ai_kpis(
     service: Annotated[AdminMetricsService, Depends(get_admin_metrics_service)],
     month: Annotated[
         str | None,
-        Query(pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+        Query(pattern=r"^[0-9]{4}-(0[1-9]|1[0-2])$"),
     ] = None,
     enterprise_id: int | None = None,
 ) -> AdminAiMetricsKpisResponse:
     require_admin_principal(principal)
+    if month is not None and month.startswith("0000-"):
+        raise HTTPException(
+            status_code=422,
+            detail="month year must be between 0001 and 9999",
+        )
+
     try:
         return await service.get_kpis(month=month, enterprise_id=enterprise_id)
     except PrometheusTimeoutError as exc:
