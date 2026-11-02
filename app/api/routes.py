@@ -15,11 +15,17 @@ from prometheus_client import CONTENT_TYPE_LATEST
 
 from app.clients.databricks import DatabricksIntegrationError, DatabricksTimeoutError
 from app.clients.prometheus import PrometheusIntegrationError, PrometheusTimeoutError
-from app.core.auth import require_bearer
+from app.core.auth import (
+    Principal,
+    require_admin_bearer,
+    require_admin_principal,
+    require_bearer,
+)
 from app.core.metrics import metrics_payload
 from app.repositories.analytics import AnalyticsQueryError, AnalyticsUnavailable
 from app.schemas.common import HealthResponse, MessageResponse, ReadinessResponse
 from app.schemas.dashboards import (
+    DashboardChartDataResponse,
     DashboardChartListResponse,
     DashboardListResponse,
     DashboardPublic,
@@ -166,6 +172,57 @@ async def list_charts(
         raise HTTPException(
             status_code=503,
             detail=DASHBOARD_ANALYTICS_UNAVAILABLE_DETAIL,
+        ) from exc
+
+
+@router.get(
+    "/v1/dashboards/{dashboard_id}/charts/{chart_id}/data",
+    summary="Get raw chart data from a Prometheus dashboard",
+    responses={
+        403: {"description": "Authenticated principal does not have the admin role"},
+        404: {"description": "Prometheus dashboard or chart not found"},
+        502: {"description": DASHBOARD_PROVIDER_INTEGRATION_DETAIL},
+        504: {"description": DASHBOARD_PROVIDER_TIMEOUT_DETAIL},
+    },
+    tags=["dashboards"],
+)
+async def get_prometheus_chart_data(
+    dashboard_id: str,
+    chart_id: str,
+    principal: Annotated[Principal, Depends(require_admin_bearer)],
+    service: Annotated[DashboardService, Depends(get_dashboard_service)],
+) -> DashboardChartDataResponse:
+    """Return Prometheus points only to principals carrying the admin role."""
+    require_admin_principal(principal)
+    if "admin" not in principal.roles:
+        raise HTTPException(
+            status_code=403,
+            detail="Acesso restrito a administradores",
+        )
+    try:
+        dashboard = await service.get_dashboard(dashboard_id)
+        if dashboard.provider != "prometheus":
+            raise HTTPException(status_code=404, detail="Prometheus dashboard not found")
+        chart, items = await service.chart_data(dashboard_id, chart_id)
+        return DashboardChartDataResponse(
+            dashboard_id=dashboard_id,
+            chart={"id": chart.id, "title": chart.title, "type": chart.type},
+            items=items,
+        )
+    except (DashboardNotFound, ChartNotFound) as exc:
+        raise HTTPException(
+            status_code=404,
+            detail="Prometheus dashboard or chart not found",
+        ) from exc
+    except PrometheusTimeoutError as exc:
+        raise HTTPException(
+            status_code=504,
+            detail=DASHBOARD_PROVIDER_TIMEOUT_DETAIL,
+        ) from exc
+    except PrometheusIntegrationError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=DASHBOARD_PROVIDER_INTEGRATION_DETAIL,
         ) from exc
 
 

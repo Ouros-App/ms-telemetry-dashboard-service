@@ -154,6 +154,7 @@ As rotas administrativas continuam protegidas por access token do Keycloak com a
 - `GET /v1/dashboards`: lista dashboards ativos.
 - `GET /v1/dashboards/{id}`: busca um dashboard.
 - `GET /v1/dashboards/{id}/charts`: lista os gráficos do dashboard.
+- `GET /v1/dashboards/{id}/charts/{chart_id}/data`: retorna metadados e pontos de dados Prometheus em JSON para renderização no cliente; exige role `admin` e aceita apenas dashboards Prometheus.
 - `GET /v1/dashboards/{id}/charts/{chart_id}/png`: retorna PNG.
 - `GET /v1/dashboards/{id}/charts/{chart_id}/chartjs`: retorna HTML com Chart.js.
 
