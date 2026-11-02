@@ -221,6 +221,7 @@ def test_kpis_management_filter(client_with_data):
 
 
 def test_kpis_month_filter(client_with_data):
+    now = datetime.now(UTC)
     # May only has farm 102 (800k curr, 750k prev)
     res_may = client_with_data.get("/v1/user/dashboards/corporate/kpis?month=2026-05")
     assert res_may.status_code == 200
@@ -235,10 +236,14 @@ def test_kpis_month_filter(client_with_data):
     assert res_apr.json()["spend_previous_year"]["value"] == 1000000.0
     assert res_apr.json()["total_lots"]["value"] == 1.0
 
-    # month="atual": should return full safra/year
-    res_atual = client_with_data.get("/v1/user/dashboards/corporate/kpis?month=atual")
-    assert res_atual.status_code == 200
-    assert res_atual.json()["spend_current_year"]["value"] == 2000000.0
+    # month="todos" or "Ano {now.year}": should return full safra/year
+    res_todos = client_with_data.get("/v1/user/dashboards/corporate/kpis?month=todos")
+    assert res_todos.status_code == 200
+    assert res_todos.json()["spend_current_year"]["value"] == 2000000.0
+
+    res_ano = client_with_data.get(f"/v1/user/dashboards/corporate/kpis?month=Ano {now.year}")
+    assert res_ano.status_code == 200
+    assert res_ano.json()["spend_current_year"]["value"] == 2000000.0
 
 
 def test_cohort_chart_with_filters(client_with_data):
@@ -462,3 +467,71 @@ def test_corporate_cost_by_region_gradient_contrast():
     assert color_200k in FIGMA_GRADIENT
     # Colors must NOT all be identical (no monochromatic 1.0M- bug)
     assert color_50k != color_200k
+
+
+def test_kpis_month_atual_filter():
+    now = datetime.now(UTC)
+    run = "test-run-atual"
+    rows = [
+        {
+            "dataset": "dim_farm",
+            "_sync_run": run,
+            "farm_id": 1,
+            "enterprise_id": 99,
+            "farm_name": "Granja Atual",
+            "state": "SP",
+            "regional_management": "Sudeste",
+        },
+        {
+            "dataset": "fact_lot",
+            "_sync_run": run,
+            "farm_id": 1,
+            "enterprise_id": 99,
+            "delivery_date": datetime(now.year, now.month, 10, tzinfo=UTC),
+            "received_chickens": 10000,
+            "cost": Decimal128("350000.00"),
+        },
+        {
+            "dataset": "fact_lot",
+            "_sync_run": run,
+            "farm_id": 1,
+            "enterprise_id": 99,
+            "delivery_date": datetime(now.year - 1, now.month, 10, tzinfo=UTC),
+            "received_chickens": 10000,
+            "cost": Decimal128("300000.00"),
+        },
+        # Lot from different month (should be excluded when month=atual)
+        {
+            "dataset": "fact_lot",
+            "_sync_run": run,
+            "farm_id": 1,
+            "enterprise_id": 99,
+            "delivery_date": datetime(now.year, (now.month % 12) + 1, 10, tzinfo=UTC),
+            "received_chickens": 10000,
+            "cost": Decimal128("999999.00"),
+        },
+    ]
+    state = [{"_id": "production_to_mongodb_poc", "status": "success", "run_id": run, "last_success_at": now}]
+    repo = object.__new__(AnalyticsRepository)
+    repo._retry_after = 0.0
+    repo.retry_backoff_seconds = 0.0
+    repo._client = MockMongoClient()
+    repo._database = {
+        "poc_sync_state": MockCollection(state),
+        "poc_analytics_rows": MockCollection(rows),
+        "poc_farm_monthly": MockCollection([]),
+        "poc_metric_buckets": MockCollection([]),
+    }
+    provider = AnalyticsDashboardProvider(repo)
+    service = UserDashboardService(provider)
+    app.state.user_dashboard_service = service
+    app.dependency_overrides[require_user_bearer] = lambda: make_principal(99)
+    app.dependency_overrides[require_corporate_or_admin_bearer] = lambda: make_principal(99)
+
+    client = TestClient(app)
+    res = client.get("/v1/user/dashboards/corporate/kpis?month=atual")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["spend_current_year"]["value"] == 350000.0
+    assert data["spend_previous_year"]["value"] == 300000.0
+    assert data["total_lots"]["value"] == 1.0
