@@ -272,71 +272,35 @@ async def test_require_admin_bearer_token_validation() -> None:
         assert corp_principal.account_type == "admin"
 
 
-def test_admin_can_fetch_ai_metrics_kpis_figma_contract() -> None:
+def test_empty_admin_ai_metrics_do_not_return_sample_data() -> None:
     app.dependency_overrides[require_admin_bearer] = lambda: make_principal("admin")
     client = TestClient(app)
 
-    response = client.get("/v1/admin/ai-metrics/kpis")
-    assert response.status_code == 200
-    data = response.json()
+    kpis = client.get("/v1/admin/ai-metrics/kpis")
+    assert kpis.status_code == 200
+    for item in kpis.json().values():
+        assert item["value"] is None
+        assert item["formatted"] == "Sem dados"
 
-    assert data["token_spend"]["formatted"] == "R$ 15.11M"
-    assert data["token_spend"]["value"] == 15_110_000.0
-    assert data["unit_cost"]["formatted"] == "R$ 0.94"
-    assert data["unit_cost"]["value"] == 0.94
-    assert data["active_users"]["formatted"] == "104.728"
-    assert data["active_users"]["value"] == 104_728.0
+    for endpoint in (
+        "/v1/admin/ai-metrics/charts/token-spend",
+        "/v1/admin/ai-metrics/charts/request-spend",
+        "/v1/admin/ai-metrics/charts/cost-by-region",
+        "/v1/admin/ai-metrics/charts/monthly-cost",
+        "/v1/admin/ai-metrics/charts/latency-distribution",
+    ):
+        response = client.get(endpoint)
+        assert response.status_code == 200
+        assert response.json()["items"] == []
 
-
-def test_admin_can_fetch_token_spend_and_latency_charts() -> None:
-    app.dependency_overrides[require_admin_bearer] = lambda: make_principal("admin")
-    client = TestClient(app)
-
-    spend_res = client.get("/v1/admin/ai-metrics/charts/token-spend")
-    assert spend_res.status_code == 200
-    spend_items = spend_res.json()["items"]
-    assert len(spend_items) == 7
-    assert spend_items[0]["period"] == "0-50k"
-    assert spend_items[3]["period"] == "100k-125k"
-    assert spend_items[3]["current_year_cost_brl"] == 24000.0
-
-    latency_res = client.get("/v1/admin/ai-metrics/charts/latency-distribution")
-    assert latency_res.status_code == 200
-    latency_items = latency_res.json()["items"]
-    assert len(latency_items) == 7
-    assert latency_items[0]["bucket"] == "0-50k"
-    assert latency_items[3]["avg_cost_brl"] == 0.94
-
-
-def test_admin_can_fetch_and_filter_midas_sessions() -> None:
-    app.dependency_overrides[require_admin_bearer] = lambda: make_principal("admin")
-    client = TestClient(app)
-
-    res = client.get("/v1/admin/ai-metrics/sessions?page=1&limit=2")
-    assert res.status_code == 200
-    payload = res.json()
-    assert payload["total"] == 4
-    assert payload["page"] == 1
-    assert payload["limit"] == 2
-    assert len(payload["items"]) == 2
-    assert payload["items"][0]["session_id"] == "midas-sess-001"
-
-    # Search filter
-    res_search = client.get("/v1/admin/ai-metrics/sessions?search=Vera")
-    assert res_search.status_code == 200
-    assert res_search.json()["total"] == 1
-    assert res_search.json()["items"][0]["user_name"] == "Vera Marcelinha"
-
-    # Model filter
-    res_model = client.get("/v1/admin/ai-metrics/sessions?model=openai/gpt-oss-20b")
-    assert res_model.status_code == 200
-    assert res_model.json()["total"] == 1
-
-    # Enterprise filter
-    res_ent = client.get("/v1/admin/ai-metrics/sessions?enterprise_id=2")
-    assert res_ent.status_code == 200
-    assert res_ent.json()["total"] == 1
-    assert res_ent.json()["items"][0]["user_name"] == "Roberto Almeida"
+    sessions = client.get("/v1/admin/ai-metrics/sessions?page=1&limit=2")
+    assert sessions.status_code == 200
+    assert sessions.json() == {
+        "total": 0,
+        "page": 1,
+        "limit": 2,
+        "items": [],
+    }
 
 
 def test_admin_ai_metrics_populated_from_mongodb_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -406,40 +370,6 @@ def test_admin_ai_metrics_routes_map_service_errors_to_503(endpoint: str, monkey
     res = client.get(endpoint)
     assert res.status_code == 503
 
-
-def test_admin_can_fetch_new_figma_ai_metrics_charts() -> None:
-    app.dependency_overrides[require_admin_bearer] = lambda: make_principal("admin")
-    client = TestClient(app)
-
-    # 1. Request spend chart (fallback contract and filters)
-    req_res = client.get("/v1/admin/ai-metrics/charts/request-spend")
-    assert req_res.status_code == 200
-    req_data = req_res.json()
-    assert len(req_data["items"]) == 7
-    assert req_data["items"][0]["cohort"] == "0-50k"
-
-    req_filtered = client.get("/v1/admin/ai-metrics/charts/request-spend?enterprise_id=99&month=2026-10&model=openai/gpt-oss-120b")
-    assert req_filtered.status_code == 200
-
-    # 2. Cost by region chart (fallback contract and filters)
-    reg_res = client.get("/v1/admin/ai-metrics/charts/cost-by-region")
-    assert reg_res.status_code == 200
-    reg_data = reg_res.json()
-    assert len(reg_data["items"]) == 5
-    assert reg_data["items"][0]["region"] == "Norte"
-
-    reg_filtered = client.get("/v1/admin/ai-metrics/charts/cost-by-region?enterprise_id=88&month=2026-10")
-    assert reg_filtered.status_code == 200
-
-    # 3. Monthly cost chart (fallback contract and filter)
-    mon_res = client.get("/v1/admin/ai-metrics/charts/monthly-cost")
-    assert mon_res.status_code == 200
-    mon_data = mon_res.json()
-    assert len(mon_data["items"]) == 8
-    assert mon_data["items"][0]["month"] == "Jan"
-
-    mon_filtered = client.get("/v1/admin/ai-metrics/charts/monthly-cost?enterprise_id=99")
-    assert mon_filtered.status_code == 200
 
 
 def test_admin_metrics_service_new_methods_with_custom_repo_data() -> None:

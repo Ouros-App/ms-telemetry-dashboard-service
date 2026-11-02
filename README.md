@@ -170,6 +170,12 @@ curl -H "Authorization: Bearer $KEYCLOAK_ACCESS_TOKEN" \
 
 `GET /v1/dashboards/analytics-overview/charts` retorna `200` com as definições estáticas dos gráficos, mesmo quando o Analytics está indisponível. As rotas que consultam dados (`/png` e `/chartjs`) retornam `503` nessa situação; não há fallback silencioso para Databricks.
 
+### Métricas de IA administrativas
+
+As rotas legadas `/v1/admin/ai-metrics/*` consultam snapshots do Analytics/MongoDB; elas não consultam Prometheus. Sem dados de origem, os KPIs retornam `value: null` e `formatted: "Sem dados"`, e gráficos/sessões retornam listas vazias. O serviço não preenche esses endpoints com séries ou sessões de exemplo.
+
+Para os gráficos reais de observabilidade Prometheus da Midas AI, use `GET /v1/dashboards/prometheus-ai/charts/{chart_id}/data` com os IDs publicados pelo dashboard. Por exemplo, `ai-request-rate` e `ai-p95-latency`.
+
 Use um `id` retornado por `/v1/dashboards` nas chamadas seguintes:
 
 ```bash

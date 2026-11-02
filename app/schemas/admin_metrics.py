@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 
 
 class AdminAiMetricKpiItem(BaseModel):
-    value: float
+    value: float | None
     formatted: str
     unit: str | None = None
     year: int | None = None
