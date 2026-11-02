@@ -71,15 +71,17 @@ async def get_corporate_kpis(
     state: str | None = None,
     management: str | None = None,
     enterprise_id: int | None = None,
+    enterpriseId: int | None = None,
 ) -> CorporateKpisResponse:
     _require_company_employee(principal)
+    target_enterprise_id = enterprise_id if enterprise_id is not None else enterpriseId
     try:
         return await service.get_corporate_kpis(
             principal,
             month=month,
             state=state,
             management=management,
-            enterprise_id=enterprise_id,
+            enterprise_id=target_enterprise_id,
         )
     except (AnalyticsUnavailable, AnalyticsQueryError) as exc:
         raise HTTPException(
@@ -98,11 +100,13 @@ async def get_corporate_filters(
     principal: Annotated[Principal, Depends(require_corporate_or_admin_bearer)],
     service: Annotated[UserDashboardService, Depends(get_user_dashboard_service)],
     enterprise_id: int | None = None,
+    enterpriseId: int | None = None,
 ) -> CorporateFilterOptionsResponse:
     _require_company_employee(principal)
+    target_enterprise_id = enterprise_id if enterprise_id is not None else enterpriseId
     try:
         return await service.get_corporate_filters(
-            principal, enterprise_id=enterprise_id
+            principal, enterprise_id=target_enterprise_id
         )
     except (AnalyticsUnavailable, AnalyticsQueryError) as exc:
         raise HTTPException(
@@ -124,8 +128,10 @@ async def get_corporate_chart_data(
     state: str | None = None,
     management: str | None = None,
     enterprise_id: int | None = None,
+    enterpriseId: int | None = None,
 ) -> list[dict[str, Any]]:
     _require_company_employee(principal)
+    target_enterprise_id = enterprise_id if enterprise_id is not None else enterpriseId
     try:
         return await service.get_corporate_chart_data(
             principal,
@@ -133,7 +139,7 @@ async def get_corporate_chart_data(
             month=month,
             state=state,
             management=management,
-            enterprise_id=enterprise_id,
+            enterprise_id=target_enterprise_id,
         )
     except (UserChartNotFound, UserDashboardNotFound) as exc:
         raise HTTPException(status_code=404, detail="chart not found") from exc
@@ -162,8 +168,10 @@ async def get_corporate_farms_table(
     management: str | None = None,
     month: str | None = None,
     enterprise_id: int | None = None,
+    enterpriseId: int | None = None,
 ) -> CorporateFarmsTableResponse:
     _require_company_employee(principal)
+    target_enterprise_id = enterprise_id if enterprise_id is not None else enterpriseId
     try:
         return await service.get_corporate_farms_table(
             principal,
@@ -175,7 +183,7 @@ async def get_corporate_farms_table(
             state=state,
             management=management,
             month=month,
-            enterprise_id=enterprise_id,
+            enterprise_id=target_enterprise_id,
         )
     except (AnalyticsUnavailable, AnalyticsQueryError) as exc:
         raise HTTPException(

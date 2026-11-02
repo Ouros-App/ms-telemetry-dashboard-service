@@ -244,8 +244,11 @@ def _parse_month_filter(val: Any) -> tuple[int | None, int | None]:
     if not val:
         return None, None
     s = str(val).strip()
-    if s.lower() in ("atual", "todos", "todas", "all", ""):
+    if s.lower() in ("todos", "todas", "all", ""):
         return None, None
+    if s.lower() in ("atual", "mes atual", "mês atual", "mes_atual", "current"):
+        now = datetime.now(UTC)
+        return now.year, now.month
     if s.lower().startswith("ano ") and s[4:].strip().isdigit():
         return int(s[4:].strip()), None
     if "-" in s:
@@ -786,10 +789,7 @@ def _corporate_filters(
     anos_encontrados.add(now_year - 1)
     anos_disponiveis = sorted(anos_encontrados, reverse=True)
 
-    periods = [f"Ano {ano}" for ano in anos_disponiveis] + [
-        "Últimos 30 dias",
-        "Últimos 90 dias",
-    ]
+    periods = [f"Ano {ano}" for ano in anos_disponiveis]
     return [
         {
             "periods": periods,
