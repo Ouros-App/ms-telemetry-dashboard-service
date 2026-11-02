@@ -39,6 +39,12 @@ class DashboardChartListResponse(BaseModel):
     items: list[DashboardChartPublic]
 
 
+class DashboardChartDataResponse(BaseModel):
+    dashboard_id: str
+    chart: DashboardChartPublic
+    items: list[dict[str, Any]]
+
+
 class DashboardChartField(BaseModel):
     name: str = Field(min_length=1)
     expression: str = Field(min_length=1)
