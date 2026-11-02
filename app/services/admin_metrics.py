@@ -9,13 +9,19 @@ from app.repositories.analytics import (
     AnalyticsUnavailable,
 )
 from app.schemas.admin_metrics import (
+    AdminAiCostByRegionResponse,
     AdminAiMetricKpiItem,
     AdminAiMetricsKpisResponse,
+    AdminAiMonthlyCostResponse,
     AdminLatencyDistributionResponse,
     AdminMidasSessionsResponse,
+    AdminRequestSpendChartResponse,
     AdminTokenSpendChartResponse,
+    AiCostByRegionPoint,
+    AiMonthlyCostPoint,
     LatencyBucketItem,
     MidasSessionAuditItem,
+    RequestSpendPoint,
     TokenSpendPoint,
 )
 
@@ -30,6 +36,35 @@ DEFAULT_TOKEN_SPEND_SERIES = (
     ("125k-150k", 14700.0, 15300.0),
     ("150k-175k", 9300.0, 10000.0),
     (BUCKET_175K_PLUS, 5600.0, 4900.0),
+)
+
+DEFAULT_REQUEST_SPEND_SERIES = (
+    ("0-50k", 14700.0, 10200.0, 1470, 1020),
+    ("50k-75k", 19200.0, 14700.0, 1920, 1470),
+    ("75k-100k", 23200.0, 18400.0, 2320, 1840),
+    ("100k-125k", 31793.0, 25000.0, 3180, 2500),
+    ("125k-150k", 20400.0, 15300.0, 2040, 1530),
+    ("150k-175k", 13300.0, 10000.0, 1330, 1000),
+    (BUCKET_175K_PLUS, 7547.0, 4900.0, 755, 490),
+)
+
+DEFAULT_AI_COST_BY_REGION = (
+    ("Norte", 88000.0, 65000.0),
+    ("Nordeste", 99000.0, 85000.0),
+    ("Centro-Oeste", 87000.0, 110000.0),
+    ("Sudeste", 114000.0, 195000.0),
+    ("Sul", 100000.0, 140000.0),
+)
+
+DEFAULT_AI_MONTHLY_COST = (
+    ("Jan", 1100000.0, 1590000.0),
+    ("Fev", 1170000.0, 1790000.0),
+    ("Mar", 520000.0, 1360000.0),
+    ("Abr", 550000.0, 1440000.0),
+    ("Mai", 710000.0, 1140000.0),
+    ("Jun", 520000.0, 930000.0),
+    ("Jul", 730000.0, 270000.0),
+    ("Ago", 1270000.0, 740000.0),
 )
 
 DEFAULT_LATENCY_BUCKETS = (
@@ -308,6 +343,7 @@ class AdminMetricsService:
                     TokenSpendPoint(
                         period=label,
                         label=label,
+                        cohort=label,
                         model=str(s.get("model") or model or "Midas LLM"),
                         previous_year_tokens=prev_tok,
                         current_year_tokens=curr_tok,
@@ -324,6 +360,7 @@ class AdminMetricsService:
             TokenSpendPoint(
                 period=cohort,
                 label=cohort,
+                cohort=cohort,
                 model=resolved_model,
                 previous_year_tokens=int(prev_cost * 1000),
                 current_year_tokens=int(curr_cost * 1000),
@@ -335,6 +372,120 @@ class AdminMetricsService:
             for cohort, prev_cost, curr_cost in DEFAULT_TOKEN_SPEND_SERIES
         ]
         return AdminTokenSpendChartResponse(items=items)
+
+    async def get_request_spend_chart(
+        self,
+        *,
+        month: str | None = None,
+        model: str | None = None,
+        enterprise_id: int | None = None,
+    ) -> AdminRequestSpendChartResponse:
+        sessions = await self._fetch_from_repo("admin_ai_request_spend", enterprise_id)
+        if month and sessions:
+            month_prefix = month.strip()
+            sessions = [s for s in sessions if str(s.get("created_at", "")).startswith(month_prefix)]
+        if model:
+            sessions = [
+                s
+                for s in sessions
+                if str(s.get("model", "")).casefold() == model.strip().casefold()
+            ]
+
+        if sessions:
+            points: list[RequestSpendPoint] = []
+            for s in sessions:
+                cohort = str(s.get("cohort") or s.get("label") or "0-50k")
+                curr_cost = float(s.get("cost_brl") or s.get("current_year_cost_brl") or 0.0)
+                prev_cost = float(s.get("previous_year_cost_brl") or 0.0)
+                curr_req = int(s.get("current_year_requests") or s.get("requests") or 0)
+                prev_req = int(s.get("previous_year_requests") or 0)
+                points.append(
+                    RequestSpendPoint(
+                        cohort=cohort,
+                        label=cohort,
+                        previous_year_cost_brl=round(prev_cost, 2),
+                        current_year_cost_brl=round(curr_cost, 2),
+                        previous_year_requests=prev_req,
+                        current_year_requests=curr_req,
+                    )
+                )
+            return AdminRequestSpendChartResponse(items=points)
+
+        items = [
+            RequestSpendPoint(
+                cohort=cohort,
+                label=cohort,
+                previous_year_cost_brl=prev_cost,
+                current_year_cost_brl=curr_cost,
+                previous_year_requests=prev_req,
+                current_year_requests=curr_req,
+            )
+            for cohort, prev_cost, curr_cost, prev_req, curr_req in DEFAULT_REQUEST_SPEND_SERIES
+        ]
+        return AdminRequestSpendChartResponse(items=items)
+
+    async def get_cost_by_region_chart(
+        self,
+        *,
+        month: str | None = None,
+        enterprise_id: int | None = None,
+    ) -> AdminAiCostByRegionResponse:
+        rows = await self._fetch_from_repo("admin_ai_cost_by_region", enterprise_id)
+        if month and rows:
+            month_prefix = month.strip()
+            rows = [r for r in rows if str(r.get("created_at", "")).startswith(month_prefix)]
+
+        if rows:
+            items = [
+                AiCostByRegionPoint(
+                    region=str(r.get("region")),
+                    previous_year_cost_brl=float(r.get("previous_year_cost_brl", 0.0)),
+                    current_year_cost_brl=float(r.get("current_year_cost_brl", 0.0)),
+                )
+                for r in rows
+                if "region" in r
+            ]
+            if items:
+                return AdminAiCostByRegionResponse(items=items)
+
+        items = [
+            AiCostByRegionPoint(
+                region=region,
+                previous_year_cost_brl=prev_cost,
+                current_year_cost_brl=curr_cost,
+            )
+            for region, prev_cost, curr_cost in DEFAULT_AI_COST_BY_REGION
+        ]
+        return AdminAiCostByRegionResponse(items=items)
+
+    async def get_monthly_cost_chart(
+        self,
+        *,
+        enterprise_id: int | None = None,
+    ) -> AdminAiMonthlyCostResponse:
+        rows = await self._fetch_from_repo("admin_ai_monthly_cost", enterprise_id)
+        if rows:
+            items = [
+                AiMonthlyCostPoint(
+                    month=str(r.get("month")),
+                    previous_year_cost_brl=float(r.get("previous_year_cost_brl", 0.0)),
+                    current_year_cost_brl=float(r.get("current_year_cost_brl", 0.0)),
+                )
+                for r in rows
+                if "month" in r
+            ]
+            if items:
+                return AdminAiMonthlyCostResponse(items=items)
+
+        items = [
+            AiMonthlyCostPoint(
+                month=month,
+                previous_year_cost_brl=prev_cost,
+                current_year_cost_brl=curr_cost,
+            )
+            for month, prev_cost, curr_cost in DEFAULT_AI_MONTHLY_COST
+        ]
+        return AdminAiMonthlyCostResponse(items=items)
 
     async def get_latency_distribution_chart(
         self,

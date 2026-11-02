@@ -5,9 +5,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from app.core.auth import Principal, require_admin_bearer, require_admin_principal
 from app.repositories.analytics import AnalyticsQueryError, AnalyticsUnavailable
 from app.schemas.admin_metrics import (
+    AdminAiCostByRegionResponse,
     AdminAiMetricsKpisResponse,
+    AdminAiMonthlyCostResponse,
     AdminLatencyDistributionResponse,
     AdminMidasSessionsResponse,
+    AdminRequestSpendChartResponse,
     AdminTokenSpendChartResponse,
 )
 from app.services.admin_metrics import AdminMetricsService
@@ -67,6 +70,78 @@ async def get_admin_token_spend_chart(
     try:
         return await service.get_token_spend_chart(
             month=month, model=model, enterprise_id=enterprise_id
+        )
+    except (AnalyticsUnavailable, AnalyticsQueryError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=ADMIN_METRICS_UNAVAILABLE_DETAIL,
+        ) from exc
+
+
+@router.get(
+    "/charts/request-spend",
+    summary="Get request spend comparative series by cohort",
+    description="Returns comparative request cost across cohorts for Este ano and Ano passado.",
+    responses=RESPONSES_503,
+)
+async def get_admin_request_spend_chart(
+    principal: Annotated[Principal, Depends(require_admin_bearer)],
+    service: Annotated[AdminMetricsService, Depends(get_admin_metrics_service)],
+    month: str | None = None,
+    model: str | None = None,
+    enterprise_id: int | None = None,
+) -> AdminRequestSpendChartResponse:
+    require_admin_principal(principal)
+    try:
+        return await service.get_request_spend_chart(
+            month=month, model=model, enterprise_id=enterprise_id
+        )
+    except (AnalyticsUnavailable, AnalyticsQueryError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=ADMIN_METRICS_UNAVAILABLE_DETAIL,
+        ) from exc
+
+
+@router.get(
+    "/charts/cost-by-region",
+    summary="Get AI cost comparative series by Brazilian region",
+    description="Returns comparative AI costs across Brazilian regions (Figma 6052:1721).",
+    responses=RESPONSES_503,
+)
+async def get_admin_ai_cost_by_region_chart(
+    principal: Annotated[Principal, Depends(require_admin_bearer)],
+    service: Annotated[AdminMetricsService, Depends(get_admin_metrics_service)],
+    month: str | None = None,
+    enterprise_id: int | None = None,
+) -> AdminAiCostByRegionResponse:
+    require_admin_principal(principal)
+    try:
+        return await service.get_cost_by_region_chart(
+            month=month, enterprise_id=enterprise_id
+        )
+    except (AnalyticsUnavailable, AnalyticsQueryError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=ADMIN_METRICS_UNAVAILABLE_DETAIL,
+        ) from exc
+
+
+@router.get(
+    "/charts/monthly-cost",
+    summary="Get AI monthly cost comparative series",
+    description="Returns comparative monthly AI costs for Este ano and Ano passado (Figma 6052:1721).",
+    responses=RESPONSES_503,
+)
+async def get_admin_ai_monthly_cost_chart(
+    principal: Annotated[Principal, Depends(require_admin_bearer)],
+    service: Annotated[AdminMetricsService, Depends(get_admin_metrics_service)],
+    enterprise_id: int | None = None,
+) -> AdminAiMonthlyCostResponse:
+    require_admin_principal(principal)
+    try:
+        return await service.get_monthly_cost_chart(
+            enterprise_id=enterprise_id
         )
     except (AnalyticsUnavailable, AnalyticsQueryError) as exc:
         raise HTTPException(
