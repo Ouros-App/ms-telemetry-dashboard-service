@@ -303,11 +303,12 @@ def test_empty_admin_ai_metrics_do_not_return_sample_data() -> None:
     }
 
 
-def test_admin_ai_kpis_reject_month_with_year_zero() -> None:
+@pytest.mark.parametrize("month", ["0000-01", "9999-12"])
+def test_admin_ai_kpis_reject_unrepresentable_month(month: str) -> None:
     app.dependency_overrides[require_admin_bearer] = lambda: make_principal("admin")
     client = TestClient(app)
 
-    response = client.get("/v1/admin/ai-metrics/kpis?month=0000-01")
+    response = client.get(f"/v1/admin/ai-metrics/kpis?month={month}")
 
     assert response.status_code == 422
 

@@ -55,10 +55,12 @@ async def get_admin_ai_kpis(
     enterprise_id: int | None = None,
 ) -> AdminAiMetricsKpisResponse:
     require_admin_principal(principal)
-    if month is not None and month.startswith("0000-"):
+    if month is not None and (
+        month.startswith("0000-") or month == "9999-12"
+    ):
         raise HTTPException(
             status_code=422,
-            detail="month year must be between 0001 and 9999",
+            detail="month is outside the supported date range",
         )
 
     try:
