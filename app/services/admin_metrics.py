@@ -142,7 +142,7 @@ class AdminMetricsService:
             next_month = datetime(start.year + 1, 1, 1, tzinfo=UTC)
         else:
             next_month = datetime(start.year, start.month + 1, 1, tzinfo=UTC)
-        return start, next_month, selected_month
+        return start, min(next_month, now), selected_month
 
     async def _prometheus_increase(
         self,
@@ -239,7 +239,7 @@ class AdminMetricsService:
             unit_cost_unit = "US$/1k tokens"
             unit_cost = (
                 prom_cost / prom_tokens * 1000
-                if prom_tokens is not None and prom_tokens > 0
+                if prom_cost is not None and prom_tokens is not None and prom_tokens > 0
                 else None
             )
             period = period_label

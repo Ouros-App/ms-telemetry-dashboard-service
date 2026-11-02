@@ -374,6 +374,56 @@ async def test_admin_ai_kpis_keep_prometheus_source_when_month_has_no_samples(
 
 
 @pytest.mark.asyncio
+async def test_admin_ai_kpis_limit_current_month_to_now(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 10, 15, 12, tzinfo=UTC)
+
+    calls: list[tuple[str, float | None]] = []
+
+    class Prometheus:
+        async def query(self, query: str, *, timestamp: float | None = None):
+            calls.append((query, timestamp))
+            value = "0.01" if "cost_usd" in query else "100"
+            return [{"value": [timestamp, value]}]
+
+    monkeypatch.setattr("app.services.admin_metrics.datetime", FrozenDateTime)
+
+    await AdminMetricsService(prometheus=Prometheus()).get_kpis()
+
+    assert len(calls) == 3
+    assert {timestamp for _, timestamp in calls} == {
+        FrozenDateTime(2026, 10, 15, 12, tzinfo=UTC).timestamp()
+    }
+    assert {query for query, _ in calls} == {
+        "increase(midas_jev_cost_usd_total[1252800s])",
+        "increase(midas_jev_input_tokens_total[1252800s])",
+        "increase(midas_jev_output_tokens_total[1252800s])",
+    }
+
+
+@pytest.mark.asyncio
+async def test_admin_ai_kpis_leave_unit_cost_unavailable_without_prometheus_cost() -> None:
+    class Prometheus:
+        async def query(self, query: str, *, timestamp: float | None = None):
+            if "cost_usd" in query:
+                return []
+            return [{"value": [timestamp, "100"]}]
+
+    response = await AdminMetricsService(prometheus=Prometheus()).get_kpis(
+        month="2026-10"
+    )
+
+    assert response.token_spend.value is None
+    assert response.token_spend.formatted == "Sem dados"
+    assert response.unit_cost.value is None
+    assert response.unit_cost.formatted == "Sem dados"
+
+
+@pytest.mark.asyncio
 async def test_admin_ai_kpis_ignore_non_finite_prometheus_samples() -> None:
     class Prometheus:
         async def query(self, query: str, *, timestamp: float | None = None):
