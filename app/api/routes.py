@@ -192,7 +192,13 @@ async def get_prometheus_chart_data(
     principal: Annotated[Principal, Depends(require_admin_bearer)],
     service: Annotated[DashboardService, Depends(get_dashboard_service)],
 ) -> DashboardChartDataResponse:
+    """Return Prometheus points only to principals carrying the admin role."""
     require_admin_principal(principal)
+    if "admin" not in principal.roles:
+        raise HTTPException(
+            status_code=403,
+            detail="Acesso restrito a administradores",
+        )
     try:
         dashboard = await service.get_dashboard(dashboard_id)
         if dashboard.provider != "prometheus":
