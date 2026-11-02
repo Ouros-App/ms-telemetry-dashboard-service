@@ -8,6 +8,7 @@ class AdminAiMetricKpiItem(BaseModel):
     formatted: str
     unit: str | None = None
     year: int | None = None
+    period: str | None = None
 
 
 class AdminAiMetricsKpisResponse(BaseModel):

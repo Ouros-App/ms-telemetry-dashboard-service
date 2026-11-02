@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from typing import Any
 
+from app.clients.prometheus import PrometheusHttpClient
 from app.repositories.analytics import (
     AnalyticsQueryError,
     AnalyticsRepository,
@@ -120,8 +122,53 @@ def _build_latency_bucket_items(
 class AdminMetricsService:
     """Service providing Midas AI financial and technical observability for ADM."""
 
-    def __init__(self, repository: AnalyticsRepository | None = None) -> None:
+    def __init__(
+        self,
+        repository: AnalyticsRepository | None = None,
+        prometheus: PrometheusHttpClient | None = None,
+    ) -> None:
         self.repository = repository
+        self.prometheus = prometheus
+
+    @staticmethod
+    def _prometheus_period(month: str | None) -> tuple[datetime, datetime, str]:
+        now = datetime.now(UTC)
+        selected_month = month or f"{now.year:04}-{now.month:02}"
+        start = datetime.strptime(selected_month, "%Y-%m").replace(tzinfo=UTC)
+        if start.month == 12:
+            next_month = datetime(start.year + 1, 1, 1, tzinfo=UTC)
+        else:
+            next_month = datetime(start.year, start.month + 1, 1, tzinfo=UTC)
+        return start, min(next_month, now), selected_month
+
+    async def _prometheus_increase(
+        self,
+        metric: str,
+        *,
+        start: datetime,
+        end: datetime,
+    ) -> float | None:
+        if self.prometheus is None:
+            return None
+        duration_seconds = int((end - start).total_seconds())
+        if duration_seconds <= 0:
+            return None
+        rows = await self.prometheus.query(
+            f"increase({metric}[{duration_seconds}s])",
+            timestamp=end.timestamp(),
+        )
+        total = 0.0
+        found = False
+        for row in rows:
+            sample = row.get("value")
+            if not isinstance(sample, list) or len(sample) < 2:
+                continue
+            try:
+                total += float(sample[1])
+            except (TypeError, ValueError):
+                continue
+            found = True
+        return total if found else None
 
     async def _fetch_from_repo(
         self, operation: str, enterprise_id: int | None = None
@@ -141,17 +188,37 @@ class AdminMetricsService:
         enterprise_id: int | None = None,
     ) -> AdminAiMetricsKpisResponse:
         now_year = datetime.now(UTC).year
+
+        prom_cost: float | None = None
+        prom_tokens: float | None = None
+        period_label: str | None = None
+        if self.prometheus is not None and enterprise_id is None:
+            start, end, period_label = self._prometheus_period(month)
+            prom_cost, input_tokens, output_tokens = await asyncio.gather(
+                self._prometheus_increase(
+                    "midas_jev_cost_usd_total", start=start, end=end
+                ),
+                self._prometheus_increase(
+                    "midas_jev_input_tokens_total", start=start, end=end
+                ),
+                self._prometheus_increase(
+                    "midas_jev_output_tokens_total", start=start, end=end
+                ),
+            )
+            if input_tokens is not None and output_tokens is not None:
+                prom_tokens = input_tokens + output_tokens
+
         rows = await self._fetch_from_repo("admin_ai_kpis", enterprise_id)
         if month and rows:
             month_prefix = month.strip()
             rows = [r for r in rows if str(r.get("created_at", "")).startswith(month_prefix)]
         row = rows[0] if rows else {}
-        total_cost = (
+        db_cost = (
             float(row["total_cost_brl"])
             if row.get("total_cost_brl") is not None
             else None
         )
-        unit_cost = (
+        db_unit_cost = (
             float(row["unit_cost_brl"])
             if row.get("unit_cost_brl") is not None
             else None
@@ -161,24 +228,62 @@ class AdminMetricsService:
             if row.get("active_users") is not None
             else None
         )
+        uses_prometheus_cost = prom_cost is not None
+        total_cost = prom_cost if uses_prometheus_cost else db_cost
+        if uses_prometheus_cost:
+            cost_unit = "US$"
+            unit_cost_unit = "US$/1k tokens"
+            unit_cost = (
+                prom_cost / prom_tokens * 1000
+                if prom_tokens is not None and prom_tokens > 0
+                else None
+            )
+            period = period_label
+            total_cost_formatted = (
+                f"US$ {total_cost:.6f}" if total_cost is not None else "Sem dados"
+            )
+            unit_cost_formatted = (
+                f"US$ {unit_cost:.6f}" if unit_cost is not None else "Sem dados"
+            )
+        else:
+            unit_cost = db_unit_cost
+            cost_unit = "R$"
+            unit_cost_unit = "R$/1k tokens"
+            period = None
+            total_cost_formatted = (
+                _format_compact_brl(total_cost)
+                if total_cost is not None
+                else "Sem dados"
+            )
+            unit_cost_formatted = (
+                f"R$ {unit_cost:.2f}" if unit_cost is not None else "Sem dados"
+            )
         return AdminAiMetricsKpisResponse(
             token_spend=AdminAiMetricKpiItem(
                 value=total_cost,
-                formatted=(
-                    _format_compact_brl(total_cost)
+                formatted=total_cost_formatted,
+                unit=cost_unit,
+                year=(
+                    None
+                    if uses_prometheus_cost
+                    else now_year - 1
                     if total_cost is not None
-                    else "Sem dados"
+                    else None
                 ),
-                unit="R$",
-                year=now_year - 1 if total_cost is not None else None,
+                period=period,
             ),
             unit_cost=AdminAiMetricKpiItem(
                 value=unit_cost,
-                formatted=(
-                    f"R$ {unit_cost:.2f}" if unit_cost is not None else "Sem dados"
+                formatted=unit_cost_formatted,
+                unit=unit_cost_unit,
+                year=(
+                    None
+                    if uses_prometheus_cost
+                    else now_year
+                    if unit_cost is not None
+                    else None
                 ),
-                unit="R$/1k tokens",
-                year=now_year if unit_cost is not None else None,
+                period=period,
             ),
             active_users=AdminAiMetricKpiItem(
                 value=float(active_users) if active_users is not None else None,

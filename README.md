@@ -172,7 +172,7 @@ curl -H "Authorization: Bearer $KEYCLOAK_ACCESS_TOKEN" \
 
 ### Métricas de IA administrativas
 
-As rotas legadas `/v1/admin/ai-metrics/*` consultam snapshots do Analytics/MongoDB; elas não consultam Prometheus. Sem dados de origem, os KPIs retornam `value: null` e `formatted: "Sem dados"`, e gráficos/sessões retornam listas vazias. O serviço não preenche esses endpoints com séries ou sessões de exemplo.
+Sem filtro `month`, os KPIs de gasto e custo unitário consultam no Prometheus o mês-calendário atual até agora; informe `month=YYYY-MM` para consultar um mês específico, por exemplo `month=2026-11`. O serviço usa `increase(...)` entre o primeiro dia do mês e o início do mês seguinte (ou agora, para o mês atual). A resposta inclui valores numéricos (`value`), unidade `US$` e o mês em `period`, sem converter moeda. Chamadas com `enterprise_id` continuam usando o snapshot Analytics. Usuários ativos continuam vindo do snapshot Analytics, pois essas séries Prometheus não identificam usuários. Os gráficos comparativos e a auditoria de sessões continuam lendo `fact_ai_session`; métricas agregadas não contêm eventos individuais de sessão.
 
 Para os gráficos reais de observabilidade Prometheus da Midas AI, use `GET /v1/dashboards/prometheus-ai/charts/{chart_id}/data` com os IDs publicados pelo dashboard. Por exemplo, `ai-request-rate` e `ai-p95-latency`.
 

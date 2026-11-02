@@ -303,6 +303,34 @@ def test_empty_admin_ai_metrics_do_not_return_sample_data() -> None:
     }
 
 
+@pytest.mark.asyncio
+async def test_admin_ai_kpis_use_selected_calendar_month() -> None:
+    expected_timestamp = datetime(2024, 3, 1, tzinfo=UTC).timestamp()
+
+    class Prometheus:
+        async def query(self, query: str, *, timestamp: float | None = None):
+            values = {
+                "increase(midas_jev_cost_usd_total[2505600s])": "0.000546417",
+                "increase(midas_jev_input_tokens_total[2505600s])": "13010",
+                "increase(midas_jev_output_tokens_total[2505600s])": "1752",
+            }
+            assert timestamp == expected_timestamp
+            return [{"value": [timestamp, values[query]]}]
+
+    service = AdminMetricsService(prometheus=Prometheus())
+
+    response = await service.get_kpis(month="2024-02")
+
+    assert response.token_spend.value == pytest.approx(0.000546417)
+    assert response.token_spend.unit == "US$"
+    assert response.token_spend.period == "2024-02"
+    assert response.unit_cost.value == pytest.approx(
+        0.000546417 / (13010 + 1752) * 1000
+    )
+    assert response.unit_cost.unit == "US$/1k tokens"
+    assert response.active_users.value is None
+
+
 def test_admin_ai_metrics_populated_from_mongodb_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
     repo = build_repository(with_ai_sessions=True)
     monkeypatch.setattr(app.state, "analytics_repository", repo)

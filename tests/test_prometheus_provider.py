@@ -10,6 +10,33 @@ from app.providers.prometheus import PrometheusDashboardProvider
 
 
 @pytest.mark.asyncio
+async def test_prometheus_http_client_queries_at_requested_time() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/v1/query"
+        assert request.url.params["query"] == "up"
+        assert request.url.params["time"] == "1709251200"
+        return httpx.Response(
+            200,
+            json={
+                "status": "success",
+                "data": {
+                    "resultType": "vector",
+                    "result": [],
+                },
+            },
+        )
+
+    settings = Settings(prometheus_url="http://prometheus.internal:9090")
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    prometheus = PrometheusHttpClient(client, settings)
+
+    result = await prometheus.query("up", timestamp=1709251200)
+
+    assert result == []
+    await client.aclose()
+
+
+@pytest.mark.asyncio
 async def test_prometheus_http_client_queries_api() -> None:
     async def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/api/v1/query"
