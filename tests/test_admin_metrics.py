@@ -303,6 +303,160 @@ def test_empty_admin_ai_metrics_do_not_return_sample_data() -> None:
     }
 
 
+@pytest.mark.parametrize("month", ["0000-01", "9999-12"])
+def test_admin_ai_kpis_reject_unrepresentable_month(month: str) -> None:
+    app.dependency_overrides[require_admin_bearer] = lambda: make_principal("admin")
+    client = TestClient(app)
+
+    response = client.get(f"/v1/admin/ai-metrics/kpis?month={month}")
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_admin_ai_kpis_use_selected_calendar_month() -> None:
+    expected_timestamp = datetime(2024, 3, 1, tzinfo=UTC).timestamp()
+
+    class Prometheus:
+        async def query(self, query: str, *, timestamp: float | None = None):
+            values = {
+                "increase(midas_jev_cost_usd_total[2505600s])": "0.000546417",
+                "increase(midas_jev_input_tokens_total[2505600s])": "13010",
+                "increase(midas_jev_output_tokens_total[2505600s])": "1752",
+            }
+            assert timestamp == expected_timestamp
+            return [{"value": [timestamp, values[query]]}]
+
+    service = AdminMetricsService(
+        repository=build_repository(with_ai_sessions=True),
+        prometheus=Prometheus(),
+    )
+
+    response = await service.get_kpis(month="2024-02")
+
+    assert response.token_spend.value == pytest.approx(0.000546417)
+    assert response.token_spend.unit == "US$"
+    assert response.token_spend.period == "2024-02"
+    assert response.unit_cost.value == pytest.approx(
+        0.000546417 / (13010 + 1752) * 1000
+    )
+    assert response.unit_cost.unit == "US$/1k tokens"
+    assert response.active_users.value == 2.0
+
+
+@pytest.mark.asyncio
+async def test_admin_ai_kpis_keep_prometheus_source_when_month_has_no_samples(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 10, 15, 12, tzinfo=UTC)
+
+    class Prometheus:
+        async def query(self, query: str, *, timestamp: float | None = None):
+            return []
+
+    monkeypatch.setattr("app.services.admin_metrics.datetime", FrozenDateTime)
+    service = AdminMetricsService(
+        repository=build_repository(with_ai_sessions=True),
+        prometheus=Prometheus(),
+    )
+
+    response = await service.get_kpis()
+
+    assert response.token_spend.value is None
+    assert response.token_spend.unit == "US$"
+    assert response.token_spend.period == "2026-10"
+    assert response.unit_cost.value is None
+    assert response.unit_cost.unit == "US$/1k tokens"
+    assert response.active_users.value == 2.0
+
+
+@pytest.mark.asyncio
+async def test_admin_ai_kpis_limit_current_month_to_now(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 10, 15, 12, tzinfo=UTC)
+
+    calls: list[tuple[str, float | None]] = []
+
+    class Prometheus:
+        async def query(self, query: str, *, timestamp: float | None = None):
+            calls.append((query, timestamp))
+            value = "0.01" if "cost_usd" in query else "100"
+            return [{"value": [timestamp, value]}]
+
+    monkeypatch.setattr("app.services.admin_metrics.datetime", FrozenDateTime)
+
+    await AdminMetricsService(prometheus=Prometheus()).get_kpis()
+
+    assert len(calls) == 3
+    assert {timestamp for _, timestamp in calls} == {
+        FrozenDateTime(2026, 10, 15, 12, tzinfo=UTC).timestamp()
+    }
+    assert {query for query, _ in calls} == {
+        "increase(midas_jev_cost_usd_total[1252800s])",
+        "increase(midas_jev_input_tokens_total[1252800s])",
+        "increase(midas_jev_output_tokens_total[1252800s])",
+    }
+
+
+@pytest.mark.asyncio
+async def test_admin_ai_kpis_leave_unit_cost_unavailable_without_prometheus_cost() -> None:
+    class Prometheus:
+        async def query(self, query: str, *, timestamp: float | None = None):
+            if "cost_usd" in query:
+                return []
+            return [{"value": [timestamp, "100"]}]
+
+    response = await AdminMetricsService(prometheus=Prometheus()).get_kpis(
+        month="2026-10"
+    )
+
+    assert response.token_spend.value is None
+    assert response.token_spend.formatted == "Sem dados"
+    assert response.unit_cost.value is None
+    assert response.unit_cost.formatted == "Sem dados"
+
+
+@pytest.mark.asyncio
+async def test_admin_ai_kpis_ignore_non_finite_prometheus_samples() -> None:
+    class Prometheus:
+        async def query(self, query: str, *, timestamp: float | None = None):
+            if "cost_usd" in query:
+                values = ["NaN", "0.0004", "Inf"]
+            elif "input_tokens" in query:
+                values = ["-Inf", "100"]
+            else:
+                values = ["50"]
+            return [{"value": [timestamp, value]} for value in values]
+
+    response = await AdminMetricsService(prometheus=Prometheus()).get_kpis(
+        month="2026-10"
+    )
+
+    assert response.token_spend.value == pytest.approx(0.0004)
+    assert response.unit_cost.value == pytest.approx(0.0004 / 150 * 1000)
+
+
+@pytest.mark.asyncio
+async def test_admin_ai_kpis_do_not_query_future_overflow_month() -> None:
+    class Prometheus:
+        async def query(self, query: str, *, timestamp: float | None = None):
+            raise AssertionError("future month must not be queried")
+
+    response = await AdminMetricsService(prometheus=Prometheus()).get_kpis(
+        month="9999-12"
+    )
+
+    assert response.token_spend.value is None
+    assert response.token_spend.period == "9999-12"
+
+
 def test_admin_ai_metrics_populated_from_mongodb_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
     repo = build_repository(with_ai_sessions=True)
     monkeypatch.setattr(app.state, "analytics_repository", repo)

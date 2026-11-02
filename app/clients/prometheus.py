@@ -59,11 +59,16 @@ class PrometheusHttpClient:
             await self._relay.close()
             self._relay = None
 
-    async def query(self, query: str) -> list[dict[str, Any]]:
-        payload = await self._request(
-            "/api/v1/query",
-            params={"query": query},
-        )
+    async def query(
+        self,
+        query: str,
+        *,
+        timestamp: float | None = None,
+    ) -> list[dict[str, Any]]:
+        params = {"query": query}
+        if timestamp is not None:
+            params["time"] = str(timestamp)
+        payload = await self._request("/api/v1/query", params=params)
         return self._result(payload)
 
     async def query_range(

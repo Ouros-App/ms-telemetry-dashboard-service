@@ -159,7 +159,10 @@ async def lifespan(app: FastAPI):
         AnalyticsDashboardProvider(analytics_repository),
         settings.chart_cache_ttl_seconds,
     )
-    app.state.admin_metrics_service = AdminMetricsService(analytics_repository)
+    app.state.admin_metrics_service = AdminMetricsService(
+        analytics_repository,
+        prometheus_http,
+    )
 
     logger.info("service started", extra={"event": "service_started"})
     try:

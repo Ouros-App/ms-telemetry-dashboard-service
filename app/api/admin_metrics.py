@@ -1,7 +1,11 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
+from app.clients.prometheus import (
+    PrometheusIntegrationError,
+    PrometheusTimeoutError,
+)
 from app.core.auth import Principal, require_admin_bearer, require_admin_principal
 from app.repositories.analytics import AnalyticsQueryError, AnalyticsUnavailable
 from app.schemas.admin_metrics import (
@@ -32,20 +36,45 @@ def get_admin_metrics_service(request: Request) -> AdminMetricsService:
     "/kpis",
     summary="Get Midas AI KPIs for Admin Dashboard",
     description=(
-        "Returns token spend, unit cost per 1k tokens, and active connected users "
-        "for the Admin AI & Tokens observability dashboard (Figma 6052:1721)."
+        "Returns token spend and unit cost from Prometheus for the selected "
+        "calendar month when configured, plus active users from the Analytics snapshot."
     ),
-    responses=RESPONSES_503,
+    responses={
+        **RESPONSES_503,
+        502: {"description": "Prometheus query failed"},
+        504: {"description": "Prometheus is temporarily unavailable"},
+    },
 )
 async def get_admin_ai_kpis(
     principal: Annotated[Principal, Depends(require_admin_bearer)],
     service: Annotated[AdminMetricsService, Depends(get_admin_metrics_service)],
-    month: str | None = None,
+    month: Annotated[
+        str | None,
+        Query(pattern=r"^[0-9]{4}-(0[1-9]|1[0-2])$"),
+    ] = None,
     enterprise_id: int | None = None,
 ) -> AdminAiMetricsKpisResponse:
     require_admin_principal(principal)
+    if month is not None and (
+        month.startswith("0000-") or month == "9999-12"
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="month is outside the supported date range",
+        )
+
     try:
         return await service.get_kpis(month=month, enterprise_id=enterprise_id)
+    except PrometheusTimeoutError as exc:
+        raise HTTPException(
+            status_code=504,
+            detail="Prometheus is temporarily unavailable",
+        ) from exc
+    except PrometheusIntegrationError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Prometheus query failed",
+        ) from exc
     except (AnalyticsUnavailable, AnalyticsQueryError) as exc:
         raise HTTPException(
             status_code=503,
