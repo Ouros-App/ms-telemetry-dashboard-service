@@ -177,9 +177,9 @@ async def list_charts(
 
 @router.get(
     "/v1/dashboards/{dashboard_id}/charts/{chart_id}/data",
-    response_model=DashboardChartDataResponse,
     summary="Get raw chart data from a Prometheus dashboard",
     responses={
+        403: {"description": "Authenticated principal does not have the admin role"},
         404: {"description": "Prometheus dashboard or chart not found"},
         502: {"description": DASHBOARD_PROVIDER_INTEGRATION_DETAIL},
         504: {"description": DASHBOARD_PROVIDER_TIMEOUT_DETAIL},

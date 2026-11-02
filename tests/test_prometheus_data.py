@@ -75,12 +75,13 @@ async def test_prometheus_chart_data_maps_unknown_chart_to_404():
         async def chart_data(self, dashboard_id, chart_id):
             raise ChartNotFound(chart_id)
 
+    service = MissingChartService()
     with pytest.raises(HTTPException) as error:
         await get_prometheus_chart_data(
             "prometheus-ai",
             "missing-chart",
             principal=ADMIN,
-            service=MissingChartService(),
+            service=service,
         )
 
     assert error.value.status_code == 404
