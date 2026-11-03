@@ -1,3 +1,4 @@
+import math
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -108,7 +109,7 @@ class PrometheusDashboardProvider:
             dashboard_id="prometheus-ai",
             title="Requests por segundo",
             type="line",
-            query="sum(rate(ai_server_http_requests_total[5m]))",
+            query='sum(rate(ai_server_http_requests_total{route!="/metrics"}[5m]))',
             mode="range",
         ),
         PrometheusChartSpec(
@@ -119,7 +120,7 @@ class PrometheusDashboardProvider:
             query=(
                 "histogram_quantile(0.95, "
                 "sum by (le, route) "
-                "(rate(ai_server_http_request_duration_seconds_bucket[5m])))"
+                '(rate(ai_server_http_request_duration_seconds_bucket{route!="/metrics"}[5m])))'
             ),
             label_name="route",
         ),
@@ -130,7 +131,7 @@ class PrometheusDashboardProvider:
             type="bar",
             query=(
                 "sum by (outcome) "
-                "(rate(ai_server_chat_requests_total[5m]))"
+                "(increase(ai_server_chat_requests_total[5m]))"
             ),
             label_name="outcome",
         ),
@@ -141,7 +142,7 @@ class PrometheusDashboardProvider:
             type="bar",
             query=(
                 "sum by (agent) "
-                "(rate(ai_server_chat_agent_usage_total[5m]))"
+                "(increase(ai_server_chat_agent_usage_total[5m]))"
             ),
             label_name="agent",
         ),
@@ -152,7 +153,7 @@ class PrometheusDashboardProvider:
             type="bar",
             query=(
                 "sum by (tool) "
-                "(rate(ai_server_chat_tool_usage_total[5m]))"
+                "(increase(ai_server_chat_tool_usage_total[5m]))"
             ),
             label_name="tool",
         ),
@@ -462,6 +463,8 @@ class PrometheusDashboardProvider:
             try:
                 value = float(sample[1])
             except (TypeError, ValueError):
+                continue
+            if not math.isfinite(value):
                 continue
             row: dict[str, Any] = {"value": value}
             if label_name:

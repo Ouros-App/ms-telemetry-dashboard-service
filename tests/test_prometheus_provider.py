@@ -222,8 +222,66 @@ async def test_prometheus_provider_maps_range_to_line_rows(
 
     assert [row["value"] for row in rows] == [1.5, 2.5]
     assert calls == [
-        ("sum(rate(ai_server_http_requests_total[5m]))", 60)
+        ('sum(rate(ai_server_http_requests_total{route!="/metrics"}[5m]))', 60)
     ]
+
+
+@pytest.mark.asyncio
+async def test_ai_http_charts_exclude_metrics_scrapes_from_traffic_metrics() -> None:
+    provider = PrometheusDashboardProvider(
+        http=object(),
+        settings=Settings(),
+    )
+    dashboard = next(
+        item
+        for item in await provider.list_dashboards()
+        if item.id == "prometheus-ai"
+    )
+
+    request_rate = await provider.get_chart(dashboard, "ai-request-rate")
+    latency = await provider.get_chart(dashboard, "ai-p95-latency")
+
+    assert 'route!="/metrics"' in request_rate.dataset_query
+    assert 'route!="/metrics"' in latency.dataset_query
+
+
+@pytest.mark.asyncio
+async def test_ai_usage_charts_return_five_minute_totals() -> None:
+    provider = PrometheusDashboardProvider(http=object(), settings=Settings())
+    dashboard = next(
+        item
+        for item in await provider.list_dashboards()
+        if item.id == "prometheus-ai"
+    )
+
+    expected_queries = {
+        "ai-chat-outcomes": (
+            "sum by (outcome) (increase(ai_server_chat_requests_total[5m]))"
+        ),
+        "ai-agent-usage": (
+            "sum by (agent) (increase(ai_server_chat_agent_usage_total[5m]))"
+        ),
+        "ai-tool-usage": (
+            "sum by (tool) (increase(ai_server_chat_tool_usage_total[5m]))"
+        ),
+    }
+    for chart_id, query in expected_queries.items():
+        chart = await provider.get_chart(dashboard, chart_id)
+        assert chart.dataset_query == query
+
+
+def test_prometheus_vector_rows_skip_non_finite_samples() -> None:
+    rows = PrometheusDashboardProvider._vector_rows(
+        [
+            {"metric": {"route": "/chat"}, "value": [1, "2.5"]},
+            {"metric": {"route": "/chat"}, "value": [1, "NaN"]},
+            {"metric": {"route": "/chat"}, "value": [1, "Infinity"]},
+            {"metric": {"route": "/chat"}, "value": [1, "not-a-number"]},
+        ],
+        "route",
+    )
+
+    assert rows == [{"value": 2.5, "label": "/chat"}]
 
 
 @pytest.mark.asyncio
