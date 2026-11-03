@@ -245,6 +245,31 @@ async def test_ai_http_charts_exclude_metrics_scrapes_from_traffic_metrics() -> 
     assert 'route!="/metrics"' in latency.dataset_query
 
 
+@pytest.mark.asyncio
+async def test_ai_usage_charts_return_five_minute_totals() -> None:
+    provider = PrometheusDashboardProvider(http=object(), settings=Settings())
+    dashboard = next(
+        item
+        for item in await provider.list_dashboards()
+        if item.id == "prometheus-ai"
+    )
+
+    expected_queries = {
+        "ai-chat-outcomes": (
+            "sum by (outcome) (increase(ai_server_chat_requests_total[5m]))"
+        ),
+        "ai-agent-usage": (
+            "sum by (agent) (increase(ai_server_chat_agent_usage_total[5m]))"
+        ),
+        "ai-tool-usage": (
+            "sum by (tool) (increase(ai_server_chat_tool_usage_total[5m]))"
+        ),
+    }
+    for chart_id, query in expected_queries.items():
+        chart = await provider.get_chart(dashboard, chart_id)
+        assert chart.dataset_query == query
+
+
 def test_prometheus_vector_rows_skip_non_finite_samples() -> None:
     rows = PrometheusDashboardProvider._vector_rows(
         [

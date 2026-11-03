@@ -131,7 +131,7 @@ class PrometheusDashboardProvider:
             type="bar",
             query=(
                 "sum by (outcome) "
-                "(rate(ai_server_chat_requests_total[5m]))"
+                "(increase(ai_server_chat_requests_total[5m]))"
             ),
             label_name="outcome",
         ),
@@ -142,7 +142,7 @@ class PrometheusDashboardProvider:
             type="bar",
             query=(
                 "sum by (agent) "
-                "(rate(ai_server_chat_agent_usage_total[5m]))"
+                "(increase(ai_server_chat_agent_usage_total[5m]))"
             ),
             label_name="agent",
         ),
@@ -153,7 +153,7 @@ class PrometheusDashboardProvider:
             type="bar",
             query=(
                 "sum by (tool) "
-                "(rate(ai_server_chat_tool_usage_total[5m]))"
+                "(increase(ai_server_chat_tool_usage_total[5m]))"
             ),
             label_name="tool",
         ),

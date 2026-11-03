@@ -176,6 +176,9 @@ Sem filtro `month`, os KPIs de gasto, tokens consumidos e custo unitário consul
 
 Para os gráficos reais de observabilidade Prometheus da Midas AI, use `GET /v1/dashboards/prometheus-ai/charts/{chart_id}/data` com os IDs publicados pelo dashboard. Por exemplo, `ai-request-rate` e `ai-p95-latency`.
 
+Os gráficos `ai-chat-outcomes`, `ai-agent-usage` e `ai-tool-usage` mostram contagens estimadas nos últimos 5 minutos (`increase`); `ai-request-rate` mostra requisições por segundo e `ai-p95-latency` calcula p95 na janela de 5 minutos. Taxa de requisições e latência excluem a rota `/metrics` para não contar as coletas Prometheus como tráfego de usuário.
+
+
 Use um `id` retornado por `/v1/dashboards` nas chamadas seguintes:
 
 ```bash
