@@ -1,3 +1,4 @@
+import math
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -108,7 +109,7 @@ class PrometheusDashboardProvider:
             dashboard_id="prometheus-ai",
             title="Requests por segundo",
             type="line",
-            query="sum(rate(ai_server_http_requests_total[5m]))",
+            query='sum(rate(ai_server_http_requests_total{route!="/metrics"}[5m]))',
             mode="range",
         ),
         PrometheusChartSpec(
@@ -462,6 +463,8 @@ class PrometheusDashboardProvider:
             try:
                 value = float(sample[1])
             except (TypeError, ValueError):
+                continue
+            if not math.isfinite(value):
                 continue
             row: dict[str, Any] = {"value": value}
             if label_name:

@@ -342,6 +342,10 @@ async def test_admin_ai_kpis_use_selected_calendar_month() -> None:
     )
     assert response.unit_cost.unit == "US$/1k tokens"
     assert response.active_users.value == 2.0
+    assert response.total_tokens.value == pytest.approx(14762)
+    assert response.total_tokens.formatted == "14.762"
+    assert response.total_tokens.unit == "tokens"
+    assert response.total_tokens.period == "2024-02"
 
 
 @pytest.mark.asyncio
@@ -371,6 +375,9 @@ async def test_admin_ai_kpis_keep_prometheus_source_when_month_has_no_samples(
     assert response.unit_cost.value is None
     assert response.unit_cost.unit == "US$/1k tokens"
     assert response.active_users.value == 2.0
+    assert response.total_tokens.value is None
+    assert response.total_tokens.formatted == "Sem dados"
+    assert response.total_tokens.unit == "tokens"
 
 
 @pytest.mark.asyncio

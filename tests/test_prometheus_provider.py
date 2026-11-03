@@ -222,8 +222,22 @@ async def test_prometheus_provider_maps_range_to_line_rows(
 
     assert [row["value"] for row in rows] == [1.5, 2.5]
     assert calls == [
-        ("sum(rate(ai_server_http_requests_total[5m]))", 60)
+        ('sum(rate(ai_server_http_requests_total{route!="/metrics"}[5m]))', 60)
     ]
+
+
+def test_prometheus_vector_rows_skip_non_finite_samples() -> None:
+    rows = PrometheusDashboardProvider._vector_rows(
+        [
+            {"metric": {"route": "/chat"}, "value": [1, "2.5"]},
+            {"metric": {"route": "/chat"}, "value": [1, "NaN"]},
+            {"metric": {"route": "/chat"}, "value": [1, "Infinity"]},
+            {"metric": {"route": "/chat"}, "value": [1, "not-a-number"]},
+        ],
+        "route",
+    )
+
+    assert rows == [{"value": 2.5, "label": "/chat"}]
 
 
 @pytest.mark.asyncio

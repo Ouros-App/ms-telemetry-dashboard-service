@@ -299,6 +299,16 @@ class AdminMetricsService:
                 unit="usuários",
                 year=now_year if active_users is not None else None,
             ),
+            total_tokens=AdminAiMetricKpiItem(
+                value=prom_tokens,
+                formatted=(
+                    _format_thousands_dot(round(prom_tokens))
+                    if prom_tokens is not None
+                    else "Sem dados"
+                ),
+                unit="tokens",
+                period=period,
+            ),
         )
 
     async def get_token_spend_chart(

@@ -15,6 +15,7 @@ class AdminAiMetricsKpisResponse(BaseModel):
     token_spend: AdminAiMetricKpiItem
     unit_cost: AdminAiMetricKpiItem
     active_users: AdminAiMetricKpiItem
+    total_tokens: AdminAiMetricKpiItem
 
 
 class TokenSpendPoint(BaseModel):
