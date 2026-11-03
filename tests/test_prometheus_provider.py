@@ -226,6 +226,25 @@ async def test_prometheus_provider_maps_range_to_line_rows(
     ]
 
 
+@pytest.mark.asyncio
+async def test_ai_http_charts_exclude_metrics_scrapes_from_traffic_metrics() -> None:
+    provider = PrometheusDashboardProvider(
+        http=object(),
+        settings=Settings(),
+    )
+    dashboard = next(
+        item
+        for item in await provider.list_dashboards()
+        if item.id == "prometheus-ai"
+    )
+
+    request_rate = await provider.get_chart(dashboard, "ai-request-rate")
+    latency = await provider.get_chart(dashboard, "ai-p95-latency")
+
+    assert 'route!="/metrics"' in request_rate.dataset_query
+    assert 'route!="/metrics"' in latency.dataset_query
+
+
 def test_prometheus_vector_rows_skip_non_finite_samples() -> None:
     rows = PrometheusDashboardProvider._vector_rows(
         [

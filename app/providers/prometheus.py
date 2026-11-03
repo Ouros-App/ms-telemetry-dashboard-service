@@ -120,7 +120,7 @@ class PrometheusDashboardProvider:
             query=(
                 "histogram_quantile(0.95, "
                 "sum by (le, route) "
-                "(rate(ai_server_http_request_duration_seconds_bucket[5m])))"
+                '(rate(ai_server_http_request_duration_seconds_bucket{route!="/metrics"}[5m])))'
             ),
             label_name="route",
         ),
