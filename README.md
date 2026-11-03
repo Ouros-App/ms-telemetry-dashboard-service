@@ -173,6 +173,8 @@ curl -H "Authorization: Bearer $KEYCLOAK_ACCESS_TOKEN" \
 ### Métricas de IA administrativas
 
 Sem filtro `month`, os KPIs de gasto, tokens consumidos e custo unitário consultam no Prometheus o mês-calendário atual até agora; informe `month=YYYY-MM` para consultar um mês específico. O serviço usa `increase(...)` entre o primeiro dia do mês e o início do mês seguinte (ou agora, para o mês atual). A resposta inclui valores numéricos (`value`), unidade `US$` para gasto e `tokens` para consumo, além do mês em `period`, sem converter moeda. Se não houver amostras Prometheus, os KPIs financeiros e de tokens retornam `null`/`Sem dados`; não substituem o período selecionado pelo agregado do Analytics. `active_users` continua vindo do snapshot Analytics sem filtro mensal, porque esse agregado não tem dados temporais por usuário. Chamadas com `enterprise_id` também usam o snapshot Analytics. Os gráficos comparativos e a auditoria de sessões continuam lendo `fact_ai_session`; métricas agregadas não contêm eventos individuais de sessão.
+Sem provedor Prometheus e sem filtro `month`, o total de tokens também vem do snapshot Analytics; com `month` selecionado, esse agregado sem dimensão temporal não é usado como substituto mensal.
+
 
 Para os gráficos reais de observabilidade Prometheus da Midas AI, use `GET /v1/dashboards/prometheus-ai/charts/{chart_id}/data` com os IDs publicados pelo dashboard. Por exemplo, `ai-request-rate` e `ai-p95-latency`.
 

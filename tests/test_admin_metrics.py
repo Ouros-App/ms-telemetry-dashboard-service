@@ -348,6 +348,28 @@ async def test_admin_ai_kpis_use_selected_calendar_month() -> None:
     assert response.total_tokens.period == "2024-02"
 
 
+@pytest.mark.parametrize(
+    ("enterprise_id", "expected_tokens", "expected_formatted"),
+    [(None, 3000, "3.000"), (88, 1000, "1.000")],
+)
+@pytest.mark.asyncio
+async def test_admin_ai_kpis_use_analytics_tokens_without_prometheus(
+    enterprise_id: int | None,
+    expected_tokens: int,
+    expected_formatted: str,
+) -> None:
+    service = AdminMetricsService(
+        repository=build_repository(with_ai_sessions=True),
+        prometheus=None,
+    )
+
+    response = await service.get_kpis(enterprise_id=enterprise_id)
+
+    assert response.total_tokens.value == expected_tokens
+    assert response.total_tokens.formatted == expected_formatted
+    assert response.total_tokens.period is None
+
+
 @pytest.mark.asyncio
 async def test_admin_ai_kpis_keep_prometheus_source_when_month_has_no_samples(
     monkeypatch: pytest.MonkeyPatch,

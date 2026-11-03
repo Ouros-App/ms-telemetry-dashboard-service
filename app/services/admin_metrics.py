@@ -314,6 +314,17 @@ class AdminMetricsService:
         active_users_value = (
             int(active_users) if active_users is not None else None
         )
+        analytics_tokens = row.get("total_tokens")
+        uses_prometheus_tokens = (
+            self.prometheus is not None and enterprise_id is None
+        )
+        if uses_prometheus_tokens:
+            total_tokens = prom_tokens
+        elif month is None and analytics_tokens is not None:
+            total_tokens = float(analytics_tokens)
+        else:
+            total_tokens = None
+
         return AdminAiMetricsKpisResponse(
             token_spend=token_spend,
             unit_cost=unit_cost,
@@ -332,10 +343,10 @@ class AdminMetricsService:
                 year=now_year if active_users_value is not None else None,
             ),
             total_tokens=AdminAiMetricKpiItem(
-                value=prom_tokens,
+                value=total_tokens,
                 formatted=(
-                    _format_thousands_dot(round(prom_tokens))
-                    if prom_tokens is not None
+                    _format_thousands_dot(round(total_tokens))
+                    if total_tokens is not None
                     else NO_DATA
                 ),
                 unit="tokens",
