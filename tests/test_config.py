@@ -199,3 +199,14 @@ def test_prometheus_url_uses_homelab_default_when_not_loaded(monkeypatch) -> Non
     configured = Settings(_env_file="prometheus-defaults.env")
     assert configured.prometheus_url == "http://prometheus.example:9090"
     assert configured.prometheus_socks_host == "proxy.example"
+
+
+def test_https_prometheus_url_does_not_inherit_default_proxy(monkeypatch) -> None:
+    monkeypatch.setenv("PROMETHEUS_URL", "https://prometheus.example:9090")
+    monkeypatch.delenv("PROMETHEUS_SOCKS_HOST", raising=False)
+
+    config = Settings(_env_file="prometheus-defaults.env")
+
+    assert config.prometheus_url == "https://prometheus.example:9090"
+    assert config.prometheus_socks_host is None
+    assert config.prometheus_configuration_errors() == []

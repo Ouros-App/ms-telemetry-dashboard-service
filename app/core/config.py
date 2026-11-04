@@ -1,6 +1,8 @@
+import os
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.infisical import load_infisical_secrets
@@ -80,6 +82,12 @@ class Settings(BaseSettings):
     chart_cache_ttl_seconds: int = 30
     sql_wait_timeout_seconds: int = 10
     cors_origins: list[str] = []
+
+    @model_validator(mode="after")
+    def preserve_direct_prometheus_url(self) -> "Settings":
+        if os.getenv("PROMETHEUS_URL") and not os.getenv("PROMETHEUS_SOCKS_HOST"):
+            self.prometheus_socks_host = None
+        return self
 
     @property
     def token_url(self) -> str | None:
