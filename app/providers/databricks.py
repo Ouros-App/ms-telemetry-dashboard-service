@@ -103,7 +103,7 @@ class DatabricksDashboardProvider:
         self,
         chart: DashboardChartDefinition,
         *,
-        month: str | None = None,  # NOSONAR: provider protocol parameter
+        month: str | None = None,  # NOSONAR(S1172)
     ) -> list[dict[str, Any]]:
         """Run the configured Databricks query; this provider does not filter by month."""
         if not self.settings.databricks_host:
