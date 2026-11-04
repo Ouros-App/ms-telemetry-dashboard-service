@@ -54,6 +54,7 @@ async def test_prometheus_chart_data_returns_provider_rows_without_mock_values()
 
 
 def test_prometheus_chart_data_endpoint_filters_month_query() -> None:
+    """Verify valid month filters reach the provider and invalid months are rejected."""
     service = FakeDashboardService()
     app = FastAPI()
     app.include_router(routes.router)

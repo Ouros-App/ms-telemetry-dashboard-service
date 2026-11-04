@@ -92,6 +92,7 @@ class DashboardService:
         chart_id: str,
         month: str | None = None,
     ) -> tuple[DashboardChartDefinition, list[dict[str, Any]]]:
+        """Fetch chart rows and forward the selected month to its provider."""
         dashboard = await self._find_dashboard(dashboard_id)
         provider = self.providers.provider_for(dashboard)
         try:

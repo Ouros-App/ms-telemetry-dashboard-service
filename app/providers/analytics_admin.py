@@ -107,6 +107,7 @@ class AnalyticsAdminDashboardProvider:
         *,
         month: str | None = None,
     ) -> list[dict[str, Any]]:
+        """Read this chart from the Analytics snapshot, which has no month filter."""
         if self.repository is None:
             raise AnalyticsUnavailable("Analytics database is not configured")
         query = self.queries.get(chart.id)

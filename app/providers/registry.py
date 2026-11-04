@@ -45,7 +45,9 @@ class AdminDashboardProvider(Protocol):
         chart: DashboardChartDefinition,
         *,
         month: str | None = None,
-    ) -> list[dict[str, object]]: ...
+    ) -> list[dict[str, object]]:
+        """Execute a chart query, optionally scoped to a UTC calendar month."""
+        ...
 
 
 class DashboardProviderRegistry:

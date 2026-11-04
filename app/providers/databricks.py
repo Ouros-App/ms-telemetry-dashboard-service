@@ -105,6 +105,7 @@ class DatabricksDashboardProvider:
         *,
         month: str | None = None,
     ) -> list[dict[str, Any]]:
+        """Run the configured Databricks query; this provider does not filter by month."""
         if not self.settings.databricks_host:
             raise DatabricksIntegrationError(PROVIDER_NOT_CONFIGURED_DETAIL)
         token = await self.auth.get_access_token()

@@ -58,6 +58,7 @@ class Provider:
 
 @pytest.mark.asyncio
 async def test_dashboard_service_lists_and_gets_dashboard_data() -> None:
+    """Verify that selected months are forwarded while unfiltered calls remain valid."""
     provider = Provider()
     service = DashboardService(DashboardProviderRegistry([provider]))
 

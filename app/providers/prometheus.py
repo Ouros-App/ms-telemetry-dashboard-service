@@ -13,6 +13,7 @@ from app.schemas.dashboards import (
 
 
 def _month_window(month: str) -> tuple[float, float, str] | None:
+    """Return UTC bounds through now, or None if the month has not begun."""
     month_start = datetime.strptime(month, "%Y-%m").replace(tzinfo=UTC)
     next_month = datetime(
         month_start.year + (month_start.month == 12),
@@ -395,6 +396,7 @@ class PrometheusDashboardProvider:
         *,
         month: str | None = None,
     ) -> list[dict[str, Any]]:
+        """Query Prometheus chart data for the selected UTC month when applicable."""
         metadata = chart.encodings.get("_prometheus")
         if not isinstance(metadata, dict):
             return []

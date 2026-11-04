@@ -190,6 +190,7 @@ async def test_prometheus_provider_maps_vector_to_chart_rows() -> None:
 
 @pytest.mark.asyncio
 async def test_prometheus_ai_request_rate_is_daily_within_selected_month() -> None:
+    """Check that completed request-rate points are labeled by UTC day."""
     calls: list[tuple[str, float, float, int]] = []
 
     class Http:
@@ -246,6 +247,7 @@ async def test_prometheus_ai_request_rate_includes_current_partial_day(
     day: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Preserve complete daily points and add the current partial UTC day."""
     current_time = datetime(2024, 2, day, 8, tzinfo=UTC)
     _freeze_prometheus_time(monkeypatch, current_time)
     range_calls: list[tuple[str, float, float, int]] = []
@@ -325,6 +327,7 @@ async def test_ai_http_charts_exclude_metrics_scrapes_from_traffic_metrics() -> 
 
 @pytest.mark.asyncio
 async def test_ai_charts_use_selected_month_for_counts_and_latency() -> None:
+    """Verify monthly event and latency queries use the selected UTC window."""
     calls: list[tuple[str, float | None]] = []
 
     class Http:
