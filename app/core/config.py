@@ -42,7 +42,11 @@ def _mongo_url_is_valid(value: str) -> bool:
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False)
+    model_config = SettingsConfigDict(
+        env_file=("prometheus-defaults.env", ".env"),
+        extra="ignore",
+        case_sensitive=False,
+    )
 
     project_name: str = "Telemetry Dashboard Service"
     description: str = "API for admin Databricks dashboards and scoped user analytics dashboards."
@@ -58,8 +62,8 @@ class Settings(BaseSettings):
     databricks_client_id: str | None = None
     databricks_client_secret: str | None = None
     databricks_token_url: str | None = None
-    prometheus_url: str | None = "http://192.168.15.11:9090"
-    prometheus_socks_host: str | None = "tailscale-proxy"
+    prometheus_url: str | None = None
+    prometheus_socks_host: str | None = None
     prometheus_socks_port: int = 1055
     prometheus_socks_connect_timeout_seconds: float = 5.0
     prometheus_range_seconds: int = 3600
