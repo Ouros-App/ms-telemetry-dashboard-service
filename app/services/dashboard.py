@@ -90,6 +90,7 @@ class DashboardService:
         self,
         dashboard_id: str,
         chart_id: str,
+        month: str | None = None,
     ) -> tuple[DashboardChartDefinition, list[dict[str, Any]]]:
         dashboard = await self._find_dashboard(dashboard_id)
         provider = self.providers.provider_for(dashboard)
@@ -97,7 +98,11 @@ class DashboardService:
             chart = await provider.get_chart(dashboard, chart_id)
         except KeyError as exc:
             raise ChartNotFound(chart_id) from exc
-        return chart, await provider.execute_chart_query(chart)
+        if month is None:
+            items = await provider.execute_chart_query(chart)
+        else:
+            items = await provider.execute_chart_query(chart, month=month)
+        return chart, items
 
     async def _find_dashboard(
         self,

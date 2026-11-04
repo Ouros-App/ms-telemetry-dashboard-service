@@ -12,6 +12,22 @@ from app.schemas.dashboards import (
 )
 
 
+
+def _month_window(month: str) -> tuple[float, float, str] | None:
+    month_start = datetime.strptime(month, "%Y-%m").replace(tzinfo=UTC)
+    next_month = datetime(
+        month_start.year + (month_start.month == 12),
+        month_start.month % 12 + 1,
+        1,
+        tzinfo=UTC,
+    )
+    end = min(datetime.now(UTC), next_month)
+    if month_start >= end:
+        return None
+    duration_ms = int((end - month_start).total_seconds() * 1000)
+    return month_start.timestamp(), end.timestamp(), f"{duration_ms}ms"
+
+
 @dataclass(frozen=True)
 class PrometheusChartSpec:
     id: str
@@ -109,7 +125,7 @@ class PrometheusDashboardProvider:
             dashboard_id="prometheus-ai",
             title="Requests por segundo",
             type="line",
-            query='sum(rate(ai_server_http_requests_total{route!="/metrics"}[5m]))',
+            query='sum(rate(ai_server_http_requests_total{route!="/metrics"}[1d]))',
             mode="range",
         ),
         PrometheusChartSpec(
@@ -377,10 +393,44 @@ class PrometheusDashboardProvider:
     async def execute_chart_query(
         self,
         chart: DashboardChartDefinition,
+        *,
+        month: str | None = None,
     ) -> list[dict[str, Any]]:
         metadata = chart.encodings.get("_prometheus")
         if not isinstance(metadata, dict):
             return []
+
+        if chart.id.startswith("ai-"):
+            period = _month_window(
+                month or datetime.now(UTC).strftime("%Y-%m")
+            )
+            if period is None:
+                return []
+            start, end, duration = period
+            if chart.id == "ai-request-rate":
+                start += 86400
+                if start > end:
+                    return []
+                result = await self.http.query_range(
+                    chart.dataset_query,
+                    start=start,
+                    end=end,
+                    step=86400,
+                )
+                return self._matrix_rows(
+                    result,
+                    time_format="%d/%m",
+                    timestamp_offset_seconds=-86400,
+                )
+            query = chart.dataset_query.replace("[5m]", f"[{duration}]")
+            if chart.id == "ai-p95-latency":
+                query = query.replace("rate(", "increase(")
+            result = await self.http.query(query, timestamp=end - 0.001)
+            label_name = metadata.get("labelName")
+            return self._vector_rows(
+                result,
+                label_name if isinstance(label_name, str) else None,
+            )
 
         mode = metadata.get("mode")
         if mode == "range":
@@ -482,6 +532,9 @@ class PrometheusDashboardProvider:
     @staticmethod
     def _matrix_rows(
         result: list[dict[str, Any]],
+        *,
+        time_format: str = "%H:%M",
+        timestamp_offset_seconds: int = 0,
     ) -> list[dict[str, Any]]:
         if not result:
             return []
@@ -501,9 +554,9 @@ class PrometheusDashboardProvider:
             rows.append(
                 {
                     "time": datetime.fromtimestamp(
-                        timestamp,
+                        timestamp + timestamp_offset_seconds,
                         tz=UTC,
-                    ).strftime("%H:%M"),
+                    ).strftime(time_format),
                     "value": value,
                 }
             )

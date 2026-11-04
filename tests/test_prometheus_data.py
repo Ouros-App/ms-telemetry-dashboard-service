@@ -1,8 +1,10 @@
 from types import SimpleNamespace
 
 import pytest
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
 
+from app.api import routes
 from app.api.routes import get_prometheus_chart_data
 from app.core.auth import Principal
 from app.services.dashboard import ChartNotFound
@@ -25,8 +27,8 @@ class FakeDashboardService:
 
 
 
-    async def chart_data(self, dashboard_id, chart_id):
-        self.chart_data_calls.append((dashboard_id, chart_id))
+    async def chart_data(self, dashboard_id, chart_id, month=None):
+        self.chart_data_calls.append((dashboard_id, chart_id, month))
         return SimpleNamespace(id=chart_id, title="Chat por resultado", type="bar"), self.items
 
 
@@ -41,14 +43,39 @@ async def test_prometheus_chart_data_returns_provider_rows_without_mock_values()
         "ai-chat-outcomes",
         principal=ADMIN,
         service=service,
+        month="2024-02",
     )
-
     assert result.model_dump() == {
         "dashboard_id": "prometheus-ai",
         "chart": {"id": "ai-chat-outcomes", "title": "Chat por resultado", "type": "bar"},
         "items": items,
     }
-    assert service.chart_data_calls == [("prometheus-ai", "ai-chat-outcomes")]
+    assert service.chart_data_calls == [("prometheus-ai", "ai-chat-outcomes", "2024-02")]
+
+
+def test_prometheus_chart_data_endpoint_filters_month_query() -> None:
+    service = FakeDashboardService()
+    app = FastAPI()
+    app.include_router(routes.router)
+    app.dependency_overrides[routes.require_admin_bearer] = lambda: ADMIN
+    app.dependency_overrides[routes.get_dashboard_service] = lambda: service
+
+    with TestClient(app) as client:
+        response = client.get(
+            "/v1/dashboards/prometheus-ai/charts/ai-chat-outcomes/data",
+            params={"month": "2024-02"},
+        )
+        invalid_month = client.get(
+            "/v1/dashboards/prometheus-ai/charts/ai-chat-outcomes/data",
+            params={"month": "2024-13"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["items"] == service.items
+    assert service.chart_data_calls == [
+        ("prometheus-ai", "ai-chat-outcomes", "2024-02")
+    ]
+    assert invalid_month.status_code == 422
 
 
 @pytest.mark.asyncio
@@ -72,7 +99,7 @@ async def test_prometheus_chart_data_rejects_non_prometheus_dashboard():
 async def test_prometheus_chart_data_maps_unknown_chart_to_404():
     """Maps an unknown chart to the endpoint's 404 response."""
     class MissingChartService(FakeDashboardService):
-        async def chart_data(self, dashboard_id, chart_id):
+        async def chart_data(self, dashboard_id, chart_id, month=None):
             raise ChartNotFound(chart_id)
 
     service = MissingChartService()

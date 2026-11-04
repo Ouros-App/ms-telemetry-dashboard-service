@@ -154,7 +154,7 @@ As rotas administrativas continuam protegidas por access token do Keycloak com a
 - `GET /v1/dashboards`: lista dashboards ativos.
 - `GET /v1/dashboards/{id}`: busca um dashboard.
 - `GET /v1/dashboards/{id}/charts`: lista os gráficos do dashboard.
-- `GET /v1/dashboards/{id}/charts/{chart_id}/data`: retorna metadados e pontos de dados Prometheus em JSON para renderização no cliente; exige role `admin` e aceita apenas dashboards Prometheus.
+- `GET /v1/dashboards/{id}/charts/{chart_id}/data?month=YYYY-MM`: retorna metadados e pontos Prometheus para renderização no cliente; gráficos de IA usam o mês selecionado.
 - `GET /v1/dashboards/{id}/charts/{chart_id}/png`: retorna PNG.
 - `GET /v1/dashboards/{id}/charts/{chart_id}/chartjs`: retorna HTML com Chart.js.
 
@@ -178,7 +178,7 @@ Sem provedor Prometheus e sem filtro `month`, o total de tokens também vem do s
 
 Para os gráficos reais de observabilidade Prometheus da Midas AI, use `GET /v1/dashboards/prometheus-ai/charts/{chart_id}/data` com os IDs publicados pelo dashboard. Por exemplo, `ai-request-rate` e `ai-p95-latency`.
 
-Os gráficos `ai-chat-outcomes`, `ai-agent-usage` e `ai-tool-usage` mostram contagens estimadas nos últimos 5 minutos (`increase`); `ai-request-rate` mostra requisições por segundo e `ai-p95-latency` calcula p95 na janela de 5 minutos. Taxa de requisições e latência excluem a rota `/metrics` para não contar as coletas Prometheus como tráfego de usuário.
+Os gráficos de IA usam o mês UTC selecionado: requests são exibidos como média diária, p95 é calculado sobre o mês e os totais de chat/agentes/tools cobrem o mês. Sem `month`, é usado o mês UTC atual. O frontend atualiza a cada 10 segundos e consulta novamente o mês selecionado; não acumula snapshots. Todas as consultas HTTP excluem `/metrics`.
 
 
 Use um `id` retornado por `/v1/dashboards` nas chamadas seguintes:

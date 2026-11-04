@@ -104,6 +104,8 @@ class AnalyticsAdminDashboardProvider:
     async def execute_chart_query(
         self,
         chart: DashboardChartDefinition,
+        *,
+        month: str | None = None,
     ) -> list[dict[str, Any]]:
         if self.repository is None:
             raise AnalyticsUnavailable("Analytics database is not configured")

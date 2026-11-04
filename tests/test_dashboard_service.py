@@ -31,6 +31,7 @@ class Provider:
     provider_name = "databricks"
 
     def __init__(self) -> None:
+        self.query_months: list[str | None] = []
         self.dashboard = make_dashboard()
         self.chart = make_chart()
 
@@ -45,21 +46,38 @@ class Provider:
             raise KeyError(chart_id)
         return self.chart
 
-    async def execute_chart_query(self, chart):
+    async def execute_chart_query(
+        self,
+        chart,
+        *,
+        month: str | None = None,
+    ):
+        self.query_months.append(month)
         return [{"value": 1}]
 
 
 @pytest.mark.asyncio
 async def test_dashboard_service_lists_and_gets_dashboard_data() -> None:
-    service = DashboardService(DashboardProviderRegistry([Provider()]))
+    provider = Provider()
+    service = DashboardService(DashboardProviderRegistry([provider]))
 
     assert (await service.list_dashboards()).items[0].id == "dashboard-a"
     assert (await service.get_dashboard("dashboard-a")).title == "Dashboard A"
     assert (await service.list_charts("dashboard-a")).items[0].id == "chart-a"
     chart_definition, rows = await service.chart_data("dashboard-a", "chart-a")
-
     assert chart_definition.id == "chart-a"
     assert rows == [{"value": 1}]
+    chart_definition, rows = await service.chart_data(
+        "dashboard-a",
+        "chart-a",
+        month="2024-02",
+    )
+    assert chart_definition.id == "chart-a"
+    assert rows == [{"value": 1}]
+    assert provider.query_months == [
+        None,
+        "2024-02",
+    ]
 
 
 @pytest.mark.asyncio

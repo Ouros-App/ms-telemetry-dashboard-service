@@ -43,6 +43,8 @@ class AdminDashboardProvider(Protocol):
     async def execute_chart_query(
         self,
         chart: DashboardChartDefinition,
+        *,
+        month: str | None = None,
     ) -> list[dict[str, object]]: ...
 
 

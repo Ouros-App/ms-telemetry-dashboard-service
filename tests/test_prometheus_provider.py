@@ -174,14 +174,12 @@ async def test_prometheus_provider_maps_vector_to_chart_rows() -> None:
 
 
 @pytest.mark.asyncio
-async def test_prometheus_provider_maps_range_to_line_rows(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls: list[tuple[str, int]] = []
+async def test_prometheus_ai_request_rate_is_daily_within_selected_month() -> None:
+    calls: list[tuple[str, float, float, int]] = []
 
     class Http:
-        async def query(self, query: str):
-            return []
+        async def query(self, query: str, *, timestamp: float | None = None):
+            raise AssertionError("monthly request rate uses a daily range query")
 
         async def query_range(
             self,
@@ -191,26 +189,18 @@ async def test_prometheus_provider_maps_range_to_line_rows(
             end: float,
             step: int,
         ):
-            calls.append((query, step))
+            calls.append((query, start, end, step))
             return [
                 {
                     "metric": {},
                     "values": [
-                        [1_700_000_000, "1.5"],
-                        [1_700_000_060, "2.5"],
+                        [1_706_832_000, "1.5"],
+                        [1_706_918_400, "2.5"],
                     ],
                 }
             ]
 
-    monkeypatch.setattr("app.providers.prometheus.time.time", lambda: 1_700_000_120)
-    provider = PrometheusDashboardProvider(
-        Http(),
-        Settings(
-            prometheus_url="http://prometheus.internal:9090",
-            prometheus_range_seconds=3600,
-            prometheus_step_seconds=60,
-        ),
-    )
+    provider = PrometheusDashboardProvider(http=Http(), settings=Settings())
     dashboard = next(
         item
         for item in await provider.list_dashboards()
@@ -218,11 +208,19 @@ async def test_prometheus_provider_maps_range_to_line_rows(
     )
     chart = await provider.get_chart(dashboard, "ai-request-rate")
 
-    rows = await provider.execute_chart_query(chart)
+    rows = await provider.execute_chart_query(chart, month="2024-02")
 
-    assert [row["value"] for row in rows] == [1.5, 2.5]
+    assert rows == [
+        {"time": "01/02", "value": 1.5},
+        {"time": "02/02", "value": 2.5},
+    ]
     assert calls == [
-        ('sum(rate(ai_server_http_requests_total{route!="/metrics"}[5m]))', 60)
+        (
+            'sum(rate(ai_server_http_requests_total{route!="/metrics"}[1d]))',
+            1_706_832_000,
+            1_709_251_200,
+            86400,
+        )
     ]
 
 
@@ -246,28 +244,64 @@ async def test_ai_http_charts_exclude_metrics_scrapes_from_traffic_metrics() -> 
 
 
 @pytest.mark.asyncio
-async def test_ai_usage_charts_return_five_minute_totals() -> None:
-    provider = PrometheusDashboardProvider(http=object(), settings=Settings())
+async def test_ai_charts_use_selected_month_for_counts_and_latency() -> None:
+    calls: list[tuple[str, float | None]] = []
+
+    class Http:
+        async def query(self, query: str, *, timestamp: float | None = None):
+            calls.append((query, timestamp))
+            return [
+                {
+                    "metric": {
+                        "outcome": "success",
+                        "agent": "router",
+                        "tool": "search_knowledge",
+                        "route": "/chat",
+                    },
+                    "value": [1, "3"],
+                }
+            ]
+
+        async def query_range(
+            self,
+            query: str,
+            *,
+            start: float,
+            end: float,
+            step: int,
+        ):
+            raise AssertionError("monthly count charts use an instant query")
+
+    provider = PrometheusDashboardProvider(http=Http(), settings=Settings())
     dashboard = next(
         item
         for item in await provider.list_dashboards()
         if item.id == "prometheus-ai"
     )
-
-    expected_queries = {
+    expected = {
         "ai-chat-outcomes": (
-            "sum by (outcome) (increase(ai_server_chat_requests_total[5m]))"
+            "sum by (outcome) (increase(ai_server_chat_requests_total[2505600000ms]))",
+            "success",
         ),
         "ai-agent-usage": (
-            "sum by (agent) (increase(ai_server_chat_agent_usage_total[5m]))"
+            "sum by (agent) (increase(ai_server_chat_agent_usage_total[2505600000ms]))",
+            "router",
         ),
         "ai-tool-usage": (
-            "sum by (tool) (increase(ai_server_chat_tool_usage_total[5m]))"
+            "sum by (tool) (increase(ai_server_chat_tool_usage_total[2505600000ms]))",
+            "search_knowledge",
+        ),
+        "ai-p95-latency": (
+            'histogram_quantile(0.95, sum by (le, route) (increase(ai_server_http_request_duration_seconds_bucket{route!="/metrics"}[2505600000ms])))',
+            "/chat",
         ),
     }
-    for chart_id, query in expected_queries.items():
+
+    for chart_id, (query, label) in expected.items():
         chart = await provider.get_chart(dashboard, chart_id)
-        assert chart.dataset_query == query
+        rows = await provider.execute_chart_query(chart, month="2024-02")
+        assert rows == [{"value": 3.0, "label": label}]
+        assert calls[-1] == (query, 1_709_251_199.999)
 
 
 def test_prometheus_vector_rows_skip_non_finite_samples() -> None:
