@@ -176,3 +176,26 @@ def test_prometheus_socks_requires_prometheus_url() -> None:
 
     assert config.prometheus_configuration_errors() == ["PROMETHEUS_URL"]
     assert not config.ready
+
+
+def test_prometheus_url_uses_homelab_default_when_not_loaded(monkeypatch) -> None:
+    for key in (
+        "PROMETHEUS_URL",
+        "PROMETHEUS_SOCKS_HOST",
+        "PROMETHEUS_SOCKS_PORT",
+        "PROMETHEUS_SOCKS_CONNECT_TIMEOUT_SECONDS",
+        "PROMETHEUS_RANGE_SECONDS",
+        "PROMETHEUS_STEP_SECONDS",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    config = Settings(_env_file=None)
+    assert config.prometheus_url == "http://192.168.15.11:9090"
+    assert config.prometheus_socks_host == "tailscale-proxy"
+    assert config.prometheus_configured
+
+    monkeypatch.setenv("PROMETHEUS_URL", "http://prometheus.example:9090")
+    monkeypatch.setenv("PROMETHEUS_SOCKS_HOST", "proxy.example")
+    configured = Settings(_env_file=None)
+    assert configured.prometheus_url == "http://prometheus.example:9090"
+    assert configured.prometheus_socks_host == "proxy.example"
