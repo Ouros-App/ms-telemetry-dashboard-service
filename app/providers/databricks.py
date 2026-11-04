@@ -99,7 +99,13 @@ class DatabricksDashboardProvider:
             raise KeyError(chart_id)
         return chart
 
-    async def execute_chart_query(self, chart: DashboardChartDefinition) -> list[dict[str, Any]]:
+    async def execute_chart_query(
+        self,
+        chart: DashboardChartDefinition,
+        *,
+        month: str | None = None,  # NOSONAR(S1172)
+    ) -> list[dict[str, Any]]:
+        """Run the configured Databricks query; this provider does not filter by month."""
         if not self.settings.databricks_host:
             raise DatabricksIntegrationError(PROVIDER_NOT_CONFIGURED_DETAIL)
         token = await self.auth.get_access_token()

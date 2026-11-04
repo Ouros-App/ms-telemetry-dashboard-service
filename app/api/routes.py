@@ -6,6 +6,7 @@ from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
+    Query,
     Request,
     Response,
     status,
@@ -181,6 +182,7 @@ async def list_charts(
     responses={
         403: {"description": "Authenticated principal does not have the admin role"},
         404: {"description": "Prometheus dashboard or chart not found"},
+        422: {"description": "Invalid month"},
         502: {"description": DASHBOARD_PROVIDER_INTEGRATION_DETAIL},
         504: {"description": DASHBOARD_PROVIDER_TIMEOUT_DETAIL},
     },
@@ -191,6 +193,10 @@ async def get_prometheus_chart_data(
     chart_id: str,
     principal: Annotated[Principal, Depends(require_admin_bearer)],
     service: Annotated[DashboardService, Depends(get_dashboard_service)],
+    month: Annotated[
+        str | None,
+        Query(pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+    ] = None,
 ) -> DashboardChartDataResponse:
     """Return Prometheus points only to principals carrying the admin role."""
     require_admin_principal(principal)
@@ -203,12 +209,18 @@ async def get_prometheus_chart_data(
         dashboard = await service.get_dashboard(dashboard_id)
         if dashboard.provider != "prometheus":
             raise HTTPException(status_code=404, detail="Prometheus dashboard not found")
-        chart, items = await service.chart_data(dashboard_id, chart_id)
+        chart, items = await service.chart_data(
+            dashboard_id,
+            chart_id,
+            month=month,
+        )
         return DashboardChartDataResponse(
             dashboard_id=dashboard_id,
             chart={"id": chart.id, "title": chart.title, "type": chart.type},
             items=items,
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="invalid month") from exc
     except (DashboardNotFound, ChartNotFound) as exc:
         raise HTTPException(
             status_code=404,

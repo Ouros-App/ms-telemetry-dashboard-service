@@ -43,7 +43,11 @@ class AdminDashboardProvider(Protocol):
     async def execute_chart_query(
         self,
         chart: DashboardChartDefinition,
-    ) -> list[dict[str, object]]: ...
+        *,
+        month: str | None = None,
+    ) -> list[dict[str, object]]:
+        """Execute a chart query, optionally scoped to a UTC calendar month."""
+        ...
 
 
 class DashboardProviderRegistry:

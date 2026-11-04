@@ -12,6 +12,22 @@ from app.schemas.dashboards import (
 )
 
 
+def _month_window(month: str) -> tuple[float, float, str] | None:
+    """Return UTC bounds through now, or None if the month has not begun."""
+    month_start = datetime.strptime(month, "%Y-%m").replace(tzinfo=UTC)
+    next_month = datetime(
+        month_start.year + (month_start.month == 12),
+        month_start.month % 12 + 1,
+        1,
+        tzinfo=UTC,
+    )
+    end = min(datetime.now(UTC), next_month)
+    if month_start >= end:
+        return None
+    duration_ms = int((end - month_start).total_seconds() * 1000)
+    return month_start.timestamp(), end.timestamp(), f"{duration_ms}ms"
+
+
 @dataclass(frozen=True)
 class PrometheusChartSpec:
     id: str
@@ -109,7 +125,7 @@ class PrometheusDashboardProvider:
             dashboard_id="prometheus-ai",
             title="Requests por segundo",
             type="line",
-            query='sum(rate(ai_server_http_requests_total{route!="/metrics"}[5m]))',
+            query='sum(rate(ai_server_http_requests_total{route!="/metrics"}[1d]))',
             mode="range",
         ),
         PrometheusChartSpec(
@@ -377,10 +393,16 @@ class PrometheusDashboardProvider:
     async def execute_chart_query(
         self,
         chart: DashboardChartDefinition,
+        *,
+        month: str | None = None,
     ) -> list[dict[str, Any]]:
+        """Query Prometheus chart data for the selected UTC month when applicable."""
         metadata = chart.encodings.get("_prometheus")
         if not isinstance(metadata, dict):
             return []
+
+        if chart.id.startswith("ai-"):
+            return await self._execute_ai_chart_query(chart, metadata, month)
 
         mode = metadata.get("mode")
         if mode == "range":
@@ -399,6 +421,87 @@ class PrometheusDashboardProvider:
             result,
             label_name if isinstance(label_name, str) else None,
         )
+
+    async def _execute_ai_chart_query(
+        self,
+        chart: DashboardChartDefinition,
+        metadata: dict[str, Any],
+        month: str | None,
+    ) -> list[dict[str, Any]]:
+        """Execute an AI chart over its selected UTC month."""
+        current_month = datetime.now(UTC).strftime("%Y-%m")
+        selected_month = month or current_month
+        period = _month_window(selected_month)
+        if period is None:
+            return []
+        start, end, duration = period
+
+        if chart.id == "ai-request-rate":
+            return await self._execute_ai_request_rate(
+                chart,
+                start,
+                end,
+                selected_month == current_month,
+            )
+
+        query = chart.dataset_query.replace("[5m]", f"[{duration}]")
+        if chart.id == "ai-p95-latency":
+            query = query.replace("rate(", "increase(")
+        result = await self.http.query(query, timestamp=end - 0.001)
+        label_name = metadata.get("labelName")
+        return self._vector_rows(
+            result,
+            label_name if isinstance(label_name, str) else None,
+        )
+
+    async def _execute_ai_request_rate(
+        self,
+        chart: DashboardChartDefinition,
+        start: float,
+        end: float,
+        include_current_day: bool,
+    ) -> list[dict[str, Any]]:
+        """Return complete daily rates plus the current partial UTC day."""
+        range_start = start + 86400
+        rows: list[dict[str, Any]] = []
+        if range_start <= end:
+            result = await self.http.query_range(
+                chart.dataset_query,
+                start=range_start,
+                end=end,
+                step=86400,
+            )
+            rows = self._matrix_rows(
+                result,
+                time_format="%d/%m",
+                timestamp_offset_seconds=-86400,
+            )
+        if include_current_day:
+            current_day = datetime.fromtimestamp(end, tz=UTC)
+            day_start = current_day.replace(
+                hour=0,
+                minute=0,
+                second=0,
+                microsecond=0,
+            ).timestamp()
+            partial_seconds = int(end - day_start)
+            if partial_seconds > 0:
+                query = chart.dataset_query.replace(
+                    "[1d]",
+                    f"[{partial_seconds}s]",
+                )
+                result = await self.http.query(
+                    query,
+                    timestamp=end - 0.001,
+                )
+                rows.extend(
+                    {
+                        "time": current_day.strftime("%d/%m"),
+                        "value": row["value"],
+                    }
+                    for row in self._vector_rows(result, None)
+                )
+        return rows
 
     @staticmethod
     def _chart_definition(
@@ -482,6 +585,9 @@ class PrometheusDashboardProvider:
     @staticmethod
     def _matrix_rows(
         result: list[dict[str, Any]],
+        *,
+        time_format: str = "%H:%M",
+        timestamp_offset_seconds: int = 0,
     ) -> list[dict[str, Any]]:
         if not result:
             return []
@@ -501,9 +607,9 @@ class PrometheusDashboardProvider:
             rows.append(
                 {
                     "time": datetime.fromtimestamp(
-                        timestamp,
+                        timestamp + timestamp_offset_seconds,
                         tz=UTC,
-                    ).strftime("%H:%M"),
+                    ).strftime(time_format),
                     "value": value,
                 }
             )
