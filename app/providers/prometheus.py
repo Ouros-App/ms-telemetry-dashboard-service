@@ -12,7 +12,6 @@ from app.schemas.dashboards import (
 )
 
 
-
 def _month_window(month: str) -> tuple[float, float, str] | None:
     month_start = datetime.strptime(month, "%Y-%m").replace(tzinfo=UTC)
     next_month = datetime(
@@ -401,27 +400,53 @@ class PrometheusDashboardProvider:
             return []
 
         if chart.id.startswith("ai-"):
-            period = _month_window(
-                month or datetime.now(UTC).strftime("%Y-%m")
-            )
+            current_month = datetime.now(UTC).strftime("%Y-%m")
+            selected_month = month or current_month
+            period = _month_window(selected_month)
             if period is None:
                 return []
             start, end, duration = period
             if chart.id == "ai-request-rate":
-                start += 86400
-                if start > end:
-                    return []
-                result = await self.http.query_range(
-                    chart.dataset_query,
-                    start=start,
-                    end=end,
-                    step=86400,
-                )
-                return self._matrix_rows(
-                    result,
-                    time_format="%d/%m",
-                    timestamp_offset_seconds=-86400,
-                )
+                range_start = start + 86400
+                rows: list[dict[str, Any]] = []
+                if range_start <= end:
+                    result = await self.http.query_range(
+                        chart.dataset_query,
+                        start=range_start,
+                        end=end,
+                        step=86400,
+                    )
+                    rows = self._matrix_rows(
+                        result,
+                        time_format="%d/%m",
+                        timestamp_offset_seconds=-86400,
+                    )
+                if selected_month == current_month:
+                    current_day = datetime.fromtimestamp(end, tz=UTC)
+                    day_start = current_day.replace(
+                        hour=0,
+                        minute=0,
+                        second=0,
+                        microsecond=0,
+                    ).timestamp()
+                    partial_seconds = int(end - day_start)
+                    if partial_seconds > 0:
+                        query = chart.dataset_query.replace(
+                            "[1d]",
+                            f"[{partial_seconds}s]",
+                        )
+                        result = await self.http.query(
+                            query,
+                            timestamp=end - 0.001,
+                        )
+                        rows.extend(
+                            {
+                                "time": current_day.strftime("%d/%m"),
+                                "value": row["value"],
+                            }
+                            for row in self._vector_rows(result, None)
+                        )
+                return rows
             query = chart.dataset_query.replace("[5m]", f"[{duration}]")
             if chart.id == "ai-p95-latency":
                 query = query.replace("rate(", "increase(")

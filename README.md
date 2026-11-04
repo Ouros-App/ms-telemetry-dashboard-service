@@ -178,7 +178,7 @@ Sem provedor Prometheus e sem filtro `month`, o total de tokens também vem do s
 
 Para os gráficos reais de observabilidade Prometheus da Midas AI, use `GET /v1/dashboards/prometheus-ai/charts/{chart_id}/data` com os IDs publicados pelo dashboard. Por exemplo, `ai-request-rate` e `ai-p95-latency`.
 
-Os gráficos de IA usam o mês UTC selecionado: requests são exibidos como média diária, p95 é calculado sobre o mês e os totais de chat/agentes/tools cobrem o mês. Sem `month`, é usado o mês UTC atual. O frontend atualiza a cada 10 segundos e consulta novamente o mês selecionado; não acumula snapshots. Todas as consultas HTTP excluem `/metrics`.
+Os gráficos de IA usam o mês UTC selecionado: requests são exibidos como média diária nos dias concluídos e, para o dia atual, como média desde 00:00 UTC até a consulta; p95 é calculado sobre o mês e os totais de chat/agentes/tools cobrem o mês. Sem `month`, é usado o mês UTC atual. O frontend atualiza a cada 10 segundos e consulta novamente o mês selecionado; não acumula snapshots. Todas as consultas HTTP excluem `/metrics`.
 
 
 Use um `id` retornado por `/v1/dashboards` nas chamadas seguintes:

@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 import httpx
 import pytest
 
@@ -6,7 +8,20 @@ from app.clients.prometheus import (
     PrometheusIntegrationError,
 )
 from app.core.config import Settings
+from app.providers import prometheus as prometheus_module
 from app.providers.prometheus import PrometheusDashboardProvider
+
+
+def _freeze_prometheus_time(
+    monkeypatch: pytest.MonkeyPatch,
+    current_time: datetime,
+) -> None:
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return current_time
+
+    monkeypatch.setattr(prometheus_module, "datetime", FrozenDateTime)
 
 
 @pytest.mark.asyncio
@@ -220,6 +235,71 @@ async def test_prometheus_ai_request_rate_is_daily_within_selected_month() -> No
             1_706_832_000,
             1_709_251_200,
             86400,
+        )
+    ]
+
+
+
+@pytest.mark.parametrize("day", [1, 2])
+@pytest.mark.asyncio
+async def test_prometheus_ai_request_rate_includes_current_partial_day(
+    day: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    current_time = datetime(2024, 2, day, 8, tzinfo=UTC)
+    _freeze_prometheus_time(monkeypatch, current_time)
+    range_calls: list[tuple[str, float, float, int]] = []
+    instant_calls: list[tuple[str, float | None]] = []
+
+    class Http:
+        async def query(self, query: str, *, timestamp: float | None = None):
+            instant_calls.append((query, timestamp))
+            return [{"metric": {}, "value": [timestamp, "2.5"]}]
+
+        async def query_range(
+            self,
+            query: str,
+            *,
+            start: float,
+            end: float,
+            step: int,
+        ):
+            range_calls.append((query, start, end, step))
+            return [
+                {
+                    "metric": {},
+                    "values": [[1_706_832_000, "1.5"]],
+                }
+            ]
+
+    provider = PrometheusDashboardProvider(http=Http(), settings=Settings())
+    dashboard = next(
+        item
+        for item in await provider.list_dashboards()
+        if item.id == "prometheus-ai"
+    )
+    chart = await provider.get_chart(dashboard, "ai-request-rate")
+
+    rows = await provider.execute_chart_query(chart, month="2024-02")
+
+    expected_rows = [{"time": f"0{day}/02", "value": 2.5}]
+    if day == 2:
+        expected_rows.insert(0, {"time": "01/02", "value": 1.5})
+        assert range_calls == [
+            (
+                chart.dataset_query,
+                datetime(2024, 2, 2, tzinfo=UTC).timestamp(),
+                current_time.timestamp(),
+                86400,
+            )
+        ]
+    else:
+        assert range_calls == []
+    assert rows == expected_rows
+    assert instant_calls == [
+        (
+            chart.dataset_query.replace("[1d]", "[28800s]"),
+            current_time.timestamp() - 0.001,
         )
     ]
 
