@@ -42,6 +42,13 @@ def _mongo_url_is_valid(value: str) -> bool:
     except ValueError:
         return False
 
+def _environment_has_value(name: str) -> bool:
+    normalized_name = name.casefold()
+    return any(
+        key.casefold() == normalized_name and value
+        for key, value in os.environ.items()
+    )
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -85,7 +92,9 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def preserve_direct_prometheus_url(self) -> "Settings":
-        if os.getenv("PROMETHEUS_URL") and not os.getenv("PROMETHEUS_SOCKS_HOST"):
+        if _environment_has_value("PROMETHEUS_URL") and not _environment_has_value(
+            "PROMETHEUS_SOCKS_HOST"
+        ):
             self.prometheus_socks_host = None
         return self
 

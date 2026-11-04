@@ -202,11 +202,36 @@ def test_prometheus_url_uses_homelab_default_when_not_loaded(monkeypatch) -> Non
 
 
 def test_https_prometheus_url_does_not_inherit_default_proxy(monkeypatch) -> None:
-    monkeypatch.setenv("PROMETHEUS_URL", "https://prometheus.example:9090")
-    monkeypatch.delenv("PROMETHEUS_SOCKS_HOST", raising=False)
+    for key in (
+        "PROMETHEUS_URL",
+        "prometheus_url",
+        "PROMETHEUS_SOCKS_HOST",
+        "prometheus_socks_host",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("prometheus_url", "https://prometheus.example:9090")
 
     config = Settings(_env_file="prometheus-defaults.env")
 
     assert config.prometheus_url == "https://prometheus.example:9090"
     assert config.prometheus_socks_host is None
     assert config.prometheus_configuration_errors() == []
+
+
+def test_explicit_lowercase_prometheus_proxy_is_preserved(monkeypatch) -> None:
+    for key in (
+        "PROMETHEUS_URL",
+        "prometheus_url",
+        "PROMETHEUS_SOCKS_HOST",
+        "prometheus_socks_host",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("PROMETHEUS_URL", "https://prometheus.example:9090")
+    monkeypatch.setenv("prometheus_socks_host", "explicit-proxy")
+
+    config = Settings(_env_file="prometheus-defaults.env")
+
+    assert config.prometheus_socks_host == "explicit-proxy"
+    assert config.prometheus_configuration_errors() == [
+        "PROMETHEUS_URL_SOCKS_TLS_UNSUPPORTED"
+    ]
