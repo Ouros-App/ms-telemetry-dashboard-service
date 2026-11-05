@@ -6,6 +6,8 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.clients.prometheus import PrometheusHttpClient
+from app.core.logging import get_logger
+from app.repositories.ai_users import AiUsersRepository, AiUsersUnavailable
 from app.repositories.analytics import (
     AnalyticsQueryError,
     AnalyticsRepository,
@@ -30,6 +32,7 @@ from app.schemas.admin_metrics import (
 
 BUCKET_175K_PLUS = "175k+"
 NO_DATA = "Sem dados"
+logger = get_logger(__name__)
 
 
 def _format_compact_brl(value: float) -> str:
@@ -128,9 +131,12 @@ class AdminMetricsService:
         self,
         repository: AnalyticsRepository | None = None,
         prometheus: PrometheusHttpClient | None = None,
+        ai_users_repository: AiUsersRepository | None = None,
     ) -> None:
+        """Store data providers used to assemble admin AI KPIs."""
         self.repository = repository
         self.prometheus = prometheus
+        self.ai_users_repository = ai_users_repository
 
     @staticmethod
     def _prometheus_period(month: str | None) -> tuple[datetime, datetime, str]:
@@ -295,6 +301,7 @@ class AdminMetricsService:
         month: str | None = None,
         enterprise_id: int | None = None,
     ) -> AdminAiMetricsKpisResponse:
+        """Return AI KPIs, omitting global user counts for enterprise filters."""
         now_year = datetime.now(UTC).year
         prom_cost, prom_tokens, period = await self._prometheus_kpi_totals(
             month, enterprise_id
@@ -310,10 +317,17 @@ class AdminMetricsService:
             prom_tokens=prom_tokens,
             period=period,
         )
-        active_users = row.get("active_users")
-        active_users_value = (
-            int(active_users) if active_users is not None else None
-        )
+        active_users_value = None
+        if self.ai_users_repository is not None and enterprise_id is None:
+            try:
+                active_users_value = (
+                    await self.ai_users_repository.count_distinct_user_ids()
+                )
+            except AiUsersUnavailable:
+                logger.exception(
+                    "AI users count is unavailable",
+                    extra={"event": "ai_users_query_failed"},
+                )
         analytics_tokens = row.get("total_tokens")
         uses_prometheus_tokens = (
             self.prometheus is not None and enterprise_id is None

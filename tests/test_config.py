@@ -100,6 +100,32 @@ def test_missing_atlas_uri_does_not_block_admin_readiness() -> None:
     assert config.analytics_configuration_errors() == ["ANALYTICS_MONGODB_URI"]
 
 
+def test_ai_users_database_is_optional_but_uses_its_own_read_only_source() -> None:
+    config = base_settings(
+        ai_users_mongodb_uri="mongodb+srv://reader:secret@atlas.example.net/",
+    )
+
+    assert config.ai_users_configured
+    assert config.ai_users_configuration_errors() == []
+
+
+def test_ai_users_database_rejects_wrong_target_and_insecure_tls() -> None:
+    config = base_settings(
+        ai_users_mongodb_uri=(
+            "mongodb://reader:secret@atlas.example.net/"
+            "?tlsInsecure=true"
+        ),
+        ai_users_mongodb_database="ouros_analytics_poc",
+    )
+
+    assert not config.ai_users_configured
+    assert "AI_USERS_MONGODB_URI_INVALID" in config.ai_users_configuration_errors()
+    assert (
+        "AI_USERS_MONGODB_DATABASE_INVALID"
+        in config.ai_users_configuration_errors()
+    )
+
+
 def test_atlas_uri_and_timeouts_are_validated() -> None:
     config = base_settings(
         analytics_mongodb_uri="postgresql://legacy-host/analytics",

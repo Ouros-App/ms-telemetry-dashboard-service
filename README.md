@@ -94,6 +94,9 @@ Copie `.env.example` para `.env`. As variáveis disponíveis são:
 | `ANALYTICS_MONGODB_DATABASE` | Banco Atlas compartilhado com o sync, padrão `ouros_analytics_poc`. |
 | `ANALYTICS_CONNECT_TIMEOUT_SECONDS` | Timeout de conexão Atlas; padrão `5`. |
 | `ANALYTICS_RETRY_BACKOFF_SECONDS` | Backoff em falhas de conexão Atlas; padrão `5`. |
+| `AI_USERS_MONGODB_URI` | String de conexão TLS com acesso somente leitura a `mongodb-ai-prod.thread_owners`. |
+| `AI_USERS_MONGODB_DATABASE` | Banco de dados do AI server; deve permanecer `mongodb-ai-prod`. |
+| `AI_USERS_CONNECT_TIMEOUT_SECONDS` | Timeout de conexão ao banco de usuários de IA; padrão `5`. |
 | `ANALYTICS_STALE_AFTER_SECONDS` | Limite de atualização; padrão `2700` (45 min) para sync a cada ~30 min. |
 | `HTTP_TIMEOUT_SECONDS` / `HTTP_MAX_RETRIES` | Timeout e tentativas adicionais das chamadas externas. |
 | `CHART_CACHE_TTL_SECONDS` | Tempo de vida do cache de gráficos. |
@@ -111,6 +114,14 @@ O serviço carrega os secrets do Infisical antes da criação de `Settings` via 
 Secrets de aplicação esperados no path `/ms-telemetry-dashboard-service`:
 
 - `ANALYTICS_MONGODB_URI` (usuário MongoDB Atlas somente leitura).
+- `AI_USERS_MONGODB_URI` (credencial read-only para a coleção `thread_owners` do database `mongodb-ai-prod`).
+
+O KPI de usuários ativos conta valores distintos de `thread_owners.user_id`.
+Configure `AI_USERS_MONGODB_URI` no Infisical; a credencial deve ter apenas
+permissão de leitura nessa coleção. Sem essa variável, o KPI permanece como
+`Sem dados`; não há fallback para a base analítica, que não contém os IDs.
+Nas requisições filtradas por `enterprise_id`, este KPI retorna `Sem dados`:
+`thread_owners` não possui vínculo com empresa, então a contagem global seria enganosa.
 
 `DATABRICKS_CLIENT_SECRET` é necessário apenas com o provider Databricks habilitado.
 O telemetry deve receber `ANALYTICS_MONGODB_URI` pelo path

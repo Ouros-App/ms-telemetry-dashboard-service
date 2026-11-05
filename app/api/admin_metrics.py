@@ -37,7 +37,8 @@ def get_admin_metrics_service(request: Request) -> AdminMetricsService:
     summary="Get Midas AI KPIs for Admin Dashboard",
     description=(
         "Returns token spend and unit cost from Prometheus for the selected "
-        "calendar month when configured, plus active users from the Analytics snapshot."
+        "calendar month when configured. Includes global distinct users with "
+        "AI threads only when AI Users is configured and enterprise_id is omitted."
     ),
     responses={
         **RESPONSES_503,
@@ -54,6 +55,7 @@ async def get_admin_ai_kpis(
     ] = None,
     enterprise_id: int | None = None,
 ) -> AdminAiMetricsKpisResponse:
+    """Return admin AI KPIs for the selected month and company scope."""
     require_admin_principal(principal)
     if month is not None and (
         month.startswith("0000-") or month == "9999-12"

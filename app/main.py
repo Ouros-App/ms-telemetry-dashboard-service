@@ -25,6 +25,7 @@ from app.providers.analytics_admin import AnalyticsAdminDashboardProvider
 from app.providers.databricks import DatabricksDashboardProvider
 from app.providers.prometheus import PrometheusDashboardProvider
 from app.providers.registry import DashboardProviderRegistry
+from app.repositories.ai_users import AiUsersRepository
 from app.repositories.analytics import AnalyticsRepository, AnalyticsUnavailable
 from app.repositories.catalog import CatalogError, DashboardCatalog
 from app.services.admin_metrics import AdminMetricsService
@@ -37,6 +38,7 @@ http_logger = get_logger("http")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Create app services and release their external clients on shutdown."""
     logger.info(
         "service starting",
         extra={
@@ -148,6 +150,34 @@ async def lifespan(app: FastAPI):
 
     app.state.analytics_repository = analytics_repository
     app.state.analytics_ready = analytics_ready
+    ai_users_repository: AiUsersRepository | None = None
+    ai_users_configuration_errors = settings.ai_users_configuration_errors()
+    if ai_users_configuration_errors:
+        logger.warning(
+            "AI users database configuration is invalid",
+            extra={
+                "event": "ai_users_configuration_invalid",
+                "errors": sorted(set(ai_users_configuration_errors)),
+            },
+        )
+    elif settings.ai_users_configured and settings.ai_users_mongodb_uri:
+        try:
+            ai_users_repository = AiUsersRepository(
+                settings.ai_users_mongodb_uri,
+                database_name=settings.ai_users_mongodb_database,
+                connect_timeout_seconds=settings.ai_users_connect_timeout_seconds,
+            )
+        except (PyMongoError, ValueError):
+            logger.exception(
+                "AI users database client could not be created",
+                extra={"event": "ai_users_client_init_failed"},
+            )
+    else:
+        logger.warning(
+            "AI users database is not configured; active users KPI will be empty",
+            extra={"event": "ai_users_database_not_configured"},
+        )
+    app.state.ai_users_repository = ai_users_repository
     admin_providers.append(
         AnalyticsAdminDashboardProvider(analytics_repository)
     )
@@ -162,6 +192,7 @@ async def lifespan(app: FastAPI):
     app.state.admin_metrics_service = AdminMetricsService(
         analytics_repository,
         prometheus_http,
+        ai_users_repository,
     )
 
     logger.info("service started", extra={"event": "service_started"})
@@ -171,6 +202,8 @@ async def lifespan(app: FastAPI):
         logger.info("service stopping", extra={"event": "service_stopping"})
         if analytics_repository is not None:
             await analytics_repository.close()
+        if ai_users_repository is not None:
+            await ai_users_repository.close()
         if prometheus_http is not None:
             await prometheus_http.close()
         await client.aclose()

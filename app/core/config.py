@@ -30,17 +30,22 @@ def _http_url_is_valid(value: str) -> bool:
     )
 
 
-def _mongo_url_is_valid(value: str) -> bool:
+def _mongo_url_is_valid(
+    value: str,
+    database: str = "ouros_analytics_poc",
+) -> bool:
+    """Check a Mongo URI and database against the allowed target."""
     try:
         parsed = urlsplit(value)
         if parsed.scheme not in {"mongodb", "mongodb+srv"} or not parsed.hostname:
             return False
         from app.repositories.analytics import validate_mongodb_uri
 
-        validate_mongodb_uri(value, "ouros_analytics_poc")
+        validate_mongodb_uri(value, database, allowed_database_prefix=database)
         return True
     except ValueError:
         return False
+
 
 def _environment_has_value(name: str) -> bool:
     normalized_name = name.casefold()
@@ -82,6 +87,9 @@ class Settings(BaseSettings):
     analytics_connect_timeout_seconds: float = 5.0
     analytics_retry_backoff_seconds: float = 5.0
     analytics_stale_after_seconds: int = 2700
+    ai_users_mongodb_uri: str | None = None
+    ai_users_mongodb_database: str = "mongodb-ai-prod"
+    ai_users_connect_timeout_seconds: float = 5.0
     http_timeout_seconds: float = 10.0
     http_max_retries: int = 2
     http_retry_backoff_seconds: float = 0.1
@@ -240,6 +248,30 @@ class Settings(BaseSettings):
         if self.analytics_stale_after_seconds < 1:
             errors.append("ANALYTICS_STALE_AFTER_SECONDS_INVALID")
         return errors
+
+    def ai_users_configuration_errors(self) -> list[str]:
+        """Return configuration errors for the optional AI users source."""
+        if not self.ai_users_mongodb_uri:
+            return []
+        errors = []
+        if not _mongo_url_is_valid(
+            self.ai_users_mongodb_uri,
+            "mongodb-ai-prod",
+        ):
+            errors.append("AI_USERS_MONGODB_URI_INVALID")
+        if self.ai_users_mongodb_database != "mongodb-ai-prod":
+            errors.append("AI_USERS_MONGODB_DATABASE_INVALID")
+        if not (0 < self.ai_users_connect_timeout_seconds <= 30):
+            errors.append("AI_USERS_CONNECT_TIMEOUT_SECONDS_INVALID")
+        return errors
+
+    @property
+    def ai_users_configured(self) -> bool:
+        """Whether the optional AI users database is usable by this service."""
+        return bool(
+            self.ai_users_mongodb_uri
+            and not self.ai_users_configuration_errors()
+        )
 
     @property
     def user_analytics_configured(self) -> bool:
