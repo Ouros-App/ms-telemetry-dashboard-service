@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.clients.prometheus import PrometheusHttpClient
+from app.repositories.ai_users import AiUsersRepository
 from app.repositories.analytics import (
     AnalyticsQueryError,
     AnalyticsRepository,
@@ -128,9 +129,11 @@ class AdminMetricsService:
         self,
         repository: AnalyticsRepository | None = None,
         prometheus: PrometheusHttpClient | None = None,
+        ai_users_repository: AiUsersRepository | None = None,
     ) -> None:
         self.repository = repository
         self.prometheus = prometheus
+        self.ai_users_repository = ai_users_repository
 
     @staticmethod
     def _prometheus_period(month: str | None) -> tuple[datetime, datetime, str]:
@@ -310,9 +313,10 @@ class AdminMetricsService:
             prom_tokens=prom_tokens,
             period=period,
         )
-        active_users = row.get("active_users")
         active_users_value = (
-            int(active_users) if active_users is not None else None
+            await self.ai_users_repository.count_distinct_user_ids()
+            if self.ai_users_repository is not None
+            else None
         )
         analytics_tokens = row.get("total_tokens")
         uses_prometheus_tokens = (

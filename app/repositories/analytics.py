@@ -185,19 +185,24 @@ class AnalyticsQueryError(RuntimeError):
     pass
 
 
-def validate_mongodb_uri(uri: str, database: str) -> None:
-    """Reject TLS bypass and wrong destination before creating a client."""
+def validate_mongodb_uri(
+    uri: str,
+    database: str,
+    *,
+    allowed_database_prefix: str = "ouros_analytics_poc",
+) -> None:
+    """Reject TLS bypass and unexpected database targets before connecting."""
     if not uri.startswith(("mongodb://", "mongodb+srv://")):
-        raise ValueError("Analytics MongoDB URI must use mongodb:// or mongodb+srv://")
+        raise ValueError("MongoDB URI must use mongodb:// or mongodb+srv://")
     for key, value in parse_qsl(urlsplit(uri).query, keep_blank_values=True):
         option, setting = key.casefold(), value.casefold()
         if option in BLOCKED_TLS_OPTIONS and setting != "false":
-            raise ValueError("Analytics MongoDB URI enables insecure TLS")
+            raise ValueError("MongoDB URI enables insecure TLS")
         if option in {"ssl", "tls"} and setting != "true":
-            raise ValueError("Analytics MongoDB URI must not disable TLS")
-    if not database.startswith("ouros_analytics_poc"):
+            raise ValueError("MongoDB URI must not disable TLS")
+    if not database.startswith(allowed_database_prefix):
         raise ValueError(
-            "Analytics MongoDB database must use ouros_analytics_poc prefix"
+            f"MongoDB database must use {allowed_database_prefix} prefix"
         )
 
 

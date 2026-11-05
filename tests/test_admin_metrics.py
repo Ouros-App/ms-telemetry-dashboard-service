@@ -74,6 +74,11 @@ class MockMongoClient:
         self.closed = True
 
 
+class StubAiUsersRepository:
+    async def count_distinct_user_ids(self) -> int:
+        return 2
+
+
 def make_principal(
     account_type: str,
     *,
@@ -214,7 +219,10 @@ def build_repository(*, with_ai_sessions: bool = False) -> AnalyticsRepository:
 def setup_services():
     repo = build_repository(with_ai_sessions=False)
     app.state.analytics_repository = repo
-    app.state.admin_metrics_service = AdminMetricsService(repo)
+    app.state.admin_metrics_service = AdminMetricsService(
+        repo,
+        ai_users_repository=StubAiUsersRepository(),
+    )
     app.state.user_dashboard_service = UserDashboardService(
         AnalyticsDashboardProvider(repo)
     )
@@ -286,15 +294,19 @@ async def test_require_admin_bearer_token_validation() -> None:
         assert corp_principal.account_type == "admin"
 
 
-def test_empty_admin_ai_metrics_do_not_return_sample_data() -> None:
+def test_empty_analytics_metrics_include_distinct_ai_user_count() -> None:
     app.dependency_overrides[require_admin_bearer] = lambda: make_principal("admin")
     client = TestClient(app)
 
     kpis = client.get("/v1/admin/ai-metrics/kpis")
     assert kpis.status_code == 200
-    for item in kpis.json().values():
-        assert item["value"] is None
-        assert item["formatted"] == "Sem dados"
+    items = kpis.json()
+    assert items["active_users"]["value"] == 2.0
+    assert items["active_users"]["formatted"] == "2"
+    for name, item in items.items():
+        if name != "active_users":
+            assert item["value"] is None
+            assert item["formatted"] == "Sem dados"
 
     for endpoint in (
         "/v1/admin/ai-metrics/charts/token-spend",
@@ -315,6 +327,25 @@ def test_empty_admin_ai_metrics_do_not_return_sample_data() -> None:
         "limit": 2,
         "items": [],
     }
+
+
+def test_admin_ai_kpis_read_distinct_users_from_ai_database() -> None:
+    class AiUsers:
+        async def count_distinct_user_ids(self) -> int:
+            return 17
+
+    repository = build_repository(with_ai_sessions=True)
+    app.state.admin_metrics_service = AdminMetricsService(
+        repository=repository,
+        ai_users_repository=AiUsers(),
+    )
+    app.dependency_overrides[require_admin_bearer] = lambda: make_principal("admin")
+
+    response = TestClient(app).get("/v1/admin/ai-metrics/kpis?month=2026-11")
+
+    assert response.status_code == 200
+    assert response.json()["active_users"]["value"] == 17.0
+    assert response.json()["active_users"]["formatted"] == "17"
 
 
 @pytest.mark.parametrize("month", ["0000-01", "9999-12"])
@@ -344,6 +375,7 @@ async def test_admin_ai_kpis_use_selected_calendar_month() -> None:
     service = AdminMetricsService(
         repository=build_repository(with_ai_sessions=True),
         prometheus=Prometheus(),
+        ai_users_repository=StubAiUsersRepository(),
     )
 
     response = await service.get_kpis(month="2024-02")
@@ -360,62 +392,6 @@ async def test_admin_ai_kpis_use_selected_calendar_month() -> None:
     assert response.total_tokens.formatted == "14.762"
     assert response.total_tokens.unit == "tokens"
     assert response.total_tokens.period == "2024-02"
-
-
-@pytest.mark.asyncio
-async def test_admin_ai_kpis_count_users_outside_current_analytics_run() -> None:
-    """Count unique session users independently of the sync run marker."""
-    repository = build_repository(with_ai_sessions=True)
-    repository._database["poc_analytics_rows"].documents.extend(
-        [
-            {
-                "dataset": "fact_ai_session",
-                "_sync_run": "ai-session-run",
-                "user_id": 30,
-            },
-            {
-                "dataset": "fact_ai_session",
-                "user_id": 40,
-            },
-            {
-                "dataset": "fact_ai_session",
-                "_sync_run": "ai-session-run",
-                "user_id": 30,
-            },
-        ]
-    )
-
-    response = await AdminMetricsService(repository=repository).get_kpis()
-
-    assert response.active_users.value == 4.0
-    assert repository._database["poc_analytics_rows"].projections == [
-        {"user_id": 1, "_id": 0}
-    ]
-    assert response.total_tokens.value == 3000
-
-
-@pytest.mark.asyncio
-async def test_admin_ai_kpis_count_users_when_current_run_has_no_ai_sessions() -> None:
-    """Keep the user count when the current sync has no AI session rows."""
-    repository = build_repository(with_ai_sessions=False)
-    repository._database["poc_analytics_rows"].documents.extend(
-        [
-            {
-                "dataset": "fact_ai_session",
-                "_sync_run": "ai-session-run",
-                "user_id": 30,
-            },
-            {
-                "dataset": "fact_ai_session",
-                "_sync_run": "ai-session-run",
-                "user_id": 40,
-            },
-        ]
-    )
-
-    response = await AdminMetricsService(repository=repository).get_kpis()
-
-    assert response.active_users.value == 2.0
 
 
 @pytest.mark.parametrize(
@@ -457,8 +433,8 @@ async def test_admin_ai_kpis_keep_prometheus_source_when_month_has_no_samples(
     service = AdminMetricsService(
         repository=build_repository(with_ai_sessions=True),
         prometheus=Prometheus(),
+        ai_users_repository=StubAiUsersRepository(),
     )
-
     response = await service.get_kpis()
 
     assert response.token_spend.value is None
@@ -559,7 +535,11 @@ async def test_admin_ai_kpis_do_not_query_future_overflow_month() -> None:
 def test_admin_ai_metrics_populated_from_mongodb_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
     repo = build_repository(with_ai_sessions=True)
     monkeypatch.setattr(app.state, "analytics_repository", repo)
-    monkeypatch.setattr(app.state, "admin_metrics_service", AdminMetricsService(repo))
+    monkeypatch.setattr(
+        app.state,
+        "admin_metrics_service",
+        AdminMetricsService(repo, ai_users_repository=StubAiUsersRepository()),
+    )
     app.dependency_overrides[require_admin_bearer] = lambda: make_principal("admin")
     client = TestClient(app)
 
