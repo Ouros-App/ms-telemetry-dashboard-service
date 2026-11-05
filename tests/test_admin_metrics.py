@@ -29,13 +29,17 @@ from app.services.user_dashboard import UserDashboardService
 class MockCollection:
     def __init__(self, documents):
         self.documents = documents
+        self.projections = []
 
     def find_one(self, selector):
         return next(
             (d for d in self.documents if d.get("_id") == selector["_id"]), None
         )
 
-    def find(self, selector):
+    def find(self, selector, projection=None):
+        if projection is not None:
+            self.projections.append(projection)
+
         def matches(item):
             for key, expected in selector.items():
                 if isinstance(expected, dict) and "$in" in expected:
@@ -45,7 +49,17 @@ class MockCollection:
                     return False
             return True
 
-        return (d for d in self.documents if matches(d))
+        return (
+            {
+                key: item[key]
+                for key, include in projection.items()
+                if include and key in item
+            }
+            if projection is not None
+            else item
+            for item in self.documents
+            if matches(item)
+        )
 
 
 class MockMongoClient:
@@ -346,6 +360,62 @@ async def test_admin_ai_kpis_use_selected_calendar_month() -> None:
     assert response.total_tokens.formatted == "14.762"
     assert response.total_tokens.unit == "tokens"
     assert response.total_tokens.period == "2024-02"
+
+
+@pytest.mark.asyncio
+async def test_admin_ai_kpis_count_users_outside_current_analytics_run() -> None:
+    """Count unique session users independently of the sync run marker."""
+    repository = build_repository(with_ai_sessions=True)
+    repository._database["poc_analytics_rows"].documents.extend(
+        [
+            {
+                "dataset": "fact_ai_session",
+                "_sync_run": "ai-session-run",
+                "user_id": 30,
+            },
+            {
+                "dataset": "fact_ai_session",
+                "user_id": 40,
+            },
+            {
+                "dataset": "fact_ai_session",
+                "_sync_run": "ai-session-run",
+                "user_id": 30,
+            },
+        ]
+    )
+
+    response = await AdminMetricsService(repository=repository).get_kpis()
+
+    assert response.active_users.value == 4.0
+    assert repository._database["poc_analytics_rows"].projections == [
+        {"user_id": 1, "_id": 0}
+    ]
+    assert response.total_tokens.value == 3000
+
+
+@pytest.mark.asyncio
+async def test_admin_ai_kpis_count_users_when_current_run_has_no_ai_sessions() -> None:
+    """Keep the user count when the current sync has no AI session rows."""
+    repository = build_repository(with_ai_sessions=False)
+    repository._database["poc_analytics_rows"].documents.extend(
+        [
+            {
+                "dataset": "fact_ai_session",
+                "_sync_run": "ai-session-run",
+                "user_id": 30,
+            },
+            {
+                "dataset": "fact_ai_session",
+                "_sync_run": "ai-session-run",
+                "user_id": 40,
+            },
+        ]
+    )
+
+    response = await AdminMetricsService(repository=repository).get_kpis()
+
+    assert response.active_users.value == 2.0
 
 
 @pytest.mark.parametrize(
