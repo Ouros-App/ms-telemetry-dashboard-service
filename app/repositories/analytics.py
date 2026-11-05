@@ -1393,17 +1393,28 @@ class AnalyticsRepository:
         records: Any,
     ) -> list[dict[str, Any]]:
         raw_sessions = list(records(ROWS, "fact_ai_session"))
-        if not raw_sessions:
-            return []
         if operation == "admin_ai_kpis":
+            all_sessions = list(
+                records(ROWS, "fact_ai_session", include_sync_run=False)
+            )
+            active_users = (
+                len(
+                    {
+                        s.get("user_id")
+                        for s in all_sessions
+                        if s.get("user_id") is not None
+                    }
+                )
+                if all_sessions
+                else None
+            )
+            if not raw_sessions:
+                return [{"active_users": active_users}] if active_users is not None else []
             total_cost = sum(
                 (_number(s.get("cost_brl")) for s in raw_sessions), Decimal(0)
             )
             total_tokens = sum(
                 (_number(s.get("total_tokens")) for s in raw_sessions), Decimal(0)
-            )
-            active_users = len(
-                {s.get("user_id") for s in raw_sessions if s.get("user_id") is not None}
             )
             unit_cost = (
                 _rounded((total_cost * Decimal(1000)) / total_tokens, 2)
@@ -1418,6 +1429,8 @@ class AnalyticsRepository:
                     "total_tokens": int(total_tokens),
                 }
             ]
+        if not raw_sessions:
+            return []
         normalized: list[dict[str, Any]] = []
         for s in raw_sessions:
             item = dict(s)
@@ -1517,8 +1530,18 @@ class AnalyticsRepository:
             monthly=operation in MONTHLY_OPERATIONS,
         )
 
-        def records(collection: str, dataset: str | None = None, **extra):
-            criteria = {"_sync_run": run_id, **scope, **extra}
+        def records(
+            collection: str,
+            dataset: str | None = None,
+            *,
+            include_sync_run: bool = True,
+            **extra,
+        ):
+            criteria = (
+                {"_sync_run": run_id, **scope, **extra}
+                if include_sync_run
+                else {**scope, **extra}
+            )
             if dataset is not None:
                 criteria["dataset"] = dataset
             return self._docs(collection, criteria)

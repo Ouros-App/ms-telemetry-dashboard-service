@@ -348,6 +348,57 @@ async def test_admin_ai_kpis_use_selected_calendar_month() -> None:
     assert response.total_tokens.period == "2024-02"
 
 
+@pytest.mark.asyncio
+async def test_admin_ai_kpis_count_users_outside_current_analytics_run() -> None:
+    repository = build_repository(with_ai_sessions=True)
+    repository._database["poc_analytics_rows"].documents.extend(
+        [
+            {
+                "dataset": "fact_ai_session",
+                "_sync_run": "ai-session-run",
+                "user_id": 30,
+            },
+            {
+                "dataset": "fact_ai_session",
+                "user_id": 40,
+            },
+            {
+                "dataset": "fact_ai_session",
+                "_sync_run": "ai-session-run",
+                "user_id": 30,
+            },
+        ]
+    )
+
+    response = await AdminMetricsService(repository=repository).get_kpis()
+
+    assert response.active_users.value == 4.0
+    assert response.total_tokens.value == 3000
+
+
+@pytest.mark.asyncio
+async def test_admin_ai_kpis_count_users_when_current_run_has_no_ai_sessions() -> None:
+    repository = build_repository(with_ai_sessions=False)
+    repository._database["poc_analytics_rows"].documents.extend(
+        [
+            {
+                "dataset": "fact_ai_session",
+                "_sync_run": "ai-session-run",
+                "user_id": 30,
+            },
+            {
+                "dataset": "fact_ai_session",
+                "_sync_run": "ai-session-run",
+                "user_id": 40,
+            },
+        ]
+    )
+
+    response = await AdminMetricsService(repository=repository).get_kpis()
+
+    assert response.active_users.value == 2.0
+
+
 @pytest.mark.parametrize(
     ("enterprise_id", "expected_tokens", "expected_formatted"),
     [(None, 3000, "3.000"), (88, 1000, "1.000")],
