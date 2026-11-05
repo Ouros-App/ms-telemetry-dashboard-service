@@ -1,6 +1,8 @@
+import os
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.infisical import load_infisical_secrets
@@ -40,9 +42,20 @@ def _mongo_url_is_valid(value: str) -> bool:
     except ValueError:
         return False
 
+def _environment_has_value(name: str) -> bool:
+    normalized_name = name.casefold()
+    return any(
+        key.casefold() == normalized_name and value
+        for key, value in os.environ.items()
+    )
+
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False)
+    model_config = SettingsConfigDict(
+        env_file=("prometheus-defaults.env", ".env"),
+        extra="ignore",
+        case_sensitive=False,
+    )
 
     project_name: str = "Telemetry Dashboard Service"
     description: str = "API for admin Databricks dashboards and scoped user analytics dashboards."
@@ -76,6 +89,14 @@ class Settings(BaseSettings):
     chart_cache_ttl_seconds: int = 30
     sql_wait_timeout_seconds: int = 10
     cors_origins: list[str] = []
+
+    @model_validator(mode="after")
+    def preserve_direct_prometheus_url(self) -> "Settings":
+        if _environment_has_value("PROMETHEUS_URL") and not _environment_has_value(
+            "PROMETHEUS_SOCKS_HOST"
+        ):
+            self.prometheus_socks_host = None
+        return self
 
     @property
     def token_url(self) -> str | None:
