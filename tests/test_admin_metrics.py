@@ -296,6 +296,7 @@ async def test_require_admin_bearer_token_validation() -> None:
 
 
 def test_empty_analytics_metrics_include_distinct_ai_user_count() -> None:
+    """Verify an empty analytics snapshot still reports the AI user count."""
     app.dependency_overrides[require_admin_bearer] = lambda: make_principal("admin")
     client = TestClient(app)
 
@@ -411,6 +412,7 @@ def test_admin_ai_kpis_reject_unrepresentable_month(month: str) -> None:
 
 @pytest.mark.asyncio
 async def test_admin_ai_kpis_use_selected_calendar_month() -> None:
+    """Use Prometheus values scoped to the selected calendar month."""
     expected_timestamp = datetime(2024, 3, 1, tzinfo=UTC).timestamp()
 
     class Prometheus:
@@ -471,6 +473,7 @@ async def test_admin_ai_kpis_use_analytics_tokens_without_prometheus(
 async def test_admin_ai_kpis_keep_prometheus_source_when_month_has_no_samples(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Keep Prometheus values unavailable when the selected month has no samples."""
     class FrozenDateTime(datetime):
         @classmethod
         def now(cls, tz=None):
@@ -584,6 +587,7 @@ async def test_admin_ai_kpis_do_not_query_future_overflow_month() -> None:
 
 
 def test_admin_ai_metrics_populated_from_mongodb_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve analytics financial metrics alongside the AI-source user count."""
     repo = build_repository(with_ai_sessions=True)
     monkeypatch.setattr(app.state, "analytics_repository", repo)
     monkeypatch.setattr(

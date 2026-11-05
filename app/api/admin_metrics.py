@@ -37,7 +37,8 @@ def get_admin_metrics_service(request: Request) -> AdminMetricsService:
     summary="Get Midas AI KPIs for Admin Dashboard",
     description=(
         "Returns token spend and unit cost from Prometheus for the selected "
-        "calendar month when configured, plus global distinct users with AI threads."
+        "calendar month when configured. Includes global distinct users with "
+        "AI threads only when AI Users is configured and enterprise_id is omitted."
     ),
     responses={
         **RESPONSES_503,
