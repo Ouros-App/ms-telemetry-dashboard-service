@@ -1301,9 +1301,17 @@ class AnalyticsRepository:
     def _state(self) -> dict[str, Any] | None:
         return self._database[STATE].find_one({"_id": SYNC_ID})
 
-    def _docs(self, collection: str, filter_by: dict[str, Any]):
-        """Stream server-filtered records without accumulating raw datasets."""
-        return self._database[collection].find(filter_by)
+    def _docs(
+        self,
+        collection: str,
+        filter_by: dict[str, Any],
+        projection: dict[str, int] | None = None,
+    ):
+        """Stream filtered records, optionally limiting fields returned by MongoDB."""
+        mongo_collection = self._database[collection]
+        if projection is not None:
+            return mongo_collection.find(filter_by, projection=projection)
+        return mongo_collection.find(filter_by)
 
     def _fetch_corporate(
         self,
@@ -1391,49 +1399,17 @@ class AnalyticsRepository:
         self,
         operation: str,
         records: Any,
+        scope: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        raw_sessions = list(records(ROWS, "fact_ai_session"))
+        """Return normalized admin AI sessions or KPI aggregates."""
         if operation == "admin_ai_kpis":
-            all_sessions = list(
-                records(ROWS, "fact_ai_session", include_sync_run=False)
-            )
-            active_users = (
-                len(
-                    {
-                        s.get("user_id")
-                        for s in all_sessions
-                        if s.get("user_id") is not None
-                    }
-                )
-                if all_sessions
-                else None
-            )
-            if not raw_sessions:
-                return [{"active_users": active_users}] if active_users is not None else []
-            total_cost = sum(
-                (_number(s.get("cost_brl")) for s in raw_sessions), Decimal(0)
-            )
-            total_tokens = sum(
-                (_number(s.get("total_tokens")) for s in raw_sessions), Decimal(0)
-            )
-            unit_cost = (
-                _rounded((total_cost * Decimal(1000)) / total_tokens, 2)
-                if total_tokens > 0
-                else 0.0
-            )
-            return [
-                {
-                    "total_cost_brl": _rounded(total_cost, 2),
-                    "unit_cost_brl": unit_cost,
-                    "active_users": active_users,
-                    "total_tokens": int(total_tokens),
-                }
-            ]
+            return self._fetch_admin_ai_kpis(records, scope)
+        raw_sessions = list(records(ROWS, "fact_ai_session"))
         if not raw_sessions:
             return []
         normalized: list[dict[str, Any]] = []
-        for s in raw_sessions:
-            item = dict(s)
+        for session in raw_sessions:
+            item = dict(session)
             if "cost_brl" in item:
                 item["cost_brl"] = _rounded(_number(item["cost_brl"]), 2)
             if "accuracy_rate" in item:
@@ -1441,9 +1417,58 @@ class AnalyticsRepository:
             normalized.append(item)
         return normalized
 
+    def _fetch_admin_ai_kpis(
+        self,
+        records: Any,
+        scope: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        """Aggregate current-run costs and tokens with all-run distinct users."""
+        raw_sessions = list(records(ROWS, "fact_ai_session"))
+        active_users = self._active_ai_user_count(scope)
+        if not raw_sessions:
+            return [{"active_users": active_users}] if active_users is not None else []
+        total_cost = sum(
+            (_number(session.get("cost_brl")) for session in raw_sessions), Decimal(0)
+        )
+        total_tokens = sum(
+            (_number(session.get("total_tokens")) for session in raw_sessions),
+            Decimal(0),
+        )
+        unit_cost = (
+            _rounded((total_cost * Decimal(1000)) / total_tokens, 2)
+            if total_tokens > 0
+            else 0.0
+        )
+        return [
+            {
+                "total_cost_brl": _rounded(total_cost, 2),
+                "unit_cost_brl": unit_cost,
+                "active_users": active_users,
+                "total_tokens": int(total_tokens),
+            }
+        ]
+
+    def _active_ai_user_count(self, scope: dict[str, Any]) -> int | None:
+        """Count distinct AI users using a projected cursor across all runs."""
+        sessions = self._docs(
+            ROWS,
+            {"dataset": "fact_ai_session", **scope},
+            projection={"user_id": 1, "_id": 0},
+        )
+        user_ids: set[Any] = set()
+        has_sessions = False
+        for session in sessions:
+            has_sessions = True
+            user_id = session.get("user_id")
+            if user_id is not None:
+                user_ids.add(user_id)
+        return len(user_ids) if has_sessions else None
+
+
     def _fetch_sync(
         self, operation: str, args: tuple[Any, ...]
     ) -> list[dict[str, Any]]:
+        """Dispatch repository reads against the current successful sync."""
         state = self._state()
         if operation == "sync_status":
             if not state:
@@ -1530,18 +1555,8 @@ class AnalyticsRepository:
             monthly=operation in MONTHLY_OPERATIONS,
         )
 
-        def records(
-            collection: str,
-            dataset: str | None = None,
-            *,
-            include_sync_run: bool = True,
-            **extra,
-        ):
-            criteria = (
-                {"_sync_run": run_id, **scope, **extra}
-                if include_sync_run
-                else {**scope, **extra}
-            )
+        def records(collection: str, dataset: str | None = None, **extra):
+            criteria = {"_sync_run": run_id, **scope, **extra}
             if dataset is not None:
                 criteria["dataset"] = dataset
             return self._docs(collection, criteria)
@@ -1550,7 +1565,7 @@ class AnalyticsRepository:
             return self._fetch_corporate(operation, records, extra_filters, cutoff)
 
         if operation in ADMIN_AI_OPERATIONS:
-            return self._fetch_admin_ai(operation, records)
+            return self._fetch_admin_ai(operation, records, scope)
 
         if operation in {
             "current_flock",
