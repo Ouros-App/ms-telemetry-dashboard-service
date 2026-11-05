@@ -17,6 +17,7 @@ from app.core.auth import (
 from app.core.config import settings
 from app.main import app
 from app.providers.analytics import AnalyticsDashboardProvider
+from app.repositories.ai_users import AiUsersUnavailable
 from app.repositories.analytics import (
     AnalyticsQueryError,
     AnalyticsRepository,
@@ -330,6 +331,7 @@ def test_empty_analytics_metrics_include_distinct_ai_user_count() -> None:
 
 
 def test_admin_ai_kpis_read_distinct_users_from_ai_database() -> None:
+    """Prefer the unique count from AI thread ownership over analytics rows."""
     class AiUsers:
         async def count_distinct_user_ids(self) -> int:
             return 17
@@ -346,6 +348,55 @@ def test_admin_ai_kpis_read_distinct_users_from_ai_database() -> None:
     assert response.status_code == 200
     assert response.json()["active_users"]["value"] == 17.0
     assert response.json()["active_users"]["formatted"] == "17"
+
+
+@pytest.mark.asyncio
+async def test_ai_users_failure_does_not_drop_other_kpis() -> None:
+    """A failed optional users query must preserve other KPI values."""
+    class AiUsers:
+        async def count_distinct_user_ids(self) -> int:
+            raise AiUsersUnavailable("database unavailable")
+
+    class Prometheus:
+        async def query(self, query: str, *, timestamp: float | None = None):
+            if "cost_usd" in query:
+                value = "0.25"
+            elif "input_tokens" in query:
+                value = "100"
+            else:
+                value = "50"
+            return [{"value": [timestamp, value]}]
+
+    service = AdminMetricsService(
+        prometheus=Prometheus(),
+        ai_users_repository=AiUsers(),
+    )
+
+    response = await service.get_kpis(month="2026-10")
+
+    assert response.active_users.value is None
+    assert response.active_users.formatted == "Sem dados"
+    assert response.token_spend.value == pytest.approx(0.25)
+    assert response.total_tokens.value == pytest.approx(150)
+
+
+@pytest.mark.asyncio
+async def test_enterprise_kpis_do_not_show_global_active_user_count() -> None:
+    """Do not show a global user count in an enterprise-scoped response."""
+    class AiUsers:
+        calls = 0
+
+        async def count_distinct_user_ids(self) -> int:
+            self.calls += 1
+            return 17
+
+    ai_users = AiUsers()
+    service = AdminMetricsService(ai_users_repository=ai_users)
+
+    response = await service.get_kpis(enterprise_id=99)
+
+    assert response.active_users.value is None
+    assert ai_users.calls == 0
 
 
 @pytest.mark.parametrize("month", ["0000-01", "9999-12"])

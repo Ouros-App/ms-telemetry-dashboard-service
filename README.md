@@ -120,6 +120,8 @@ O KPI de usuários ativos conta valores distintos de `thread_owners.user_id`.
 Configure `AI_USERS_MONGODB_URI` no Infisical; a credencial deve ter apenas
 permissão de leitura nessa coleção. Sem essa variável, o KPI permanece como
 `Sem dados`; não há fallback para a base analítica, que não contém os IDs.
+Nas requisições filtradas por `enterprise_id`, este KPI retorna `Sem dados`:
+`thread_owners` não possui vínculo com empresa, então a contagem global seria enganosa.
 
 `DATABRICKS_CLIENT_SECRET` é necessário apenas com o provider Databricks habilitado.
 O telemetry deve receber `ANALYTICS_MONGODB_URI` pelo path

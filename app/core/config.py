@@ -34,6 +34,7 @@ def _mongo_url_is_valid(
     value: str,
     database: str = "ouros_analytics_poc",
 ) -> bool:
+    """Check a Mongo URI and database against the allowed target."""
     try:
         parsed = urlsplit(value)
         if parsed.scheme not in {"mongodb", "mongodb+srv"} or not parsed.hostname:
@@ -249,6 +250,7 @@ class Settings(BaseSettings):
         return errors
 
     def ai_users_configuration_errors(self) -> list[str]:
+        """Return configuration errors for the optional AI users source."""
         if not self.ai_users_mongodb_uri:
             return []
         errors = []
@@ -265,6 +267,7 @@ class Settings(BaseSettings):
 
     @property
     def ai_users_configured(self) -> bool:
+        """Whether the optional AI users database is usable by this service."""
         return bool(
             self.ai_users_mongodb_uri
             and not self.ai_users_configuration_errors()

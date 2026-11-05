@@ -38,6 +38,7 @@ http_logger = get_logger("http")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Create app services and release their external clients on shutdown."""
     logger.info(
         "service starting",
         extra={
@@ -160,11 +161,17 @@ async def lifespan(app: FastAPI):
             },
         )
     elif settings.ai_users_configured and settings.ai_users_mongodb_uri:
-        ai_users_repository = AiUsersRepository(
-            settings.ai_users_mongodb_uri,
-            database_name=settings.ai_users_mongodb_database,
-            connect_timeout_seconds=settings.ai_users_connect_timeout_seconds,
-        )
+        try:
+            ai_users_repository = AiUsersRepository(
+                settings.ai_users_mongodb_uri,
+                database_name=settings.ai_users_mongodb_database,
+                connect_timeout_seconds=settings.ai_users_connect_timeout_seconds,
+            )
+        except (PyMongoError, ValueError):
+            logger.exception(
+                "AI users database client could not be created",
+                extra={"event": "ai_users_client_init_failed"},
+            )
     else:
         logger.warning(
             "AI users database is not configured; active users KPI will be empty",
