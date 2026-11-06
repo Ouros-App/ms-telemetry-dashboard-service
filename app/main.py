@@ -193,6 +193,7 @@ async def lifespan(app: FastAPI):
         analytics_repository,
         prometheus_http,
         ai_users_repository,
+        client,
     )
 
     logger.info("service started", extra={"event": "service_started"})

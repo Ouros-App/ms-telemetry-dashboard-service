@@ -421,18 +421,41 @@ async def test_admin_ai_kpis_use_selected_calendar_month() -> None:
                 "increase(midas_jev_cost_usd_total[2505600s])": "0.000546417",
                 "increase(midas_jev_input_tokens_total[2505600s])": "13010",
                 "increase(midas_jev_output_tokens_total[2505600s])": "1752",
+                'increase(midas_jev_task_outcomes_total{outcome="resolved"}[2505600s])': "2",
+                "increase(midas_jev_estimated_user_benefit_brl_total[2505600s])": "3.3334",
+                "increase(ai_server_llm_cost_usd_total[2505600s])": "0.0001",
             }
             assert timestamp == expected_timestamp
-            return [{"value": [timestamp, values[query]]}]
+            return [{"value": [timestamp, values.get(query, "0")]}]
+
+    class Fx:
+        async def get(self, _url, *, params):
+            assert params["dataInicial"] == "01/02/2024"
+            assert params["dataFinal"] == "29/02/2024"
+
+            class Response:
+                def raise_for_status(self):
+                    pass
+
+                def json(self):
+                    return [{"valor": "5,00"}]
+
+            return Response()
 
     service = AdminMetricsService(
         repository=build_repository(with_ai_sessions=True),
         prometheus=Prometheus(),
         ai_users_repository=StubAiUsersRepository(),
+        fx_client=Fx(),
     )
 
     response = await service.get_kpis(month="2024-02")
 
+    assert response.cost_per_resolution.value == pytest.approx(0.003232085 / 2)
+    assert response.cost_per_resolution.period == "2024-02"
+    assert response.estimated_roi.value == pytest.approx(
+        (3.3334 - 0.003232085) / 0.003232085 * 100
+    )
     assert response.token_spend.value == pytest.approx(0.000546417)
     assert response.token_spend.unit == "US$"
     assert response.token_spend.period == "2024-02"
@@ -523,7 +546,7 @@ async def test_admin_ai_kpis_limit_current_month_to_now(
 
     await AdminMetricsService(prometheus=Prometheus()).get_kpis()
 
-    assert len(calls) == 3
+    assert len(calls) == 7
     assert {timestamp for _, timestamp in calls} == {
         FrozenDateTime(2026, 10, 15, 12, tzinfo=UTC).timestamp()
     }
@@ -531,6 +554,9 @@ async def test_admin_ai_kpis_limit_current_month_to_now(
         "increase(midas_jev_cost_usd_total[1252800s])",
         "increase(midas_jev_input_tokens_total[1252800s])",
         "increase(midas_jev_output_tokens_total[1252800s])",
+        'increase(midas_jev_task_outcomes_total{outcome="resolved"}[1252800s])',
+        "increase(midas_jev_estimated_user_benefit_brl_total[1252800s])",
+        "increase(ai_server_llm_cost_usd_total[1252800s])",
     }
 
 
