@@ -183,8 +183,10 @@ curl -H "Authorization: Bearer $KEYCLOAK_ACCESS_TOKEN" \
 
 ### Métricas de IA administrativas
 
+Sem provedor Prometheus e sem filtro `month`, `total_tokens` pode vir do snapshot Analytics quando disponível. Com `month`, esse agregado não é usado como substituto mensal.
+
 Sem filtro `month`, os KPIs de gasto, tokens consumidos e custo unitário consultam no Prometheus o mês-calendário atual até agora; informe `month=YYYY-MM` para consultar um mês específico. O serviço usa `increase(...)` entre o primeiro dia do mês e o início do mês seguinte (ou agora, para o mês atual). A resposta inclui valores numéricos (`value`), unidade `US$` para gasto e `tokens` para consumo, além do mês em `period`, sem converter moeda. Se não houver amostras Prometheus, os KPIs financeiros e de tokens retornam `null`/`Sem dados`; não substituem o período selecionado pelo agregado do Analytics. `active_users` continua vindo do snapshot Analytics sem filtro mensal, porque esse agregado não tem dados temporais por usuário. Chamadas com `enterprise_id` também usam o snapshot Analytics. Os gráficos comparativos e a auditoria de sessões continuam lendo `fact_ai_session`; métricas agregadas não contêm eventos individuais de sessão.
-Sem provedor Prometheus e sem filtro `month`, o total de tokens também vem do snapshot Analytics; com `month` selecionado, esse agregado sem dimensão temporal não é usado como substituto mensal.
+`cost_per_resolution` e `estimated_roi` também usam aumentos dos contadores Prometheus do mês selecionado e a média mensal da cotação diária de venda USD/BRL da série 1 do Banco Central. `cost_per_resolution` soma os custos USD precificados (Jev e LLM OpenAI) convertidos em BRL e divide pelas resoluções; ROI compara esse custo com o benefício estimado informado pelo Jev. São estimativas parciais de valor ao usuário/ecossistema, não ROI financeiro da Ouros; excluem infraestrutura e custos de provedores sem preço. Métricas/cotação ausentes ou denominadores zero retornam `null`/`Sem dados`.
 
 
 Para os gráficos reais de observabilidade Prometheus da Midas AI, use `GET /v1/dashboards/prometheus-ai/charts/{chart_id}/data` com os IDs publicados pelo dashboard. Por exemplo, `ai-request-rate` e `ai-p95-latency`.

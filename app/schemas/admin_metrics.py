@@ -16,6 +16,8 @@ class AdminAiMetricsKpisResponse(BaseModel):
     unit_cost: AdminAiMetricKpiItem
     active_users: AdminAiMetricKpiItem
     total_tokens: AdminAiMetricKpiItem
+    cost_per_resolution: AdminAiMetricKpiItem
+    estimated_roi: AdminAiMetricKpiItem
 
 
 class TokenSpendPoint(BaseModel):

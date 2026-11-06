@@ -421,18 +421,41 @@ async def test_admin_ai_kpis_use_selected_calendar_month() -> None:
                 "increase(midas_jev_cost_usd_total[2505600s])": "0.000546417",
                 "increase(midas_jev_input_tokens_total[2505600s])": "13010",
                 "increase(midas_jev_output_tokens_total[2505600s])": "1752",
+                'increase(midas_jev_task_outcomes_total{outcome="resolved"}[2505600s])': "2",
+                "increase(midas_jev_estimated_user_benefit_brl_total[2505600s])": "3.3334",
+                "increase(ai_server_llm_cost_usd_total[2505600s])": "0.0001",
             }
             assert timestamp == expected_timestamp
-            return [{"value": [timestamp, values[query]]}]
+            return [{"value": [timestamp, values.get(query, "0")]}]
+
+    class Fx:
+        async def get(self, _url, *, params):
+            assert params["dataInicial"] == "01/02/2024"
+            assert params["dataFinal"] == "29/02/2024"
+
+            class Response:
+                def raise_for_status(self):
+                    pass
+
+                def json(self):
+                    return [{"valor": "5,00"}]
+
+            return Response()
 
     service = AdminMetricsService(
         repository=build_repository(with_ai_sessions=True),
         prometheus=Prometheus(),
         ai_users_repository=StubAiUsersRepository(),
+        fx_client=Fx(),
     )
 
     response = await service.get_kpis(month="2024-02")
 
+    assert response.cost_per_resolution.value == pytest.approx(0.003232085 / 2)
+    assert response.cost_per_resolution.period == "2024-02"
+    assert response.estimated_roi.value == pytest.approx(
+        (3.3334 - 0.003232085) / 0.003232085 * 100
+    )
     assert response.token_spend.value == pytest.approx(0.000546417)
     assert response.token_spend.unit == "US$"
     assert response.token_spend.period == "2024-02"
@@ -445,6 +468,95 @@ async def test_admin_ai_kpis_use_selected_calendar_month() -> None:
     assert response.total_tokens.formatted == "14.762"
     assert response.total_tokens.unit == "tokens"
     assert response.total_tokens.period == "2024-02"
+
+
+@pytest.mark.asyncio
+async def test_monthly_fx_uses_latest_published_quote_at_month_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Use the latest available rate when the current month has no quote yet."""
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 11, 1, 12, tzinfo=UTC)
+
+    monkeypatch.setattr("app.services.admin_metrics.datetime", FrozenDateTime)
+    requests = []
+
+    class Fx:
+        async def get(self, url, *, params):
+            requests.append((url, params))
+            assert params == (
+                {"formato": "json"}
+                if url.endswith("/ultimos/1")
+                else {
+                    "formato": "json",
+                    "dataInicial": "01/11/2026",
+                    "dataFinal": "01/11/2026",
+                }
+            )
+
+            class Response:
+                def raise_for_status(self):
+                    pass
+
+                def json(self):
+                    return [{"valor": "5,42"}] if url.endswith("/ultimos/1") else []
+
+            return Response()
+
+    service = AdminMetricsService(fx_client=Fx())
+    rate = await service._monthly_usd_brl(
+        datetime(2026, 11, 1, tzinfo=UTC),
+        datetime(2026, 11, 1, 12, tzinfo=UTC),
+    )
+
+    assert rate == pytest.approx(5.42)
+    assert len(requests) == 2
+    assert requests[1][0].endswith("/ultimos/1")
+
+
+@pytest.mark.asyncio
+async def test_monthly_fx_caches_only_completed_months(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cache fixed historical rates but refetch the open month's rate."""
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 11, 10, 12, tzinfo=UTC)
+
+    monkeypatch.setattr("app.services.admin_metrics.datetime", FrozenDateTime)
+
+    class Fx:
+        calls = 0
+
+        async def get(self, _url, *, params):
+            assert params["formato"] == "json"
+            self.calls += 1
+
+            class Response:
+                def raise_for_status(self):
+                    pass
+
+                def json(self):
+                    return [{"valor": "5,00"}]
+
+            return Response()
+
+    fx = Fx()
+    service = AdminMetricsService(fx_client=fx)
+    feb_start = datetime(2026, 2, 1, tzinfo=UTC)
+    feb_end = datetime(2026, 3, 1, tzinfo=UTC)
+    open_start = datetime(2026, 11, 1, tzinfo=UTC)
+    open_end = datetime(2026, 11, 10, 12, tzinfo=UTC)
+
+    await service._monthly_usd_brl(feb_start, feb_end)
+    await service._monthly_usd_brl(feb_start, feb_end)
+    await service._monthly_usd_brl(open_start, open_end)
+    await service._monthly_usd_brl(open_start, open_end)
+
+    assert fx.calls == 3
 
 
 @pytest.mark.parametrize(
@@ -523,7 +635,7 @@ async def test_admin_ai_kpis_limit_current_month_to_now(
 
     await AdminMetricsService(prometheus=Prometheus()).get_kpis()
 
-    assert len(calls) == 3
+    assert len(calls) == 7
     assert {timestamp for _, timestamp in calls} == {
         FrozenDateTime(2026, 10, 15, 12, tzinfo=UTC).timestamp()
     }
@@ -531,6 +643,9 @@ async def test_admin_ai_kpis_limit_current_month_to_now(
         "increase(midas_jev_cost_usd_total[1252800s])",
         "increase(midas_jev_input_tokens_total[1252800s])",
         "increase(midas_jev_output_tokens_total[1252800s])",
+        'increase(midas_jev_task_outcomes_total{outcome="resolved"}[1252800s])',
+        "increase(midas_jev_estimated_user_benefit_brl_total[1252800s])",
+        "increase(ai_server_llm_cost_usd_total[1252800s])",
     }
 
 

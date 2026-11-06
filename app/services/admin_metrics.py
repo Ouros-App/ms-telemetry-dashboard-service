@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import math
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
+
+import httpx
 
 from app.clients.prometheus import PrometheusHttpClient
 from app.core.logging import get_logger
@@ -132,14 +134,18 @@ class AdminMetricsService:
         repository: AnalyticsRepository | None = None,
         prometheus: PrometheusHttpClient | None = None,
         ai_users_repository: AiUsersRepository | None = None,
+        fx_client: httpx.AsyncClient | None = None,
     ) -> None:
         """Store data providers used to assemble admin AI KPIs."""
         self.repository = repository
         self.prometheus = prometheus
         self.ai_users_repository = ai_users_repository
+        self.fx_client = fx_client
+        self._monthly_fx_cache: dict[tuple[datetime, datetime], float] = {}
 
     @staticmethod
     def _prometheus_period(month: str | None) -> tuple[datetime, datetime, str]:
+        """Resolve the selected calendar month to UTC query boundaries."""
         now = datetime.now(UTC)
         selected_month = month or f"{now.year:04}-{now.month:02}"
         start = datetime.strptime(selected_month, "%Y-%m").replace(tzinfo=UTC)
@@ -158,6 +164,7 @@ class AdminMetricsService:
         start: datetime,
         end: datetime,
     ) -> float | None:
+        """Return the increase in a Prometheus counter over the selected period."""
         if self.prometheus is None:
             return None
         duration_seconds = int((end - start).total_seconds())
@@ -182,6 +189,103 @@ class AdminMetricsService:
             total += sample_value
             found = True
         return total if found else None
+
+    async def _monthly_usd_brl(self, start: datetime, end: datetime) -> float | None:
+        """Return the period's average BCB USD/BRL selling rate."""
+        if self.fx_client is None or end <= start:
+            return None
+        now = datetime.now(UTC)
+        cacheable = (start.year, start.month) < (now.year, now.month)
+        cache_key = (start, end)
+        if cacheable and cache_key in self._monthly_fx_cache:
+            return self._monthly_fx_cache[cache_key]
+
+        url = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.1/dados"
+        try:
+            response = await self.fx_client.get(
+                url,
+                params={
+                    "formato": "json",
+                    "dataInicial": start.strftime("%d/%m/%Y"),
+                    "dataFinal": max(end - timedelta(days=1), start).strftime(
+                        "%d/%m/%Y"
+                    ),
+                },
+            )
+            response.raise_for_status()
+            rate_rows = response.json()
+            if not rate_rows and not cacheable:
+                response = await self.fx_client.get(
+                    f"{url}/ultimos/1",
+                    params={"formato": "json"},
+                )
+                response.raise_for_status()
+                rate_rows = response.json()
+            rates = [
+                float(item["valor"].replace(",", "."))
+                for item in rate_rows
+            ]
+            rates = [rate for rate in rates if math.isfinite(rate) and rate > 0]
+            rate = sum(rates) / len(rates) if rates else None
+            if cacheable and rate is not None:
+                self._monthly_fx_cache[cache_key] = rate
+            return rate
+        except (httpx.HTTPError, ValueError, KeyError, TypeError):
+            logger.warning("Monthly BCB USD/BRL rate is unavailable")
+            return None
+
+    async def _outcome_roi_kpis(
+        self, month: str | None, enterprise_id: int | None
+    ) -> tuple[AdminAiMetricKpiItem, AdminAiMetricKpiItem]:
+        """Calculate partial estimated cost per resolution and user-value ROI."""
+        unavailable = AdminAiMetricKpiItem(value=None, formatted=NO_DATA)
+        if self.prometheus is None or enterprise_id is not None:
+            return unavailable, unavailable
+        start, end, period = self._prometheus_period(month)
+        if end <= start:
+            unavailable.period = period
+            return unavailable, unavailable
+        resolved, benefit, jev_cost, llm_cost, fx = await asyncio.gather(
+            self._prometheus_increase(
+                'midas_jev_task_outcomes_total{outcome="resolved"}',
+                start=start, end=end,
+            ),
+            self._prometheus_increase(
+                "midas_jev_estimated_user_benefit_brl_total", start=start, end=end
+            ),
+            self._prometheus_increase("midas_jev_cost_usd_total", start=start, end=end),
+            self._prometheus_increase("ai_server_llm_cost_usd_total", start=start, end=end),
+            self._monthly_usd_brl(start, end),
+        )
+        priced_cost = (
+            (jev_cost + llm_cost) * fx
+            if jev_cost is not None and llm_cost is not None and fx is not None
+            else None
+        )
+        per_resolution = (
+            priced_cost / resolved
+            if priced_cost is not None and resolved is not None and resolved > 0
+            else None
+        )
+        roi = (
+            (benefit - priced_cost) / priced_cost * 100
+            if priced_cost is not None and priced_cost > 0 and benefit is not None
+            else None
+        )
+        return (
+            AdminAiMetricKpiItem(
+                value=per_resolution,
+                formatted=f"R$ {per_resolution:.2f}" if per_resolution is not None else NO_DATA,
+                unit="R$/resolução",
+                period=period,
+            ),
+            AdminAiMetricKpiItem(
+                value=roi,
+                formatted=f"{roi:.2f}%" if roi is not None else NO_DATA,
+                unit="% (estimado)",
+                period=period,
+            ),
+        )
 
     async def _fetch_from_repo(
         self, operation: str, enterprise_id: int | None = None
@@ -338,8 +442,13 @@ class AdminMetricsService:
             total_tokens = float(analytics_tokens)
         else:
             total_tokens = None
+        cost_per_resolution, estimated_roi = await self._outcome_roi_kpis(
+            month, enterprise_id
+        )
 
         return AdminAiMetricsKpisResponse(
+            cost_per_resolution=cost_per_resolution,
+            estimated_roi=estimated_roi,
             token_spend=token_spend,
             unit_cost=unit_cost,
             active_users=AdminAiMetricKpiItem(
