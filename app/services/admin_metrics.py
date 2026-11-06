@@ -141,9 +141,11 @@ class AdminMetricsService:
         self.prometheus = prometheus
         self.ai_users_repository = ai_users_repository
         self.fx_client = fx_client
+        self._monthly_fx_cache: dict[tuple[datetime, datetime], float] = {}
 
     @staticmethod
     def _prometheus_period(month: str | None) -> tuple[datetime, datetime, str]:
+        """Resolve the selected calendar month to UTC query boundaries."""
         now = datetime.now(UTC)
         selected_month = month or f"{now.year:04}-{now.month:02}"
         start = datetime.strptime(selected_month, "%Y-%m").replace(tzinfo=UTC)
@@ -162,6 +164,7 @@ class AdminMetricsService:
         start: datetime,
         end: datetime,
     ) -> float | None:
+        """Return the increase in a Prometheus counter over the selected period."""
         if self.prometheus is None:
             return None
         duration_seconds = int((end - start).total_seconds())
@@ -188,24 +191,45 @@ class AdminMetricsService:
         return total if found else None
 
     async def _monthly_usd_brl(self, start: datetime, end: datetime) -> float | None:
+        """Return the period's average BCB USD/BRL selling rate."""
         if self.fx_client is None or end <= start:
             return None
+        now = datetime.now(UTC)
+        cacheable = (start.year, start.month) < (now.year, now.month)
+        cache_key = (start, end)
+        if cacheable and cache_key in self._monthly_fx_cache:
+            return self._monthly_fx_cache[cache_key]
+
+        url = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.1/dados"
         try:
             response = await self.fx_client.get(
-                "https://api.bcb.gov.br/dados/serie/bcdata.sgs.1/dados",
+                url,
                 params={
                     "formato": "json",
                     "dataInicial": start.strftime("%d/%m/%Y"),
-                    "dataFinal": (end - timedelta(days=1)).strftime("%d/%m/%Y"),
+                    "dataFinal": max(end - timedelta(days=1), start).strftime(
+                        "%d/%m/%Y"
+                    ),
                 },
             )
             response.raise_for_status()
+            rate_rows = response.json()
+            if not rate_rows and not cacheable:
+                response = await self.fx_client.get(
+                    f"{url}/ultimos/1",
+                    params={"formato": "json"},
+                )
+                response.raise_for_status()
+                rate_rows = response.json()
             rates = [
                 float(item["valor"].replace(",", "."))
-                for item in response.json()
+                for item in rate_rows
             ]
             rates = [rate for rate in rates if math.isfinite(rate) and rate > 0]
-            return sum(rates) / len(rates) if rates else None
+            rate = sum(rates) / len(rates) if rates else None
+            if cacheable and rate is not None:
+                self._monthly_fx_cache[cache_key] = rate
+            return rate
         except (httpx.HTTPError, ValueError, KeyError, TypeError):
             logger.warning("Monthly BCB USD/BRL rate is unavailable")
             return None
@@ -213,6 +237,7 @@ class AdminMetricsService:
     async def _outcome_roi_kpis(
         self, month: str | None, enterprise_id: int | None
     ) -> tuple[AdminAiMetricKpiItem, AdminAiMetricKpiItem]:
+        """Calculate partial estimated cost per resolution and user-value ROI."""
         unavailable = AdminAiMetricKpiItem(value=None, formatted=NO_DATA)
         if self.prometheus is None or enterprise_id is not None:
             return unavailable, unavailable
@@ -220,7 +245,7 @@ class AdminMetricsService:
         if end <= start:
             unavailable.period = period
             return unavailable, unavailable
-        resolved, benefit, jev_cost, llm_cost = await asyncio.gather(
+        resolved, benefit, jev_cost, llm_cost, fx = await asyncio.gather(
             self._prometheus_increase(
                 'midas_jev_task_outcomes_total{outcome="resolved"}',
                 start=start, end=end,
@@ -230,8 +255,8 @@ class AdminMetricsService:
             ),
             self._prometheus_increase("midas_jev_cost_usd_total", start=start, end=end),
             self._prometheus_increase("ai_server_llm_cost_usd_total", start=start, end=end),
+            self._monthly_usd_brl(start, end),
         )
-        fx = await self._monthly_usd_brl(start, end)
         priced_cost = (
             (jev_cost + llm_cost) * fx
             if jev_cost is not None and llm_cost is not None and fx is not None

@@ -470,6 +470,95 @@ async def test_admin_ai_kpis_use_selected_calendar_month() -> None:
     assert response.total_tokens.period == "2024-02"
 
 
+@pytest.mark.asyncio
+async def test_monthly_fx_uses_latest_published_quote_at_month_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Use the latest available rate when the current month has no quote yet."""
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 11, 1, 12, tzinfo=UTC)
+
+    monkeypatch.setattr("app.services.admin_metrics.datetime", FrozenDateTime)
+    requests = []
+
+    class Fx:
+        async def get(self, url, *, params):
+            requests.append((url, params))
+            assert params == (
+                {"formato": "json"}
+                if url.endswith("/ultimos/1")
+                else {
+                    "formato": "json",
+                    "dataInicial": "01/11/2026",
+                    "dataFinal": "01/11/2026",
+                }
+            )
+
+            class Response:
+                def raise_for_status(self):
+                    pass
+
+                def json(self):
+                    return [{"valor": "5,42"}] if url.endswith("/ultimos/1") else []
+
+            return Response()
+
+    service = AdminMetricsService(fx_client=Fx())
+    rate = await service._monthly_usd_brl(
+        datetime(2026, 11, 1, tzinfo=UTC),
+        datetime(2026, 11, 1, 12, tzinfo=UTC),
+    )
+
+    assert rate == pytest.approx(5.42)
+    assert len(requests) == 2
+    assert requests[1][0].endswith("/ultimos/1")
+
+
+@pytest.mark.asyncio
+async def test_monthly_fx_caches_only_completed_months(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cache fixed historical rates but refetch the open month's rate."""
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 11, 10, 12, tzinfo=UTC)
+
+    monkeypatch.setattr("app.services.admin_metrics.datetime", FrozenDateTime)
+
+    class Fx:
+        calls = 0
+
+        async def get(self, _url, *, params):
+            assert params["formato"] == "json"
+            self.calls += 1
+
+            class Response:
+                def raise_for_status(self):
+                    pass
+
+                def json(self):
+                    return [{"valor": "5,00"}]
+
+            return Response()
+
+    fx = Fx()
+    service = AdminMetricsService(fx_client=fx)
+    feb_start = datetime(2026, 2, 1, tzinfo=UTC)
+    feb_end = datetime(2026, 3, 1, tzinfo=UTC)
+    open_start = datetime(2026, 11, 1, tzinfo=UTC)
+    open_end = datetime(2026, 11, 10, 12, tzinfo=UTC)
+
+    await service._monthly_usd_brl(feb_start, feb_end)
+    await service._monthly_usd_brl(feb_start, feb_end)
+    await service._monthly_usd_brl(open_start, open_end)
+    await service._monthly_usd_brl(open_start, open_end)
+
+    assert fx.calls == 3
+
+
 @pytest.mark.parametrize(
     ("enterprise_id", "expected_tokens", "expected_formatted"),
     [(None, 3000, "3.000"), (88, 1000, "1.000")],
