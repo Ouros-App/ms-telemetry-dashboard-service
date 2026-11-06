@@ -269,7 +269,12 @@ class AdminMetricsService:
         )
         roi = (
             (benefit - priced_cost) / priced_cost * 100
-            if priced_cost is not None and priced_cost > 0 and benefit is not None
+            if (
+                per_resolution is not None
+                and priced_cost is not None
+                and priced_cost > 0
+                and benefit is not None
+            )
             else None
         )
         return (
