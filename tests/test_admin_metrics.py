@@ -485,6 +485,61 @@ async def test_admin_ai_kpis_use_selected_calendar_month() -> None:
     assert response.total_tokens.period == "2024-02"
 
 
+@pytest.mark.parametrize("resolved_value", [None, "0"])
+@pytest.mark.asyncio
+async def test_estimated_roi_is_unavailable_without_resolved_outcomes(
+    resolved_value: str | None,
+) -> None:
+    """Keep estimated ROI unavailable when there are no resolved outcomes."""
+    expected_timestamp = datetime(2024, 3, 1, tzinfo=UTC).timestamp()
+    resolved_query = (
+        'increase(midas_jev_task_outcomes_total{outcome="resolved"}[2505600s])'
+    )
+    values = {
+        "increase(midas_jev_estimated_user_benefit_brl_total[2505600s])": "0",
+        "increase(midas_jev_cost_usd_total[2505600s])": "0.01",
+        "increase(ai_server_llm_cost_usd_total[2505600s])": "0.01",
+    }
+
+    class Prometheus:
+        async def query(self, query: str, *, timestamp: float | None = None):
+            assert timestamp == expected_timestamp
+            if query == resolved_query:
+                return (
+                    [{"value": [timestamp, resolved_value]}]
+                    if resolved_value is not None
+                    else []
+                )
+            return [{"value": [timestamp, values.get(query, "0")]}]
+
+    class Fx:
+        async def get(self, _url, *, params):
+            assert params["dataInicial"] == "01/02/2024"
+            assert params["dataFinal"] == "29/02/2024"
+
+            class Response:
+                def raise_for_status(self):
+                    pass
+
+                def json(self):
+                    return [{"valor": "5,00"}]
+
+            return Response()
+
+    service = AdminMetricsService(
+        repository=build_repository(),
+        prometheus=Prometheus(),
+        ai_users_repository=StubAiUsersRepository(),
+        fx_client=Fx(),
+    )
+
+    response = await service.get_kpis(month="2024-02")
+
+    assert response.cost_per_resolution.value is None
+    assert response.cost_per_resolution.formatted == "Sem dados"
+    assert response.estimated_roi.value is None
+    assert response.estimated_roi.formatted == "Sem dados"
+
 
 @pytest.mark.asyncio
 async def test_admin_ai_error_rate_is_zero_when_no_5xx_series_exists() -> None:
