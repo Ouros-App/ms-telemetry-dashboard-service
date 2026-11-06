@@ -424,6 +424,12 @@ async def test_admin_ai_kpis_use_selected_calendar_month() -> None:
                 'increase(midas_jev_task_outcomes_total{outcome="resolved"}[2505600s])': "2",
                 "increase(midas_jev_estimated_user_benefit_brl_total[2505600s])": "3.3334",
                 "increase(ai_server_llm_cost_usd_total[2505600s])": "0.0001",
+                "increase(ai_server_agent_execution_duration_seconds_sum[2505600s])": "3.0",
+                "increase(ai_server_agent_execution_duration_seconds_count[2505600s])": "2",
+                'increase(ai_server_http_request_duration_seconds_sum{route="/v1/chat"}[2505600s])': "6.0",
+                'increase(ai_server_http_request_duration_seconds_count{route="/v1/chat"}[2505600s])': "2",
+                'increase(ai_server_http_requests_total{route="/v1/chat",status=~"5.."}[2505600s])': "2",
+                'increase(ai_server_http_requests_total{route="/v1/chat"}[2505600s])': "8",
             }
             assert timestamp == expected_timestamp
             return [{"value": [timestamp, values.get(query, "0")]}]
@@ -456,6 +462,15 @@ async def test_admin_ai_kpis_use_selected_calendar_month() -> None:
     assert response.estimated_roi.value == pytest.approx(
         (3.3334 - 0.003232085) / 0.003232085 * 100
     )
+    assert response.inter_agent_latency.value == pytest.approx(1500)
+    assert response.inter_agent_latency.unit == "ms"
+    assert response.inter_agent_latency.period == "2024-02"
+    assert response.average_response_latency.value == pytest.approx(3000)
+    assert response.average_response_latency.unit == "ms"
+    assert response.total_response_time.value == pytest.approx(6)
+    assert response.total_response_time.unit == "s"
+    assert response.error_rate.value == pytest.approx(25)
+    assert response.error_rate.unit == "%"
     assert response.token_spend.value == pytest.approx(0.000546417)
     assert response.token_spend.unit == "US$"
     assert response.token_spend.period == "2024-02"
@@ -469,6 +484,25 @@ async def test_admin_ai_kpis_use_selected_calendar_month() -> None:
     assert response.total_tokens.unit == "tokens"
     assert response.total_tokens.period == "2024-02"
 
+
+
+@pytest.mark.asyncio
+async def test_admin_ai_error_rate_is_zero_when_no_5xx_series_exists() -> None:
+    """A missing 5xx series means zero errors only when chat requests exist."""
+    class Prometheus:
+        async def query(self, query: str, *, timestamp: float | None = None):
+            if 'status=~"5.."' in query:
+                return []
+            if "ai_server_http_requests_total" in query:
+                return [{"value": [timestamp, "4"]}]
+            return []
+
+    response = await AdminMetricsService(prometheus=Prometheus()).get_kpis(
+        month="2026-10"
+    )
+
+    assert response.error_rate.value == 0
+    assert response.error_rate.formatted == "0.00"
 
 @pytest.mark.asyncio
 async def test_monthly_fx_uses_latest_published_quote_at_month_start(
@@ -635,7 +669,7 @@ async def test_admin_ai_kpis_limit_current_month_to_now(
 
     await AdminMetricsService(prometheus=Prometheus()).get_kpis()
 
-    assert len(calls) == 7
+    assert len(calls) == 13
     assert {timestamp for _, timestamp in calls} == {
         FrozenDateTime(2026, 10, 15, 12, tzinfo=UTC).timestamp()
     }
@@ -646,6 +680,12 @@ async def test_admin_ai_kpis_limit_current_month_to_now(
         'increase(midas_jev_task_outcomes_total{outcome="resolved"}[1252800s])',
         "increase(midas_jev_estimated_user_benefit_brl_total[1252800s])",
         "increase(ai_server_llm_cost_usd_total[1252800s])",
+        "increase(ai_server_agent_execution_duration_seconds_sum[1252800s])",
+        "increase(ai_server_agent_execution_duration_seconds_count[1252800s])",
+        'increase(ai_server_http_request_duration_seconds_sum{route="/v1/chat"}[1252800s])',
+        'increase(ai_server_http_request_duration_seconds_count{route="/v1/chat"}[1252800s])',
+        'increase(ai_server_http_requests_total{route="/v1/chat",status=~"5.."}[1252800s])',
+        'increase(ai_server_http_requests_total{route="/v1/chat"}[1252800s])',
     }
 
 
