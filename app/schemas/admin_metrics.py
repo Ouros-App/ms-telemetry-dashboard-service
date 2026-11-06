@@ -16,6 +16,10 @@ class AdminAiMetricsKpisResponse(BaseModel):
     unit_cost: AdminAiMetricKpiItem
     active_users: AdminAiMetricKpiItem
     total_tokens: AdminAiMetricKpiItem
+    inter_agent_latency: AdminAiMetricKpiItem
+    average_response_latency: AdminAiMetricKpiItem
+    total_response_time: AdminAiMetricKpiItem
+    error_rate: AdminAiMetricKpiItem
     cost_per_resolution: AdminAiMetricKpiItem
     estimated_roi: AdminAiMetricKpiItem
 

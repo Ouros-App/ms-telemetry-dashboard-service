@@ -325,6 +325,99 @@ class AdminMetricsService:
         )
         return cost, tokens, period
 
+    async def _technical_kpi_items(
+        self,
+        month: str | None,
+        enterprise_id: int | None,
+    ) -> tuple[
+        AdminAiMetricKpiItem,
+        AdminAiMetricKpiItem,
+        AdminAiMetricKpiItem,
+        AdminAiMetricKpiItem,
+    ]:
+        """Return monthly agent/chat latency, response time, and HTTP 5xx rate."""
+        start, end, period = self._prometheus_period(month)
+        units = ("ms", "ms", "s", "%")
+        unavailable = tuple(
+            AdminAiMetricKpiItem(
+                value=None, formatted=NO_DATA, unit=unit, period=period
+            )
+            for unit in units
+        )
+        if self.prometheus is None or enterprise_id is not None or end <= start:
+            return unavailable
+
+        (
+            agent_duration,
+            agent_count,
+            chat_duration,
+            chat_count,
+            chat_errors,
+            chat_requests,
+        ) = await asyncio.gather(
+            self._prometheus_increase(
+                "ai_server_agent_execution_duration_seconds_sum",
+                start=start,
+                end=end,
+            ),
+            self._prometheus_increase(
+                "ai_server_agent_execution_duration_seconds_count",
+                start=start,
+                end=end,
+            ),
+            self._prometheus_increase(
+                'ai_server_http_request_duration_seconds_sum{route="/v1/chat"}',
+                start=start,
+                end=end,
+            ),
+            self._prometheus_increase(
+                'ai_server_http_request_duration_seconds_count{route="/v1/chat"}',
+                start=start,
+                end=end,
+            ),
+            self._prometheus_increase(
+                'ai_server_http_requests_total{route="/v1/chat",status=~"5.."}',
+                start=start,
+                end=end,
+            ),
+            self._prometheus_increase(
+                'ai_server_http_requests_total{route="/v1/chat"}',
+                start=start,
+                end=end,
+            ),
+        )
+        agent_latency_ms = (
+            agent_duration / agent_count * 1000
+            if agent_duration is not None and agent_count is not None and agent_count > 0
+            else None
+        )
+        response_latency_ms = (
+            chat_duration / chat_count * 1000
+            if chat_duration is not None and chat_count is not None and chat_count > 0
+            else None
+        )
+        error_rate = (
+            (chat_errors or 0) / chat_requests * 100
+            if chat_requests is not None and chat_requests > 0
+            else None
+        )
+
+        def item(value: float | None, unit: str) -> AdminAiMetricKpiItem:
+            return AdminAiMetricKpiItem(
+                value=value,
+                formatted=f"{value:.2f}" if value is not None else NO_DATA,
+                unit=unit,
+                period=period,
+            )
+
+        return (
+            item(agent_latency_ms, "ms"),
+            item(response_latency_ms, "ms"),
+            item(chat_duration, "s"),
+            item(error_rate, "%"),
+        )
+
+
     def _cost_kpi_items(
         self,
         row: dict[str, Any],
@@ -446,7 +539,18 @@ class AdminMetricsService:
             month, enterprise_id
         )
 
+        (
+            inter_agent_latency,
+            average_response_latency,
+            total_response_time,
+            error_rate,
+        ) = await self._technical_kpi_items(month, enterprise_id)
+
         return AdminAiMetricsKpisResponse(
+            inter_agent_latency=inter_agent_latency,
+            average_response_latency=average_response_latency,
+            total_response_time=total_response_time,
+            error_rate=error_rate,
             cost_per_resolution=cost_per_resolution,
             estimated_roi=estimated_roi,
             token_spend=token_spend,
